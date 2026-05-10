@@ -77,6 +77,9 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_KEY }}
+          # Default command_timeout is 10m which is too short for a full
+          # `docker compose up --build` (Next.js + Python multi-stage builds).
+          command_timeout: 30m
           # Path on server: /home/<SERVER_USER>/arkon
           # Run as a single shell script for easier debugging
           script: |
