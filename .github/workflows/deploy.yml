@@ -1,0 +1,124 @@
+name: CI/CD - Lint & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. Lint backend (Python / ruff)
+  # ─────────────────────────────────────────────────────────────
+  lint-backend:
+    name: Lint backend (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        run: ruff check app/ alembic/
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Lint frontend (ESLint + TypeScript)
+  # ─────────────────────────────────────────────────────────────
+  lint-frontend:
+    name: Lint frontend (eslint + tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Deploy to production server via SSH
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to server
+    runs-on: ubuntu-latest
+    needs: [lint-backend, lint-frontend]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_KEY }}
+          # Path on server: /home/<SERVER_USER>/arkon
+          # Run as a single shell script for easier debugging
+          script: |
+            set -euo pipefail
+
+            APP_DIR="/home/${{ secrets.SERVER_USER }}/arkon"
+            BRANCH="main"
+
+            echo "==> Deploying to $APP_DIR (branch: $BRANCH)"
+            cd "$APP_DIR"
+
+            echo "==> Fetching latest code"
+            git fetch --all --prune
+            git reset --hard "origin/$BRANCH"
+
+            echo "==> Verifying .env exists"
+            if [ ! -f .env ]; then
+              echo "ERROR: .env file is missing on server. Create it once manually from .env.example."
+              exit 1
+            fi
+
+            echo "==> Building & starting containers"
+            docker compose pull --ignore-pull-failures || true
+            docker compose up -d --build --remove-orphans
+
+            echo "==> Waiting for API health"
+            for i in $(seq 1 30); do
+              if docker compose exec -T api python -c "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')" 2>/dev/null; then
+                echo "API is healthy"
+                break
+              fi
+              echo "  ...waiting ($i/30)"
+              sleep 5
+              if [ "$i" = "30" ]; then
+                echo "ERROR: API failed to become healthy in time"
+                docker compose logs --tail=100 api
+                exit 1
+              fi
+            done
+
+            echo "==> Pruning old images"
+            docker image prune -f
+
+            echo "==> Deploy completed successfully"
+            docker compose ps
