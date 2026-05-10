@@ -272,7 +272,7 @@ class GoogleVision(VisionProvider):
                 b"\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00"
                 b"\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
             )
-            result = await self.analyze_image(tiny_png, "image/png", "What is this?")
+            await self.analyze_image(tiny_png, "image/png", "What is this?")
             return True, f"OK — model={self.config.model_id}"
         except Exception as e:
             return False, f"Google Vision error: {e}"

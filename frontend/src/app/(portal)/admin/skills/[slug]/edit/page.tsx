@@ -25,7 +25,7 @@ export default function SkillEditPage() {
     async function loadData() {
       try {
         setLoading(true);
-        const skillData = await api<any>(`/api/skills/${urlSlug}`);
+        const skillData = await api<{ name: string; description?: string }>(`/api/skills/${urlSlug}`);
 
         setFormData({
           name: skillData.name,
@@ -59,7 +59,7 @@ export default function SkillEditPage() {
     try {
       setSaving(true);
       
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         name: formData.name,
         description: formData.description,
         increment_version: incrementVersion

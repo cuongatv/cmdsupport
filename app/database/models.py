@@ -12,24 +12,23 @@ from enum import Enum as PyEnum
 from typing import Optional
 
 from pgvector.sqlalchemy import Vector
-import sqlalchemy as sa
 from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
+    Integer,
     PrimaryKeyConstraint,
     String,
     Text,
-    Integer,
-    Boolean,
-    CheckConstraint,
-    Float,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID, ENUM as PgEnum
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM as PgEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 # ---------------------------------------------------------------------------
 # Enums

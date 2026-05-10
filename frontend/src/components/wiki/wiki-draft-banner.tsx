@@ -82,7 +82,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
             <span className="font-normal text-amber-700 dark:text-amber-400"> · {dateLabel}</span>
           </p>
           {draft.note && (
-            <p className="text-xs text-amber-700 dark:text-amber-400 truncate mt-0.5">"{draft.note}"</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 truncate mt-0.5">&quot;{draft.note}&quot;</p>
           )}
         </div>
 

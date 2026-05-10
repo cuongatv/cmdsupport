@@ -1,22 +1,21 @@
+import hashlib
 import io
 import os
 import uuid
 import zipfile
-import hashlib
-from typing import List, Optional, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 import sqlalchemy as sa
 from fastapi import HTTPException
 from loguru import logger
-from sqlalchemy import select, or_, and_, func
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Skill, SkillVersion, Department, SkillDepartment
+from app.database.models import Skill, SkillDepartment, SkillVersion
+from app.services.storage_service import storage_service
 from app.utils.text import slugify
 from app.worker import get_arq_pool
-from app.services.storage_service import storage_service
-
 
 
 class SkillService:
@@ -145,8 +144,10 @@ class SkillService:
             for job_args in jobs_to_enqueue:
                 temp_path = job_args[2]
                 if os.path.exists(temp_path):
-                    try: os.remove(temp_path)
-                    except: pass
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
             raise e
             
         return results
@@ -197,8 +198,10 @@ class SkillService:
             await pool.enqueue_job("ingest_skill_task", str(skill.id), str(new_version.id), temp_path, file.filename, _queue_name="skills_queue")
         except Exception as e:
             if os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except: pass
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
             raise e
             
         return {"status": "processing", "skill_id": str(skill.id), "version": new_version_num}
@@ -300,7 +303,8 @@ class SkillService:
 
     @staticmethod
     async def bulk_delete_skills(db: AsyncSession, ids: List[uuid.UUID]) -> int:
-        if not ids: return 0
+        if not ids:
+            return 0
         pool = await get_arq_pool()
         stmt = sa.update(Skill).where(Skill.id.in_(ids)).values(status="deleting")
         await db.execute(stmt)
@@ -343,10 +347,10 @@ class SkillService:
                     for path in possible_paths:
                         try:
                             content_bytes = storage_service.download_file(path)
-                            if content_bytes: 
+                            if content_bytes:
                                 logger.debug(f"Found SKILL.md at: {path}")
                                 break
-                        except:
+                        except Exception:
                             continue
 
                     if content_bytes:
@@ -394,8 +398,9 @@ class SkillService:
                 for path in possible_paths:
                     try:
                         content_bytes = storage_service.download_file(path)
-                        if content_bytes: break
-                    except:
+                        if content_bytes:
+                            break
+                    except Exception:
                         continue
 
                 if content_bytes:
@@ -490,7 +495,8 @@ class SkillService:
         scope_type: str,
         scope_id: Optional[uuid.UUID]
     ) -> int:
-        if not skill_ids: return 0
+        if not skill_ids:
+            return 0
         
         # Sync department_ids for compatibility
         dept_ids = [scope_id] if (scope_type == "department" and scope_id) else []

@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import WikiLink, WikiPage, WikiPageDraft, WikiPageRevision
 
-
 # Reserved page slugs — these are regular WikiPage rows but treated specially.
 INDEX_SLUG = "_index"
 LOG_SLUG = "_log"

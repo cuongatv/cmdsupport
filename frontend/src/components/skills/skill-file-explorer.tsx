@@ -120,7 +120,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
       const data = await api<{ content: string }>(apiUrl);
       
       // Clean up internal markers and YAML frontmatter
-      let cleanedContent = data.content
+      const cleanedContent = data.content
         .replace(/^---[\s\S]*?---\n?/, "") // Remove YAML frontmatter
         .replace(/--[a-z0-9]{4}--/gi, "")   // Remove internal markers
         .trim();

@@ -24,9 +24,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.database.models import Employee, Project, ProjectMember, ProjectSource, ScopeType, Source, WorkspaceRole
-from app.services.auth_service import get_current_user, require_admin, require_permission
-from app.services.permission_engine import can_access_workspace, get_workspace_role, workspace_role_can
+from app.database.models import (
+    Employee,
+    Project,
+    ProjectMember,
+    ProjectSource,
+    Source,
+    WorkspaceRole,
+)
+from app.services.auth_service import (
+    get_current_user,
+)
+from app.services.permission_engine import (
+    can_access_workspace,
+    get_workspace_role,
+    workspace_role_can,
+)
 
 router = APIRouter()
 
@@ -530,8 +543,8 @@ async def remove_project_source(
 # Workspace-scoped upload (owned sources)
 # ---------------------------------------------------------------------------
 
-from fastapi import File, Form, UploadFile
-from arq.connections import ArqRedis, create_pool
+from arq.connections import ArqRedis, create_pool  # noqa: E402
+from fastapi import File, Form, UploadFile  # noqa: E402
 
 _arq_pool_ws: ArqRedis | None = None
 
@@ -576,8 +589,8 @@ async def upload_workspace_source(
     db.add(source)
     await db.flush()
 
-    from app.services.storage_service import storage_service
     from app.services.kb_service import _guess_content_type
+    from app.services.storage_service import storage_service
     minio_key = f"sources/{source.id}/original/{file_name}"
     storage_service.upload_file(
         object_name=minio_key,

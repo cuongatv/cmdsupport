@@ -19,7 +19,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     import sqlalchemy as sa
-    from sqlalchemy.dialects.postgresql import UUID, ARRAY
+    from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
     op.create_table(
         "contacts",

@@ -16,16 +16,14 @@ from typing import Optional
 import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from loguru import logger
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.database.models import Employee, Role
-
+from app.database.models import Employee
 
 # JWT config
 JWT_ALGORITHM = "HS256"
@@ -86,7 +84,7 @@ async def authenticate_employee(
     """
     stmt = (
         select(Employee)
-        .where(Employee.email == email, Employee.is_active == True)
+        .where(Employee.email == email, Employee.is_active.is_(True))
         .options(selectinload(Employee.department), selectinload(Employee.custom_role))
     )
     result = await db.execute(stmt)
@@ -140,7 +138,7 @@ async def get_current_user(
     if employee.role == "employee" and not employee.custom_role:
         from app.database.models import Role
         sys_role = (await db.execute(
-            select(Role).where(Role.name == "Employee", Role.is_system == True)
+            select(Role).where(Role.name == "Employee", Role.is_system.is_(True))
         )).scalar_one_or_none()
         if sys_role:
             employee.custom_role = sys_role
@@ -176,7 +174,7 @@ async def get_current_user_optional(
     if employee.role == "employee" and not employee.custom_role:
         from app.database.models import Role
         sys_role = (await db.execute(
-            select(Role).where(Role.name == "Employee", Role.is_system == True)
+            select(Role).where(Role.name == "Employee", Role.is_system.is_(True))
         )).scalar_one_or_none()
         if sys_role:
             employee.custom_role = sys_role
@@ -217,7 +215,10 @@ def require_permission(permission: str):
         if current_user.role == "admin":
             return current_user
 
-        from app.services.permission_engine import _get_user_permissions, has_any_permission
+        from app.services.permission_engine import (
+            _get_user_permissions,
+            has_any_permission,
+        )
         effective = _get_user_permissions(current_user)
 
         # Check exact match first (for org: permissions)

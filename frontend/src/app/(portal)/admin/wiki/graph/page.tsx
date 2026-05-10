@@ -46,7 +46,7 @@ export default function WikiGraphPage() {
       let allNodes: WikiGraphData["nodes"] = [];
       let allEdges: WikiGraphData["edges"] = [];
 
-      // eslint-disable-next-line no-constant-condition
+       
       while (true) {
         if (cancelled) return;
         try {

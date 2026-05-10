@@ -26,7 +26,6 @@ from app.ai.providers.openai_provider import (
     OpenAIVision,
 )
 
-
 WTBOSS_BASE_URL = "https://xai.wtboss.com/v1"
 WTBOSS_USER_AGENT = "wtboss-client/1.0"
 _WTBOSS_DEFAULT_HEADERS = {"User-Agent": WTBOSS_USER_AGENT}

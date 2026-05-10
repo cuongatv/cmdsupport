@@ -12,8 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee
-from app.services.auth_service import get_current_user, get_current_user_optional, require_permission
 from app.services import cmd_support_service
+from app.services.auth_service import (
+    get_current_user,
+    get_current_user_optional,
+)
 
 router = APIRouter()
 

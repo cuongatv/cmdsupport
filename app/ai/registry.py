@@ -23,7 +23,7 @@ Usage:
         caption = await vision.analyze_image(image_bytes)
 """
 
-from typing import Any, Optional
+from typing import Optional
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +35,6 @@ from app.ai.providers.base import (
     ProviderType,
     VisionProvider,
 )
-
 
 # ---------------------------------------------------------------------------
 # Provider class mappings — add new providers here

@@ -8,13 +8,12 @@ Start with:
     arq app.worker.WorkerSettings
 """
 
-import io
 import uuid
 import zipfile
-from typing import Callable, Optional
+from typing import Optional
 
 from arq import cron
-from arq.connections import RedisSettings, ArqRedis, create_pool
+from arq.connections import ArqRedis, RedisSettings, create_pool
 from loguru import logger
 
 from app.config import settings
@@ -74,17 +73,17 @@ async def ingest_file_task(ctx: dict, source_id: str):
     Steps: download from MinIO → extract text → vision captions → outline → compile wiki.
     File must already be uploaded to MinIO before this task is enqueued.
     """
-    from app.database import async_session_factory
-    from app.database.models import KnowledgeType, Source
     from app.ai.registry import ProviderRegistry
     from app.ai.wiki_agent import compile_source_with_agent
+    from app.database import async_session_factory
+    from app.database.models import KnowledgeType, Source
     from app.services.image_service import extract_images
-    from app.services.source_outline import assemble_full_text, build_outline
-    from app.services.storage_service import storage_service
     from app.services.kb_service import (
         _extract_text_from_file,
         _inline_image_captions,
     )
+    from app.services.source_outline import assemble_full_text, build_outline
+    from app.services.storage_service import storage_service
 
     sid = uuid.UUID(source_id)
     tracker = ProgressTracker(sid)
@@ -214,9 +213,9 @@ async def ingest_file_task(ctx: dict, source_id: str):
 
 async def ingest_url_task(ctx: dict, source_id: str):
     """arq task: URL ingestion → wiki compilation."""
+    from app.ai.wiki_agent import compile_source_with_agent
     from app.database import async_session_factory
     from app.database.models import KnowledgeType, Source
-    from app.ai.wiki_agent import compile_source_with_agent
     from app.services.kb_service import _extract_text_from_url
     from app.services.source_outline import assemble_full_text, build_outline
 
@@ -339,6 +338,7 @@ async def ingest_skill_task(ctx: dict, skill_id: str, version_id: str, file_path
     arq task: unzip skill package from disk buffer, store in MinIO, and extract metadata.
     """
     import os
+
     from app.database import async_session_factory
     from app.database.models import Skill, SkillVersion
     from app.services.storage_service import storage_service
@@ -367,8 +367,9 @@ async def ingest_skill_task(ctx: dict, skill_id: str, version_id: str, file_path
                 await session.commit()
                 return
 
-            import hashlib
             import asyncio
+            import hashlib
+
             from app.services.kb_service import _guess_content_type
 
             # 1. Stream Hash calculation
@@ -417,7 +418,7 @@ async def ingest_skill_task(ctx: dict, skill_id: str, version_id: str, file_path
                     # [Security] Zip Bomb check
                     total_size += member.file_size
                     if total_size > MAX_UNCOMPRESSED_SIZE:
-                        raise ValueError(f"Uncompressed size too large (exceeds 10MB)")
+                        raise ValueError("Uncompressed size too large (exceeds 10MB)")
 
                     object_name = f"skills/{skill_id}/versions/{version.version_number}/content/{filename}"
                     target_readme = f"{skill_name}/SKILL.md".lower()

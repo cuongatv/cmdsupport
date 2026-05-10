@@ -31,7 +31,6 @@ from app.ai.registry import ProviderRegistry
 from app.database.models import Source, WikiPage
 from app.services import wiki_service
 
-
 # Slug must be a-z 0-9 and `/_-` only — kept narrow so they're URL-safe and stable.
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_/-]*[a-z0-9]$")
 

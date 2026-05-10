@@ -2,21 +2,24 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from loguru import logger
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee, Skill
-from app.services.auth_service import get_current_user, require_admin, require_permission
-from app.services.skill_service import SkillService
+from app.services.auth_service import (
+    get_current_user,
+    require_permission,
+)
 from app.services.permission_engine import (
     _get_user_permissions,
     build_skill_filter,
     can_access_skill,
 )
+from app.services.skill_service import SkillService
 
 router = APIRouter()
 
@@ -190,7 +193,8 @@ async def bulk_delete_skills(
     # Check each skill
     for skill_id in req.ids:
         skill = await db.get(Skill, skill_id)
-        if not skill: continue
+        if not skill:
+            continue
         if not await can_access_skill(db, user, skill, "delete"):
             raise HTTPException(403, f"Access denied for skill {skill.name}")
 
@@ -213,7 +217,8 @@ async def bulk_change_visibility(
     # Check access to all skills
     for skill_id in req.skill_ids:
         skill = await db.get(Skill, skill_id)
-        if not skill: continue
+        if not skill:
+            continue
         if not await can_access_skill(db, user, skill, "edit"):
             raise HTTPException(403, f"Access denied for skill {skill.name}")
 
@@ -261,8 +266,8 @@ async def list_skill_files(
     user: Employee = Depends(get_current_user),
 ):
     """List all files within a skill's storage prefix in MinIO."""
-    from app.services.storage_service import storage_service
     from app.database.models import SkillVersion
+    from app.services.storage_service import storage_service
     
     skill = await db.get(Skill, skill_id)
     if not skill:
@@ -298,7 +303,8 @@ async def list_skill_files(
     for obj in objects:
         # Extract relative path from full object name
         rel_path = obj["name"].replace(prefix_for_list, "", 1)
-        if not rel_path: continue
+        if not rel_path:
+            continue
         
         files.append({
             "path": rel_path,
@@ -319,8 +325,8 @@ async def get_skill_file_content(
     user: Employee = Depends(get_current_user),
 ):
     """Fetch text content for a specific file within a skill."""
-    from app.services.storage_service import storage_service
     from app.database.models import SkillVersion
+    from app.services.storage_service import storage_service
     
     skill = await db.get(Skill, skill_id)
     if not skill:

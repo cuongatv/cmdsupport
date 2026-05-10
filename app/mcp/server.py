@@ -25,8 +25,8 @@ Connection:
 
 from fastmcp import FastMCP
 
-from app.mcp.tools import register_tools
 from app.mcp.resources import register_resources
+from app.mcp.tools import register_tools
 
 
 def create_mcp_server() -> FastMCP:

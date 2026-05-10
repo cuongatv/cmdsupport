@@ -23,7 +23,6 @@ from app.ai.wiki_analyzer import analyze_source, format_analysis_section
 from app.database.models import Source
 from app.services import wiki_service
 
-
 MAX_STEPS = 50
 WARN_STEPS = 40
 INITIAL_EXCERPT_CHARS = 30_000
@@ -310,8 +309,8 @@ async def compile_source_with_agent(
             )
         except NotImplementedError:
             logger.error(
-                f"WikiAgent: configured LLM provider does not support tool calling. "
-                f"Switch to Anthropic, OpenAI, or Google in Settings."
+                "WikiAgent: configured LLM provider does not support tool calling. "
+                "Switch to Anthropic, OpenAI, or Google in Settings."
             )
             return state.summary()
         except Exception as e:

@@ -7,6 +7,7 @@ Create Date: 2026-05-07
 
 import bcrypt
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "015"

@@ -30,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models import Employee, Task, TaskActivity, TaskAttachment
 from app.services.task_constants import MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_TASK
 
-
 # Case-insensitive set of denied filename extensions (with leading dot).
 _DENIED_EXTENSIONS: frozenset[str] = frozenset(
     {".exe", ".bat", ".ps1", ".sh", ".scr", ".com"}

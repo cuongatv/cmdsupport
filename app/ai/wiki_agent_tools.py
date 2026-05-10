@@ -7,7 +7,6 @@ returned as {"error": "..."} so the agent loop can recover without crashing.
 """
 
 import re
-import uuid
 from typing import Any, Callable, Optional
 
 from loguru import logger
@@ -15,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Source
 from app.services import wiki_service
-
 
 # ---------------------------------------------------------------------------
 # JSON Schema definitions (OpenAI function-calling format)

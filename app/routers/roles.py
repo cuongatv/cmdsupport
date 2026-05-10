@@ -12,15 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.database.models import Role, Employee
-from app.services.auth_service import require_admin, require_permission
+from app.database.models import Role
 from app.services.audit_service import log_audit
+from app.services.auth_service import require_permission
 from app.services.permissions import (
     ALL_PERMISSIONS,
+    LEGACY_PERMISSION_MAP,
+    PERMISSION_DESCRIPTIONS,
     PERMISSION_GROUPS,
     PERMISSION_LABELS,
-    PERMISSION_DESCRIPTIONS,
-    LEGACY_PERMISSION_MAP,
 )
 
 router = APIRouter(prefix="/roles", tags=["roles"])

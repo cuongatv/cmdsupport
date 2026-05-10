@@ -99,7 +99,7 @@ export default function KnowledgePage() {
     } finally {
       if (!silent) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedType, selectedDepartment, types]);
 
   // Polling cho trạng thái tài liệu

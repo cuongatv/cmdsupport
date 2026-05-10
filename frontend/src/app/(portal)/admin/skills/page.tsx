@@ -106,7 +106,7 @@ export default function SkillsPage() {
             const deletedIds = new Set(processingIds.filter(id => !returnedIds.has(id)));
 
             // Bắt đầu bằng cách loại bỏ các skill đã xóa
-            let updatedItems = deletedIds.size > 0
+            const updatedItems = deletedIds.size > 0
               ? prev.filter(s => !deletedIds.has(s.id))
               : [...prev];
             let hasChanges = deletedIds.size > 0;

@@ -22,7 +22,6 @@ from app.ai.providers.openai_provider import (
     OpenAIVision,
 )
 
-
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_REFERER = "https://cmdsupport.com"
 OPENROUTER_TITLE = "CMD Support"

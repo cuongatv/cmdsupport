@@ -11,10 +11,10 @@ Permission v2: Dual-realm architecture.
 Revision ID: 011_permission_v2
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 
+from alembic import op
 
 revision = "011_permission_v2"
 down_revision = "010"

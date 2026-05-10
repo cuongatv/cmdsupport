@@ -17,7 +17,6 @@ from typing import Optional
 from fastmcp import FastMCP
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 # ---------------------------------------------------------------------------
 # Auth helpers
 # ---------------------------------------------------------------------------
@@ -25,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def _get_identity():
     """Resolve the bearer token to a ResolvedIdentity, or return an error string."""
     from fastmcp.server.dependencies import get_http_request
+
     from app.database import async_session_factory
     from app.services.mcp_auth_service import MCPAuthService
 
@@ -63,6 +63,7 @@ async def _get_allowed_source_ids(identity, session: Optional[AsyncSession] = No
         return None
 
     from sqlalchemy import select
+
     from app.database import async_session_factory
     from app.database.models import Source
     from app.services.mcp_auth_service import apply_scope_filter
@@ -87,7 +88,9 @@ async def _get_allowed_source_ids(identity, session: Optional[AsyncSession] = No
 async def _can_review_page(session: AsyncSession, employee, page) -> bool:
     """Editor+ in the page's workspace, or wiki:write:all globally, or admin."""
     from app.services.permission_engine import (
-        get_workspace_role, workspace_role_can, _get_user_permissions,
+        _get_user_permissions,
+        get_workspace_role,
+        workspace_role_can,
     )
     if employee.role == "admin":
         return True
@@ -101,7 +104,10 @@ async def _can_review_page(session: AsyncSession, employee, page) -> bool:
 async def _can_contribute_to_page(session: AsyncSession, employee, page) -> bool:
     """Contributor+ in the page's workspace, or wiki:write globally, or admin."""
     from app.services.permission_engine import (
-        get_workspace_role, workspace_role_can, has_any_permission, _get_user_permissions,
+        _get_user_permissions,
+        get_workspace_role,
+        has_any_permission,
+        workspace_role_can,
     )
     if employee.role == "admin":
         return True
@@ -311,8 +317,10 @@ def register_tools(mcp: FastMCP):
             source_id: The source UUID.
         """
         import uuid as uuid_mod
+
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import Source
 
@@ -373,6 +381,7 @@ def register_tools(mcp: FastMCP):
             source_id: The source UUID.
         """
         import uuid as uuid_mod
+
         from app.database import async_session_factory
         from app.database.models import Source
 
@@ -424,6 +433,7 @@ def register_tools(mcp: FastMCP):
             details you need.
         """
         import uuid as uuid_mod
+
         from app.database import async_session_factory
         from app.database.models import Source
         from app.services.source_outline import parse_page_range, slice_pages_by_range
@@ -485,6 +495,7 @@ def register_tools(mcp: FastMCP):
         """
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import KnowledgeType, Source
         from app.services.mcp_auth_service import apply_scope_filter
@@ -537,6 +548,7 @@ def register_tools(mcp: FastMCP):
         List knowledge types (admin-defined classifications) accessible to the caller.
         """
         from sqlalchemy import func, select
+
         from app.database import async_session_factory
         from app.database.models import KnowledgeType, Source
 
@@ -585,6 +597,7 @@ def register_tools(mcp: FastMCP):
             limit: Max documents to return (default: 10).
         """
         from sqlalchemy import select
+
         from app.database import async_session_factory
         from app.database.models import KnowledgeType, Source
         from app.services.mcp_auth_service import apply_scope_filter
@@ -643,6 +656,7 @@ def register_tools(mcp: FastMCP):
             note: Optional one-line explanation of what you changed and why.
         """
         from sqlalchemy import select
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPage
         from app.services import wiki_service
@@ -708,6 +722,7 @@ def register_tools(mcp: FastMCP):
             change_note: Optional one-line description of the change.
         """
         from sqlalchemy import select
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPage
         from app.services import wiki_service
@@ -765,6 +780,7 @@ def register_tools(mcp: FastMCP):
         """
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPageDraft
 
@@ -832,8 +848,10 @@ def register_tools(mcp: FastMCP):
             draft_id: UUID of the draft (from list_pending_drafts).
         """
         import uuid as _uuid
+
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPageDraft
 
@@ -903,8 +921,10 @@ def register_tools(mcp: FastMCP):
                                instead of the author's original content.
         """
         import uuid as _uuid
+
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPageDraft
         from app.services import wiki_service
@@ -961,8 +981,10 @@ def register_tools(mcp: FastMCP):
             reviewer_note: Required explanation for the author.
         """
         import uuid as _uuid
+
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
+
         from app.database import async_session_factory
         from app.database.models import Employee, WikiPageDraft
         from app.services import wiki_service

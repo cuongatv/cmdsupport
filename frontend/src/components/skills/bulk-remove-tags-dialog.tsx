@@ -54,7 +54,7 @@ export function BulkRemoveTagsDialog({
       onSuccess();
       onOpenChange(false);
     } catch (error) {
-      const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
+      const msg = error instanceof ApiError ? (error.data as { detail?: string } | null)?.detail || error.message : "Unknown error";
       alert("Gỡ tag khỏi skill thất bại: " + msg);
     } finally {
       setLoading(false);

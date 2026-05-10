@@ -1,6 +1,7 @@
 import re
 import unicodedata
 
+
 def slugify(text: str) -> str:
     """
     Convert text to a URL-friendly slug.

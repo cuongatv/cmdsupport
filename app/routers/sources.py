@@ -13,19 +13,23 @@ from arq.connections import ArqRedis, create_pool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import delete as sql_delete, func, select, or_, exists
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.database.models import Employee, Source, SourceDepartment, ScopeType, WikiPage
+from app.database.models import Employee, ScopeType, Source, SourceDepartment, WikiPage
 from app.database.repository import Repository
-from app.services.auth_service import require_admin, require_permission, get_current_user
+from app.services.audit_service import log_audit
+from app.services.auth_service import (
+    get_current_user,
+    require_permission,
+)
 from app.services.permission_engine import (
     _get_user_permissions,
     get_scope_level,
 )
-from app.services.audit_service import log_audit
 
 router = APIRouter()
 
@@ -350,8 +354,8 @@ async def upload_source(
     await db.refresh(source)
 
     # Upload to MinIO before enqueuing so the worker downloads from storage
-    from app.services.storage_service import storage_service
     from app.services.kb_service import _guess_content_type
+    from app.services.storage_service import storage_service
     minio_key = f"sources/{source.id}/original/{file_name}"
     storage_service.upload_file(
         object_name=minio_key,

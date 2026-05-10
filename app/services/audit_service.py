@@ -1,8 +1,9 @@
-import uuid
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database.models import AuditLog, Employee
+
 
 async def log_audit(
     db: AsyncSession,

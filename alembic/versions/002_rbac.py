@@ -3,9 +3,10 @@
 Revision ID: 002_rbac
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+
+from alembic import op
 
 # revision identifiers
 revision = '002_rbac'

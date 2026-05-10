@@ -5,9 +5,10 @@ Revises: 011_permission_v2
 Create Date: 2026-05-05
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "012"
 down_revision = "011_permission_v2"

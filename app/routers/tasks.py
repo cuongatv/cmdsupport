@@ -26,6 +26,7 @@ from app.database.models import (
 from app.schemas.tasks import (
     DashboardOut,
     PaginatedResponse,
+    TaskActivityOut,
     TaskAssigneeOut,
     TaskAttachmentOut,
     TaskCommentCreate,
@@ -35,6 +36,7 @@ from app.schemas.tasks import (
     TaskLabelCreate,
     TaskLabelOut,
     TaskMoveRequest,
+    TaskOut,
     TaskProjectCreate,
     TaskProjectOut,
     TaskProjectUpdate,
@@ -42,8 +44,6 @@ from app.schemas.tasks import (
     TaskStateOut,
     TaskStateUpdate,
     TaskUpdate,
-    TaskActivityOut,
-    TaskOut,
 )
 from app.services.audit_service import log_audit
 from app.services.auth_service import get_current_user, require_permission
@@ -56,37 +56,75 @@ from app.services.task_access_service import (
 )
 from app.services.task_attachment_service import (
     create_attachment_metadata,
+)
+from app.services.task_attachment_service import (
     delete_attachment as delete_task_attachment,
+)
+from app.services.task_attachment_service import (
     get_attachment as get_task_attachment,
+)
+from app.services.task_attachment_service import (
     list_attachments as list_task_attachments,
 )
 from app.services.task_comment_service import (
     create_comment as create_task_comment,
+)
+from app.services.task_comment_service import (
     delete_comment as delete_task_comment,
+)
+from app.services.task_comment_service import (
     list_activities as list_task_activities,
+)
+from app.services.task_comment_service import (
     update_comment as update_task_comment,
 )
 from app.services.task_constants import PRIORITY_LEVELS
 from app.services.task_dashboard_service import get_dashboard
 from app.services.task_filter_service import TaskFilters, filter_tasks
-from app.services.task_notification_service import notify_commented, notify_mentioned, notify_state_changed
+from app.services.task_notification_service import (
+    notify_commented,
+    notify_mentioned,
+    notify_state_changed,
+)
 from app.services.task_project_service import (
     archive_task_project,
-    create_label as create_task_label,
-    create_state as create_task_state,
-    create_task_project as create_project,
-    delete_label as delete_task_label,
-    delete_state as delete_task_state,
-    get_task_project as get_project,
     list_task_projects,
-    update_label as update_task_label,
-    update_state as update_task_state,
     update_task_project,
+)
+from app.services.task_project_service import (
+    create_label as create_task_label,
+)
+from app.services.task_project_service import (
+    create_state as create_task_state,
+)
+from app.services.task_project_service import (
+    create_task_project as create_project,
+)
+from app.services.task_project_service import (
+    delete_label as delete_task_label,
+)
+from app.services.task_project_service import (
+    delete_state as delete_task_state,
+)
+from app.services.task_project_service import (
+    get_task_project as get_project,
+)
+from app.services.task_project_service import (
+    update_label as update_task_label,
+)
+from app.services.task_project_service import (
+    update_state as update_task_state,
 )
 from app.services.task_service import (
     create_task as create_task_record,
+)
+from app.services.task_service import (
     get_task as get_task_record,
+)
+from app.services.task_service import (
     soft_delete_task,
+)
+from app.services.task_service import (
     update_task as update_task_record,
 )
 

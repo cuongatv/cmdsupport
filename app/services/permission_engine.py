@@ -20,16 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import (
+    WORKSPACE_ROLE_HIERARCHY,
     Employee,
     ProjectMember,
+    Skill,
     Source,
     SourceDepartment,
-    Skill,
-    SkillDepartment,
     WorkspaceRole,
-    WORKSPACE_ROLE_HIERARCHY,
 )
-
 
 # ---------------------------------------------------------------------------
 # Permission string parsing

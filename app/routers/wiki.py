@@ -16,21 +16,20 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee, ProjectMember, WikiPage, WikiPageRevision
 from app.services import wiki_service
+from app.services.audit_service import log_audit
 from app.services.auth_service import get_current_user, require_permission
 from app.services.permission_engine import (
     _get_user_permissions,
     get_scope_level,
     get_workspace_role,
     workspace_role_can,
-    has_any_permission,
 )
-from app.services.audit_service import log_audit
 
 router = APIRouter()
 
@@ -376,8 +375,10 @@ async def get_wiki_graph(
         return await wiki_service.get_neighborhood(db, slug, depth=depth)
 
     # Full graph — paginated, with scope filtering
-    from sqlalchemy import outerjoin, func as sqlfunc
-    from app.database.models import WikiLink, Project
+    from sqlalchemy import func as sqlfunc
+    from sqlalchemy import outerjoin
+
+    from app.database.models import Project, WikiLink
 
     base_filter = WikiPage.slug.notin_([wiki_service.INDEX_SLUG, wiki_service.LOG_SLUG])
 

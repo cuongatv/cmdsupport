@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -19,7 +20,11 @@ from app.database.models import (
 )
 from app.schemas.tasks import TaskCreate, TaskUpdate
 from app.services.audit_service import log_audit
-from app.services.task_constants import INITIAL_TASK_VERSION, MAX_SUBTASK_DEPTH, POSITION_GAP
+from app.services.task_constants import (
+    INITIAL_TASK_VERSION,
+    MAX_SUBTASK_DEPTH,
+    POSITION_GAP,
+)
 
 
 async def create_task(

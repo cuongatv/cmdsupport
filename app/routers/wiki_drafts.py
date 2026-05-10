@@ -17,14 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.database.models import Employee, WikiPage, WikiPageDraft
 from app.services import wiki_service
+from app.services.audit_service import log_audit
 from app.services.auth_service import get_current_user, require_permission
 from app.services.permission_engine import (
     _get_user_permissions,
     get_workspace_role,
-    workspace_role_can,
     has_any_permission,
+    workspace_role_can,
 )
-from app.services.audit_service import log_audit
 
 router = APIRouter()
 

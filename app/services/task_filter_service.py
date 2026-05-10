@@ -10,7 +10,14 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Employee, Task, TaskAssignee, TaskLabelLink, TaskProject, TaskState
+from app.database.models import (
+    Employee,
+    Task,
+    TaskAssignee,
+    TaskLabelLink,
+    TaskProject,
+    TaskState,
+)
 from app.services.task_access_service import can_access_task_project
 
 TaskSortField = Literal["created_at", "updated_at", "due_date", "priority", "title", "position"]

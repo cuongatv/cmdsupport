@@ -17,12 +17,15 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import select, update, or_, exists
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database.models import (
-    Department, Employee, ProjectMember, ProjectSource, Source,
+    Employee,
+    ProjectMember,
+    ProjectSource,
+    Source,
     SourceDepartment,
 )
 
@@ -54,7 +57,7 @@ class MCPAuthService:
         """
         stmt = (
             select(Employee)
-            .where(Employee.mcp_token == token, Employee.is_active == True)
+            .where(Employee.mcp_token == token, Employee.is_active.is_(True))
             .options(
                 selectinload(Employee.department),
                 selectinload(Employee.custom_role),
@@ -79,7 +82,10 @@ class MCPAuthService:
         Compute effective knowledge scope for an employee.
         Uses new permission model v2 (scoped permissions + source_departments).
         """
-        from app.services.permission_engine import get_effective_permissions, get_scope_level
+        from app.services.permission_engine import (
+            get_effective_permissions,
+            get_scope_level,
+        )
 
         permissions = get_effective_permissions(employee)
         project_source_ids = await self._resolve_project_sources(employee.id)
@@ -238,8 +244,9 @@ def apply_scope_filter(query, identity: ResolvedIdentity):
         conditions.append(Source.id.in_([uuid.UUID(s) for s in identity.allowed_source_ids]))
 
     if identity.allowed_knowledge_types is not None:
-        from app.database.models import KnowledgeType
         from sqlalchemy import select as sa_select
+
+        from app.database.models import KnowledgeType
         kt_subq = sa_select(KnowledgeType.id).where(
             KnowledgeType.slug.in_(identity.allowed_knowledge_types)
         )

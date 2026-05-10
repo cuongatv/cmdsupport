@@ -79,7 +79,7 @@ export function UploadSkillDialog({ allDepartments, onUploaded }: UploadSkillDia
       resetForm();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        setConflictFiles((err.data as any)?.detail?.conflicts || []);
+        setConflictFiles((err.data as { detail?: { conflicts?: string[] } } | null)?.detail?.conflicts || []);
       } else {
         alert(err instanceof Error ? err.message : "Tải lên thất bại");
       }

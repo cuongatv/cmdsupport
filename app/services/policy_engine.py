@@ -9,7 +9,6 @@ New code should use app.services.permission_engine directly.
 """
 
 import uuid
-from typing import Optional
 from dataclasses import dataclass
 
 from loguru import logger

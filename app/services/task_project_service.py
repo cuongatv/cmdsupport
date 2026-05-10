@@ -7,7 +7,15 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.database.models import Department, Employee, Project, Task, TaskLabel, TaskProject, TaskState
+from app.database.models import (
+    Department,
+    Employee,
+    Project,
+    Task,
+    TaskLabel,
+    TaskProject,
+    TaskState,
+)
 from app.schemas.tasks import (
     TaskLabelCreate,
     TaskProjectCreate,
@@ -16,7 +24,11 @@ from app.schemas.tasks import (
     TaskStateUpdate,
 )
 from app.services.audit_service import log_audit
-from app.services.task_constants import DEFAULT_STATE_GROUPS, DEFAULT_STATE_NAMES, POSITION_GAP
+from app.services.task_constants import (
+    DEFAULT_STATE_GROUPS,
+    DEFAULT_STATE_NAMES,
+    POSITION_GAP,
+)
 
 
 async def create_task_project(

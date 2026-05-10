@@ -24,7 +24,6 @@ from loguru import logger
 
 from app.ai.providers.base import LLMProvider
 
-
 ANALYSIS_CHARS = 30_000
 
 ANALYSIS_SYSTEM = """\

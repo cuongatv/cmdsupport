@@ -13,7 +13,6 @@ import uuid
 from typing import Optional
 
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.registry import ProviderRegistry
@@ -22,7 +21,6 @@ from app.database.models import KnowledgeType, Source
 from app.services.image_service import ImageInfo, extract_images
 from app.services.source_outline import assemble_full_text, build_outline
 from app.services.storage_service import storage_service
-
 
 # ---------------------------------------------------------------------------
 # Ingestion pipeline
@@ -198,6 +196,7 @@ async def _extract_text_from_file(file_data: bytes, file_name: str) -> list[dict
 
     if ext == "docx":
         import io
+
         import mammoth
         try:
             result = mammoth.extract_raw_text(io.BytesIO(file_data))

@@ -40,7 +40,7 @@ export function AddTagsDialog({ onTagsAdded }: AddTagsDialogProps) {
       setInputValue("");
       onTagsAdded();
     } catch (error) {
-      const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
+      const msg = error instanceof ApiError ? (error.data as { detail?: string } | null)?.detail || error.message : "Unknown error";
       alert("Thêm tag thất bại: " + msg);
     } finally {
       setLoading(false);

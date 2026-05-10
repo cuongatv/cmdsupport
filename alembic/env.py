@@ -10,10 +10,10 @@ from pathlib import Path
 # Ensure the project root is on sys.path so 'app' module can be found
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
 from app.config import settings
 from app.database.models import Base
 

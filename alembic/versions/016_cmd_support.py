@@ -10,8 +10,9 @@ import uuid
 from pathlib import Path
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
+
 from alembic import op
-from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 
 revision = "016"
 down_revision = "015"

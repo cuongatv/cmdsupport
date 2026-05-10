@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.database.models import KnowledgeType, Employee
+from app.database.models import Employee, KnowledgeType
 from app.services.auth_service import require_permission
 
 router = APIRouter()
@@ -60,8 +60,9 @@ class KnowledgeTypeOut(BaseModel):
 @router.get("/knowledge-types", response_model=list[KnowledgeTypeOut])
 async def list_knowledge_types(db: AsyncSession = Depends(get_db)):
     """List all knowledge types, ordered by sort_order."""
-    from app.database.models import Source
     from sqlalchemy import func
+
+    from app.database.models import Source
 
     stmt = select(KnowledgeType).order_by(KnowledgeType.sort_order, KnowledgeType.name)
     result = await db.execute(stmt)

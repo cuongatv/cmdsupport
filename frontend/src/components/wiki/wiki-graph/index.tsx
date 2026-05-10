@@ -217,7 +217,7 @@ export function WikiGraph({
     }
     // Assign per-node target
     for (const n of nodes) {
-      (n as any)._targetX = componentTargetX.get(slugToComponent.get(n.slug) ?? 0) ?? dimensions.w / 2;
+      (n as GraphNode & { _targetX?: number })._targetX = componentTargetX.get(slugToComponent.get(n.slug) ?? 0) ?? dimensions.w / 2;
     }
 
     // Stop previous simulation if any
@@ -235,7 +235,7 @@ export function WikiGraph({
       )
       .force("charge", forceManyBody().strength(mini ? -60 : -250))
       // Per-cluster X target so disconnected clusters separate
-      .force("x", forceX<GraphNode>((d: any) => d._targetX ?? dimensions.w / 2).strength(0.05))
+      .force("x", forceX<GraphNode>((d: GraphNode & { _targetX?: number }) => d._targetX ?? dimensions.w / 2).strength(0.05))
       .force("y", forceY<GraphNode>(dimensions.h / 2).strength(0.03))
       .force("collide", forceCollide<GraphNode>((d) => nodeRadius(d.degree ?? 0, mini) + 6))
       .alphaDecay(0.05)

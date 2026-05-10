@@ -4,7 +4,6 @@ Uploads extracted images to MinIO and maps them to text chunks.
 """
 
 import io
-import uuid
 from typing import Optional
 
 from loguru import logger

@@ -128,7 +128,7 @@ export default function SkillDetailPage() {
         window.location.reload();
       }
     } catch (error) {
-      const msg = error instanceof ApiError ? (error.data as any)?.detail : "Upload failed";
+      const msg = error instanceof ApiError ? (error.data as { detail?: string } | null)?.detail : "Upload failed";
       alert("Error: " + msg);
     } finally {
       setIsUploading(false);
@@ -307,7 +307,7 @@ export default function SkillDetailPage() {
                   onChange={handleZipUpload}
                 />
                 <p className="text-[10px] text-muted-foreground/60 mt-2 italic leading-tight">
-                  ZIP filename must be exactly <span className="font-bold text-primary">"{skill.name}.zip"</span>
+                  ZIP filename must be exactly <span className="font-bold text-primary">&quot;{skill.name}.zip&quot;</span>
                 </p>
               </section>
             )}

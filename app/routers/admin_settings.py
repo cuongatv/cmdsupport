@@ -5,15 +5,14 @@ Admin settings router — provider config, connection testing, dashboard stats.
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.database.models import Source, Department, Employee
+from app.database.models import Department, Employee, Source
 from app.database.repository import Repository
-from app.services.auth_service import get_current_user, require_permission
 from app.services.audit_service import log_audit
+from app.services.auth_service import get_current_user, require_permission
 
 router = APIRouter()
 

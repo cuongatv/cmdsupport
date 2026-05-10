@@ -25,9 +25,8 @@ from app.database.models import (
     ScopeMembership,
     ScopeRole,
     ScopeType,
-    ROLE_HIERARCHY,
 )
-from app.services.auth_service import get_current_user, require_admin
+from app.services.auth_service import get_current_user
 from app.services.policy_engine import PolicyEngine
 
 router = APIRouter(tags=["scopes"])

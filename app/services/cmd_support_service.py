@@ -10,10 +10,15 @@ from typing import Optional
 
 from fastapi import HTTPException
 from loguru import logger
-from sqlalchemy import select, func, desc
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ai.cmd_support_prompts import (
+    PROMPT_VERSION,
+    SYSTEM_PROMPT_VI,
+    build_user_prompt,
+)
 from app.database.models import (
     AuditLog,
     CmdAdvisorySession,
@@ -21,9 +26,7 @@ from app.database.models import (
     Industry,
     Province,
 )
-from app.ai.cmd_support_prompts import PROMPT_VERSION, SYSTEM_PROMPT_VI, build_user_prompt
 from app.services.audit_service import log_audit
-
 
 # Sentinel UUID for anonymous audit log entries (principal_id is NOT NULL)
 _ANONYMOUS_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
