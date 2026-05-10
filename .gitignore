@@ -24,10 +24,10 @@ ENV/
 .env
 .env.local
 
-# Docker volumes
-pg_data/
-minio_data/
-data/
+# Docker volumes (root-level only — do NOT match app/data/ which holds seed JSON)
+/pg_data/
+/minio_data/
+/data/
 
 # OS
 .DS_Store
