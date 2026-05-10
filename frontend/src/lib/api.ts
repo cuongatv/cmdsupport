@@ -3,7 +3,13 @@
  * All API calls go through this module.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL !== undefined ? process.env.NEXT_PUBLIC_API_URL : "http://localhost:5055";
+// Default to empty so all calls are SAME-ORIGIN. Next.js rewrites in
+// next.config.ts proxy /api/* server-side to INTERNAL_API_URL. This avoids
+// CORS, mixed-content, and Chrome's Private Network Access prompt that fires
+// when a public-origin page tries to fetch from a private/loopback address.
+// Override only for dev when running `next dev` against a separate API server
+// (e.g. NEXT_PUBLIC_API_URL=http://localhost:5055).
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const REQUEST_TIMEOUT_MS = 30_000;
 
 type RequestOptions = {

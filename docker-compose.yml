@@ -125,14 +125,18 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5055}
+        # Empty default => browser uses same-origin /api/* paths, which are
+        # proxied server-side by Next.js rewrites (see frontend/next.config.ts)
+        # to INTERNAL_API_URL. Override only when serving the API from a
+        # separate public origin (e.g. https://api.example.com).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
     image: cmd-support-frontend:latest
     container_name: cmd_frontend
     restart: always
     ports:
       - "3119:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:5055}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
       - INTERNAL_API_URL=http://api:5055
     depends_on:
       api:
