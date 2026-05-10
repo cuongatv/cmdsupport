@@ -100,7 +100,18 @@ jobs:
 
             echo "==> Building & starting containers"
             docker compose pull --ignore-pull-failures || true
-            docker compose up -d --build --remove-orphans
+            if ! docker compose up -d --build --remove-orphans; then
+              echo "ERROR: docker compose up failed. Dumping logs for debugging:"
+              echo "----- api logs -----"
+              docker compose logs --tail=200 api || true
+              echo "----- worker logs -----"
+              docker compose logs --tail=80 worker || true
+              echo "----- postgres logs -----"
+              docker compose logs --tail=40 postgres || true
+              echo "----- compose ps -----"
+              docker compose ps -a || true
+              exit 1
+            fi
 
             echo "==> Waiting for API health"
             for i in $(seq 1 30); do
@@ -112,7 +123,8 @@ jobs:
               sleep 5
               if [ "$i" = "30" ]; then
                 echo "ERROR: API failed to become healthy in time"
-                docker compose logs --tail=100 api
+                docker compose logs --tail=200 api
+                docker compose ps -a
                 exit 1
               fi
             done
