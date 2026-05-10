@@ -17,7 +17,18 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    const apiBase = process.env.INTERNAL_API_URL ?? 'http://127.0.0.1:5055';
+    // `rewrites()` is evaluated at BUILD TIME for the standalone output, so
+    // INTERNAL_API_URL must be readable when `next build` runs. Inside the
+    // Dockerfile builder stage that env var is NOT set, so we fall back based
+    // on NODE_ENV (which Next forces to 'production' during `next build`):
+    //   - production build (docker)  -> http://api:5055   (compose service DNS)
+    //   - dev build / `next dev`     -> http://127.0.0.1:5055 (local API)
+    // Override explicitly with INTERNAL_API_URL when needed.
+    const apiBase =
+      process.env.INTERNAL_API_URL ??
+      (process.env.NODE_ENV === 'production'
+        ? 'http://api:5055'
+        : 'http://127.0.0.1:5055');
     return [
       {
         source: '/api/:path*',
