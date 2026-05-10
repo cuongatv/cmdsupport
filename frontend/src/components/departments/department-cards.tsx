@@ -24,7 +24,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
   const [scopeDept, setScopeDept] = React.useState<Department | null>(null);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this department and all its employees?")) return;
+    if (!confirm("Xoá đơn vị này và tất cả người dùng thuộc đơn vị?")) return;
     await api(`/api/departments/${id}`, { method: "DELETE" });
     onRefresh();
   };
@@ -43,8 +43,8 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
     return (
       <EmptyState
         icon="business"
-        title="No departments"
-        description="Create your first department to organize employees"
+        title="Chưa có đơn vị"
+        description="Tạo đơn vị đầu tiên để tổ chức người dùng"
       />
     );
   }
@@ -68,7 +68,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
                   {dept.name}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  {dept.employee_count} employee{dept.employee_count !== 1 ? "s" : ""}
+                  {dept.employee_count} người dùng
                 </p>
               </div>
             </div>
@@ -88,7 +88,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs"
             >
               <span className="material-symbols-outlined text-sm mr-1">lock</span>
-              Access
+              Quyền
             </Button>
             <Button
               variant="ghost"
@@ -97,7 +97,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs"
             >
               <span className="material-symbols-outlined text-sm mr-1">edit</span>
-              Edit
+              Sửa
             </Button>
             <Button
               variant="ghost"
@@ -106,7 +106,7 @@ export function DepartmentCards({ departments, loading, onEdit, onRefresh }: Pro
               className="text-xs text-destructive hover:text-destructive"
             >
               <span className="material-symbols-outlined text-sm mr-1">delete</span>
-              Delete
+              Xoá
             </Button>
           </div>
         </div>

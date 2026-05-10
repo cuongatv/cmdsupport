@@ -34,6 +34,18 @@ ALL_PERMISSIONS: list[str] = [
     "skill:edit:own_dept", "skill:edit:all",
     "skill:delete:own_dept", "skill:delete:all",
 
+    # Tasks
+    "task:read:own_dept", "task:read:all",
+    "task:create:own_dept", "task:create:all",
+    "task:edit:own_dept", "task:edit:all",
+    "task:delete:own_dept", "task:delete:all",
+    "task_project:manage:own_dept", "task_project:manage:all",
+
+    # CMD Support
+    "cmd:advice:create",
+    "cmd:advice:read:own",
+    "cmd:advice:read:all",
+
     # Organization
     "org:departments:read", "org:departments:manage",
     "org:employees:read", "org:employees:manage",
@@ -56,6 +68,8 @@ EMPLOYEE_DEFAULT_PERMISSIONS: list[str] = [
     "wiki:read:own_dept",
     "wiki:write:own_dept",
     "skill:read:own_dept",
+    "task:read:own_dept",
+    "task:create:own_dept",
 ]
 
 # ---------------------------------------------------------------------------
@@ -79,6 +93,18 @@ PERMISSION_GROUPS: dict[str, list[str]] = {
         "skill:create:own_dept", "skill:create:all",
         "skill:edit:own_dept", "skill:edit:all",
         "skill:delete:own_dept", "skill:delete:all",
+    ],
+    "Tasks": [
+        "task:read:own_dept", "task:read:all",
+        "task:create:own_dept", "task:create:all",
+        "task:edit:own_dept", "task:edit:all",
+        "task:delete:own_dept", "task:delete:all",
+        "task_project:manage:own_dept", "task_project:manage:all",
+    ],
+    "CMD Support": [
+        "cmd:advice:create",
+        "cmd:advice:read:own",
+        "cmd:advice:read:all",
     ],
     "Organization": [
         "org:departments:read", "org:departments:manage",
@@ -121,6 +147,23 @@ PERMISSION_LABELS: dict[str, str] = {
     "skill:edit:all":         "Edit all AI skills",
     "skill:delete:own_dept":  "Delete AI skills (own department)",
     "skill:delete:all":       "Delete all AI skills",
+
+    # Tasks
+    "task:read:own_dept":     "View tasks (own department + global)",
+    "task:read:all":          "View all tasks",
+    "task:create:own_dept":   "Create tasks (own department)",
+    "task:create:all":        "Create tasks (all departments)",
+    "task:edit:own_dept":     "Edit tasks (own department)",
+    "task:edit:all":          "Edit all tasks",
+    "task:delete:own_dept":   "Delete tasks (own department)",
+    "task:delete:all":        "Delete all tasks",
+    "task_project:manage:own_dept": "Manage task projects (own department)",
+    "task_project:manage:all":      "Manage all task projects",
+
+    # CMD Support
+    "cmd:advice:create":      "Tạo phiên tư vấn KHDN",
+    "cmd:advice:read:own":    "Xem phiên tư vấn của mình",
+    "cmd:advice:read:all":    "Xem tất cả phiên tư vấn",
 
     # Organization
     "org:departments:read":   "View departments",
@@ -168,8 +211,25 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "skill:delete:own_dept":  "Delete AI skills belonging to your department.",
     "skill:delete:all":       "Delete any AI skill. Dangerous.",
 
+    # Tasks
+    "task:read:own_dept":     "View tasks assigned to your department and global tasks.",
+    "task:read:all":          "View all tasks across every department.",
+    "task:create:own_dept":   "Create tasks for your department.",
+    "task:create:all":        "Create tasks for any department.",
+    "task:edit:own_dept":     "Edit tasks in your department.",
+    "task:edit:all":          "Edit any task in the system.",
+    "task:delete:own_dept":   "Delete tasks in your department.",
+    "task:delete:all":        "Delete any task. Dangerous.",
+    "task_project:manage:own_dept": "Manage task projects in your department.",
+    "task_project:manage:all":      "Manage any task project in the system.",
+
+    # CMD Support
+    "cmd:advice:create":         "Tạo phiên tư vấn sản phẩm dịch vụ cho khách hàng doanh nghiệp, sử dụng AI phân tích từ wiki nội bộ.",
+    "cmd:advice:read:own":       "Xem lại các phiên tư vấn KHDN mà bạn đã tạo.",
+    "cmd:advice:read:all":       "Xem tất cả phiên tư vấn KHDN trong hệ thống, bao gồm của nhân viên khác.",
+
     # Organization
-    "org:departments:read":   "View the list of departments and their details. Required for most admin views.",
+    "org:departments:read":      "View the list of departments and their details. Required for most admin views.",
     "org:departments:manage": "Create, edit, and delete departments. Changes affect document access scopes.",
     "org:employees:read":     "View the employee directory including names, emails, and departments.",
     "org:employees:manage":   "Create accounts, edit profiles, and deactivate employees. Includes role assignment.",
@@ -188,7 +248,7 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
 # Preset role templates (for seed data / quick setup)
 # ---------------------------------------------------------------------------
 
-ROLE_PRESETS: dict[str, dict] = {
+ROLE_PRESETS: dict[str, dict[str, object]] = {
     "Viewer": {
         "description": "Basic read-only access to own department documents and wiki",
         "permissions": ["doc:read:own_dept", "wiki:read:own_dept", "skill:read:own_dept", "org:departments:read"],
@@ -200,6 +260,7 @@ ROLE_PRESETS: dict[str, dict] = {
             "doc:read:own_dept", "doc:create:own_dept",
             "wiki:read:own_dept", "wiki:write:own_dept",
             "skill:read:own_dept", "skill:create:own_dept",
+            "cmd:advice:create", "cmd:advice:read:own",
             "org:departments:read",
         ],
         "is_system": True,
@@ -211,6 +272,7 @@ ROLE_PRESETS: dict[str, dict] = {
             "doc:edit:own_dept", "doc:delete:own_dept",
             "wiki:read:own_dept", "wiki:write:own_dept", "wiki:delete:own_dept",
             "skill:read:own_dept", "skill:create:own_dept", "skill:edit:own_dept", "skill:delete:own_dept",
+            "cmd:advice:create", "cmd:advice:read:own",
             "org:departments:read",
         ],
         "is_system": True,
@@ -221,6 +283,7 @@ ROLE_PRESETS: dict[str, dict] = {
             "doc:read:all", "doc:create:all", "doc:edit:all", "doc:delete:all",
             "wiki:read:all", "wiki:write:all", "wiki:delete:all",
             "skill:read:all", "skill:create:all", "skill:edit:all", "skill:delete:all",
+            "cmd:advice:create", "cmd:advice:read:all",
         ],
         "is_system": True,
     },

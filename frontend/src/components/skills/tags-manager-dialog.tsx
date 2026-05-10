@@ -80,7 +80,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
 
   const handleDelete = async () => {
     if (selectedTags.length === 0) return;
-    if (!confirm(`Are you sure you want to delete ${selectedTags.length} tags?`)) return;
+    if (!confirm(`Bạn có chắc muốn xoá ${selectedTags.length} tag?`)) return;
 
     try {
       await api("/api/tags/bulk", {
@@ -91,7 +91,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
       if (onUpdate) onUpdate();
     } catch (error) {
       const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
-      alert("Failed to delete tags: " + msg);
+      alert("Xoá tag thất bại: " + msg);
     }
   };
 
@@ -103,7 +103,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
         render={
           <Button variant="outline" className="shadow-sahara border-primary/20 hover:border-primary/50 text-primary">
             <span className="material-symbols-outlined text-base mr-1">sell</span>
-            Manage Tags
+            Quản lý Tag
           </Button>
         }
       />
@@ -111,7 +111,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">sell</span>
-            Tags Management
+            Quản lý Tag
           </DialogTitle>
         </DialogHeader>
 
@@ -121,7 +121,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
             <div className="relative flex-1">
               <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">search</span>
               <Input 
-                placeholder="Search tags..." 
+                placeholder="Tìm kiếm tag..." 
                 className="pl-8 h-9 text-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -144,11 +144,11 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
                   onChange={toggleSelectAll}
                 />
                 <span className="text-xs font-medium text-muted-foreground uppercase">
-                  {isAllSelected ? "Unselect All" : "Select All"}
+                  {isAllSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
                 </span>
               </div>
               <span className="text-[10px] text-muted-foreground">
-                {selectedTags.length} selected of {total}
+                Đã chọn {selectedTags.length} / {total}
               </span>
             </div>
 
@@ -159,7 +159,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
                 </div>
               ) : tags.length === 0 ? (
                 <div className="col-span-2 py-10 text-center text-xs text-muted-foreground italic">
-                  No tags found.
+                  Không tìm thấy tag.
                 </div>
               ) : (
                 <>
@@ -189,7 +189,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
 
         <DialogFooter className="border-t border-border pt-4 sm:justify-between flex items-center">
           <p className="text-[10px] text-muted-foreground italic">
-            * Selected tags can be deleted permanently.
+            * Các tag đã chọn sẽ bị xoá vĩnh viễn.
           </p>
           <Button 
             variant="destructive" 
@@ -199,7 +199,7 @@ export function TagsManagerDialog({ onUpdate }: TagsManagerDialogProps) {
             className="h-8 px-4"
           >
             <span className="material-symbols-outlined text-sm mr-1">delete</span>
-            Delete ({selectedTags.length})
+            Xoá ({selectedTags.length})
           </Button>
         </DialogFooter>
       </DialogContent>

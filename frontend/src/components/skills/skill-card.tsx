@@ -79,7 +79,7 @@ export function SkillCard({
               ) : (
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
                   <span className="material-symbols-outlined text-[12px]">public</span>
-                  Global
+                  Toàn hệ thống
                 </div>
               )}
               <span className={cn(
@@ -87,7 +87,7 @@ export function SkillCard({
                 skill.status === "active" ? "text-green-500" :
                   skill.status === "deleting" ? "text-destructive animate-pulse" :
                     "text-yellow-500"
-              )}>{skill.status}</span>
+              )}>{skill.status === "active" ? "sẵn sàng" : skill.status === "deleting" ? "đang xoá" : skill.status}</span>
             </div>
           </div>
         </div>
@@ -106,7 +106,7 @@ export function SkillCard({
             onClick={() => onClick?.(skill.slug)}
             disabled={skill.status === "deleting"}
           >
-            Details
+            Chi tiết
           </Button>
           {hasPermission("skills.edit") && (
             <Button
@@ -116,7 +116,7 @@ export function SkillCard({
               onClick={() => onEdit?.(skill.slug)}
               disabled={skill.status === "deleting"}
             >
-              Edit
+              Sửa
             </Button>
           )}
           {hasPermission("skills.delete") && (
@@ -127,7 +127,7 @@ export function SkillCard({
               onClick={() => onDelete(skill.id, skill.name)}
               disabled={skill.status === "deleting"}
             >
-              Delete
+              Xoá
             </Button>
           )}
         </div>

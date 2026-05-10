@@ -79,12 +79,12 @@ export function EditSourceDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl">Edit Document</DialogTitle>
+          <DialogTitle className="text-xl">Sửa tài liệu</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-1.5">
-            <Label>Title</Label>
+            <Label>Tiêu đề</Label>
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -93,7 +93,7 @@ export function EditSourceDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Knowledge Type</Label>
+            <Label>Loại tri thức</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background">
                 {typeId ? (() => { const t = types.find(x => x.id === typeId); return t ? (
@@ -101,10 +101,10 @@ export function EditSourceDialog({
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
                     <span>{t.name}</span>
                   </div>
-                ) : <SelectValue placeholder="No type" />; })() : <SelectValue placeholder="No type" />}
+                ) : <SelectValue placeholder="Không có loại" />; })() : <SelectValue placeholder="Không có loại" />}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No type</SelectItem>
+                <SelectItem value="">Không có loại</SelectItem>
                 {types.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     <div className="flex items-center gap-2">
@@ -119,13 +119,13 @@ export function EditSourceDialog({
 
           {/* Multi-department selection */}
           <div className="flex flex-col gap-1.5">
-            <Label>Departments</Label>
+            <Label>Đơn vị</Label>
             <p className="text-xs text-muted-foreground">
-              Select which departments can access this document. Leave empty for global access.
+              Chọn đơn vị có quyền truy cập tài liệu này. Để trống nếu muốn toàn hệ thống truy cập.
             </p>
             <div className="border rounded-lg p-2 max-h-40 overflow-y-auto bg-background">
               {departments.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No departments available</span>
+                <span className="text-xs text-muted-foreground">Không có đơn vị nào</span>
               ) : (
                 departments.map((d) => (
                   <label
@@ -169,7 +169,7 @@ export function EditSourceDialog({
 
           {/* Visibility / Scope */}
           <div className="flex flex-col gap-1.5">
-            <Label>Visibility</Label>
+            <Label>Phạm vi</Label>
             <Select value={scopeType} onValueChange={(v) => {
               const val = v ?? "global";
               setScopeType(val);
@@ -180,20 +180,20 @@ export function EditSourceDialog({
                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                     {scopeType === "global" ? "public" : "folder_special"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? "Workspace" : scopeType}</span>
+                   <span className="capitalize">{scopeType === "project" ? "Không gian nghiệp vụ" : "Toàn hệ thống"}</span>
                 </div>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="global">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    Global
+                    Toàn hệ thống
                   </div>
                 </SelectItem>
                 <SelectItem value="project">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    Workspace
+                    Không gian nghiệp vụ
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -202,10 +202,10 @@ export function EditSourceDialog({
 
           {scopeType === "project" && (
             <div className="flex flex-col gap-1.5">
-              <Label>Target Workspace</Label>
+              <Label>Không gian nghiệp vụ đích</Label>
               <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
                 <SelectTrigger className="bg-background">
-                  <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
+                   <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Chọn...") : "Chọn không gian nghiệp vụ..."}</span>
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((p) => (
@@ -225,7 +225,7 @@ export function EditSourceDialog({
           )}
 
           <div className="flex justify-end gap-2 mt-2">
-            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" onClick={onClose}>Huỷ</Button>
             <Button
               disabled={saving}
               onClick={handleSave}
@@ -234,9 +234,9 @@ export function EditSourceDialog({
               {saving ? (
                <span className="flex items-center gap-2">
                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                 Saving...
+                 Đang lưu...
                </span>
-              ) : "Save"}
+              ) : "Lưu"}
             </Button>
           </div>
         </div>

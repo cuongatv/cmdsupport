@@ -1,6 +1,6 @@
 # Wiki System
 
-The Arkon wiki is the primary knowledge surface. Instead of storing raw document chunks, Arkon compiles documents into structured, interlinked wiki pages — written by an LLM agent, enriched by every new document you add.
+The CMD Support wiki is the primary knowledge surface. Instead of storing raw document chunks, CMD Support compiles documents into structured, interlinked wiki pages — written by an LLM agent, enriched by every new document you add.
 
 ---
 
@@ -184,7 +184,7 @@ When all source documents contributing to a wiki page are deleted, the page is m
 
 ## Knowledge graph
 
-Wiki pages are linked via `[[wikilinks]]` in their content. Arkon extracts these links into a `wiki_links` table, enabling:
+Wiki pages are linked via `[[wikilinks]]` in their content. CMD Support extracts these links into a `wiki_links` table, enabling:
 
 - **Backlinks** — which pages link to this one
 - **Outlinks** — which pages this one links to

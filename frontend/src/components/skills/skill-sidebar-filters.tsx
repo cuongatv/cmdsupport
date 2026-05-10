@@ -31,13 +31,13 @@ export function SkillSidebarFilters({
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-foreground tracking-tight flex items-center gap-2">
             <span className="material-symbols-outlined text-primary/70 text-sm">corporate_fare</span>
-            Department
+            Đơn vị
           </h4>
         </div>
 
         <div className="flex flex-col gap-1 max-h-[250px] overflow-y-auto custom-scrollbar -mx-1 px-1">
           <FilterItem
-            label="All Departments"
+            label="Tất cả đơn vị"
             icon="grid_view"
             active={selectedDepartment === null}
             onClick={() => onSelectDepartment(null)}

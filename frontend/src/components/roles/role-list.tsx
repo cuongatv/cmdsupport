@@ -18,12 +18,12 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
   const labelMap = Object.fromEntries(permissions.map((p) => [p.key, p.label]));
 
   const handleDelete = async (role: Role) => {
-    if (!confirm(`Delete role "${role.name}"? Employees assigned to this role will lose it.`)) return;
+    if (!confirm(`Xoá vai trò "${role.name}"? Người dùng được gán vai trò này sẽ mất quyền.`)) return;
     try {
       await api(`/api/roles/${role.id}`, { method: "DELETE" });
       onRefresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Delete failed");
+      alert(err instanceof Error ? err.message : "Xoá thất bại");
     }
   };
 
@@ -42,8 +42,8 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
       <div className="bg-card rounded-xl border border-border">
         <EmptyState
           icon="admin_panel_settings"
-          title="No roles"
-          description="Create roles to assign permissions to employees"
+          title="Chưa có vai trò"
+          description="Tạo vai trò để gán quyền cho người dùng"
         />
       </div>
     );
@@ -60,7 +60,7 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold">{role.name}</span>
               {role.is_system && (
-                <Badge variant="secondary" className="text-xs">System</Badge>
+                <Badge variant="secondary" className="text-xs">Hệ thống</Badge>
               )}
             </div>
             {role.description && (
@@ -68,7 +68,7 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
             )}
             <div className="flex flex-wrap gap-1.5 mt-1">
               {role.permissions.length === 0 ? (
-                <span className="text-xs text-muted-foreground">No permissions</span>
+                <span className="text-xs text-muted-foreground">Không có quyền</span>
               ) : (
                 role.permissions.map((p) => (
                   <Badge key={p} variant="outline" className="text-xs font-normal">
@@ -82,7 +82,7 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" onClick={() => onEdit(role)}>
               <span className="material-symbols-outlined text-base mr-1">edit</span>
-              Edit
+              Sửa
             </Button>
             {!role.is_system && (
               <Button
@@ -92,7 +92,7 @@ export function RoleList({ roles, loading, permissions, onEdit, onRefresh }: Pro
                 onClick={() => handleDelete(role)}
               >
                 <span className="material-symbols-outlined text-base mr-1">delete</span>
-                Delete
+                Xoá
               </Button>
             )}
           </div>

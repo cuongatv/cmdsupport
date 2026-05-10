@@ -89,7 +89,7 @@ export function SkillTable({
                 setSearchInput(val);
                 onSearch(val);
               }}
-              placeholder="Search skills..."
+              placeholder="Tìm kiếm kỹ năng..."
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[280px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -104,7 +104,7 @@ export function SkillTable({
           </div>
         </div>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {total} skill{total !== 1 ? "s" : ""}
+          {total} kỹ năng
         </span>
       </div>
 
@@ -117,19 +117,19 @@ export function SkillTable({
         ) : skills.length === 0 ? (
           <EmptyState
             icon="smart_toy"
-            title={search ? "No results found" : "No skills found"}
-            description={search ? `No skills matching "${search}"` : "Upload skills to start building your AI library."}
+            title={search ? "Không có kết quả" : "Chưa có kỹ năng"}
+            description={search ? `Không tìm thấy kỹ năng phù hợp "${search}"` : "Tải lên kỹ năng để bắt đầu xây dựng thư viện AI."}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent border-b border-border/50">
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Skill</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Version</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Visibility</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Updated</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Kỹ năng</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Phiên bản</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Phạm vi</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Đơn vị</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Trạng thái</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground">Ngày cập nhật</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground text-right w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -180,7 +180,7 @@ export function SkillTable({
                       ) : (
                         <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
                           <span className="material-symbols-outlined text-[12px]">public</span>
-                          Global
+                          Toàn hệ thống
                         </div>
                       )}
                     </div>
@@ -220,11 +220,11 @@ export function SkillTable({
                       <DropdownMenuContent align="end" className="w-40 rounded-xl shadow-xl border-border">
                         <DropdownMenuItem onClick={() => setUploadSkill(skill)} className="flex items-center gap-2 py-2.5 cursor-pointer">
                           <span className="material-symbols-outlined text-base text-primary">upload_file</span>
-                          Update skill
+                           Cập nhật kỹ năng
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setEditSkill(skill)} className="flex items-center gap-2 py-2.5 cursor-pointer">
                           <span className="material-symbols-outlined text-base">edit</span>
-                          Edit Skill
+                           Sửa kỹ năng
                         </DropdownMenuItem>
                         <DropdownMenuSeparator className="bg-border/50" />
                         <DropdownMenuItem
@@ -232,7 +232,7 @@ export function SkillTable({
                           className="flex items-center gap-2 py-2.5 text-destructive focus:text-destructive cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-base">delete</span>
-                          Delete
+                           Xoá
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -305,12 +305,12 @@ function EditSkillDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-serif">Edit Skill</DialogTitle>
+          <DialogTitle className="text-xl font-serif">Sửa kỹ năng</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Skill Name</Label>
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tên kỹ năng</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -320,7 +320,7 @@ function EditSkillDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Visibility</Label>
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Phạm vi</Label>
             <Select value={scopeType} onValueChange={(v) => setScopeType(v || "global")}>
               <SelectTrigger className="bg-background rounded-xl h-11">
                 <div className="flex items-center gap-2">
@@ -328,7 +328,7 @@ function EditSkillDialog({
                     {scopeType === "global" ? "public" : "corporate_fare"}
                   </span>
                   <span className="capitalize">
-                    {scopeType === "global" ? "Global" : "Department"}
+                    {scopeType === "global" ? "Toàn hệ thống" : "Đơn vị"}
                   </span>
                 </div>
               </SelectTrigger>
@@ -336,13 +336,13 @@ function EditSkillDialog({
                 <SelectItem value="global">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-base text-muted-foreground">public</span>
-                    Global (All Departments)
+                    Toàn hệ thống (Tất cả đơn vị)
                   </div>
                 </SelectItem>
                 <SelectItem value="department">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-base text-muted-foreground">corporate_fare</span>
-                    Specific Departments
+                    Đơn vị cụ thể
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -351,7 +351,7 @@ function EditSkillDialog({
 
           {scopeType === "department" && (
             <div className="flex flex-col gap-1.5 animate-in fade-in slide-in-from-top-2 duration-300">
-              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Departments</Label>
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Đơn vị đích</Label>
               <div className="bg-background rounded-xl border border-border p-3">
                 <div className="max-h-[200px] pr-4 overflow-y-auto custom-scrollbar">
                   <div className="grid grid-cols-1 gap-2">
@@ -377,7 +377,7 @@ function EditSkillDialog({
                       </div>
                     ))}
                     {departments.length === 0 && (
-                      <span className="text-xs text-muted-foreground italic">No departments available</span>
+                      <span className="text-xs text-muted-foreground italic">Không có đơn vị nào</span>
                     )}
                   </div>
                 </div>
@@ -394,7 +394,7 @@ function EditSkillDialog({
           )}
 
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="ghost" onClick={onClose} className="rounded-xl h-11 px-6">Cancel</Button>
+            <Button variant="ghost" onClick={onClose} className="rounded-xl h-11 px-6">Huỷ</Button>
             <Button
               disabled={saving}
               onClick={handleSave}
@@ -403,9 +403,9 @@ function EditSkillDialog({
               {saving ? (
                 <span className="flex items-center gap-2">
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                  Saving...
+                  Đang lưu...
                 </span>
-              ) : "Save Changes"}
+              ) : "Lưu thay đổi"}
             </Button>
           </div>
         </div>
@@ -462,7 +462,7 @@ function UploadVersionDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md rounded-2xl">
         <DialogHeader>
-          <DialogTitle className="text-xl font-serif">Upload New Version</DialogTitle>
+          <DialogTitle className="text-xl font-serif">Tải lên phiên bản mới</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-6 mt-4 items-center py-4">
@@ -471,8 +471,8 @@ function UploadVersionDialog({
           </div>
 
           <div className="text-center space-y-1">
-            <p className="text-sm font-medium text-foreground">Update <span className="text-primary font-bold">{skill.name}</span></p>
-            <p className="text-xs text-muted-foreground px-8">Upload a new ZIP package to replace the current files and create a new version.</p>
+            <p className="text-sm font-medium text-foreground">Cập nhật <span className="text-primary font-bold">{skill.name}</span></p>
+            <p className="text-xs text-muted-foreground px-8">Tải lên gói ZIP mới để thay thế các tệp hiện tại và tạo phiên bản mới.</p>
           </div>
 
           <div className="w-full">

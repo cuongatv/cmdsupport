@@ -7,7 +7,7 @@
 │                        On-Premise Server                         │
 │                                                                  │
 │  ┌──────────────────┐        ┌───────────────────────────────┐  │
-│  │   Admin Portal   │        │        Arkon API              │  │
+│  │   Admin Portal   │        │      CMD Support API          │  │
 │  │   (Next.js)      │──────▶ │        (FastAPI)              │  │
 │  └──────────────────┘        │                               │  │
 │                               │  /api/*   REST endpoints      │  │
@@ -48,7 +48,7 @@ Next.js application. Provides the UI for:
 - AI Skills library
 - Audit log
 
-### Arkon API (`app/`)
+### CMD Support API (`app/`)
 FastAPI application serving two protocols simultaneously:
 
 **REST API** (`/api/*`) — used by the Admin Portal and direct integrations:

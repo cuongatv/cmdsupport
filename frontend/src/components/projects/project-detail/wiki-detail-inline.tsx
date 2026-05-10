@@ -123,7 +123,7 @@ export function WikiDetailInline({
         <p className="text-sm text-muted-foreground">Page not found: {slug}</p>
         <Button variant="outline" size="sm" onClick={onBack}>
           <span className="material-symbols-outlined text-base mr-1">arrow_back</span>
-          Back to list
+          Quay lại danh sách
         </Button>
       </div>
     );
@@ -136,7 +136,7 @@ export function WikiDetailInline({
         <button
           onClick={onBack}
           className="flex items-center justify-center w-8 h-8 rounded-full border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0 shadow-sm"
-          title="Back to pages"
+          title="Quay lại danh sách"
         >
           <span className="material-symbols-outlined text-[18px]">arrow_back</span>
         </button>
@@ -175,7 +175,7 @@ export function WikiDetailInline({
             className="shrink-0 gap-1.5 mt-7"
           >
             <span className="material-symbols-outlined text-sm">edit</span>
-            {canEdit ? "Edit" : "Propose Edit"}
+            {canEdit ? "Sửa" : "Đề xuất sửa"}
           </Button>
         )}
       </div>
@@ -195,13 +195,13 @@ export function WikiDetailInline({
       {mode === "edit" ? (
         <WikiEditor
           initialContent={page.content_md}
-          noteLabel={canEdit ? "Change note" : "Proposal note"}
+          noteLabel={canEdit ? "Ghi chú thay đổi" : "Ghi chú đề xuất"}
           notePlaceholder={
             canEdit
-              ? "Briefly describe what you changed (optional)"
-              : "Describe your proposed change (optional)"
+              ? "Mô tả ngắn gọn nội dung đã thay đổi (tuỳ chọn)"
+              : "Mô tả đề xuất chỉnh sửa của bạn (tuỳ chọn)"
           }
-          saveLabel={canEdit ? "Save Edit" : "Submit Proposal"}
+          saveLabel={canEdit ? "Lưu chỉnh sửa" : "Gửi đề xuất"}
           onSave={canEdit ? handleSaveEdit : handleSaveProposal}
           onCancel={() => setMode("view")}
         />

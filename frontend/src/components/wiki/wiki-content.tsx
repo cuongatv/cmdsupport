@@ -15,8 +15,8 @@ import {
 
 function preprocessWikilinks(md: string): string {
   return md
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "[$2](/wiki/$1)")
-    .replace(/\[\[([^\]]+)\]\]/g, "[$1](/wiki/$1)");
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "[$2](/admin/wiki/$1)")
+    .replace(/\[\[([^\]]+)\]\]/g, "[$1](/admin/wiki/$1)");
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -94,7 +94,7 @@ export function WikiContent({
         <div className="mb-8 rounded-xl border border-border bg-card/50 px-5 py-4">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
             <span className="material-symbols-outlined" style={{ fontSize: 13 }}>toc</span>
-            Contents
+            Mục lục
           </p>
           <nav className="flex flex-col gap-0.5">
             {headings.map((h) => (
@@ -177,8 +177,8 @@ export function WikiContent({
               <p className="text-sm leading-7 text-foreground/90 mb-4">{children}</p>
             ),
             a: ({ href, children }) => {
-              if (href?.startsWith("/wiki/")) {
-                const slug = href.slice("/wiki/".length);
+              if (href?.startsWith("/wiki/") || href?.startsWith("/admin/wiki/")) {
+                const slug = href.startsWith("/admin/wiki/") ? href.slice("/admin/wiki/".length) : href.slice("/wiki/".length);
                 if (onWikiLinkClick) {
                   return (
                     <button

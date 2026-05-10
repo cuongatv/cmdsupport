@@ -18,6 +18,7 @@ from arq.connections import RedisSettings, ArqRedis, create_pool
 from loguru import logger
 
 from app.config import settings
+from app.jobs.task_jobs import task_assignment_notification, task_due_soon_scan
 
 
 def _get_redis_settings() -> RedisSettings:
@@ -532,7 +533,17 @@ async def cleanup_temp_uploads_cron(ctx: dict):
 class WorkerSettings:
     """arq worker configuration."""
 
-    functions = [ingest_file_task, ingest_url_task, reingest_file_task]
+    functions = [
+        ingest_file_task,
+        ingest_url_task,
+        reingest_file_task,
+        task_assignment_notification,
+    ]
+    cron_jobs = [
+        # Scan for tasks due in ~1 day every 15 minutes; service is idempotent
+        # per (task, recipient, UTC calendar day) so multiple runs are safe.
+        cron(task_due_soon_scan, minute={0, 15, 30, 45}),
+    ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs
     job_timeout = settings.worker_job_timeout

@@ -147,7 +147,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       setScopeType("global");
       setScopeId("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Tải lên thất bại");
     } finally {
       setUploading(false);
     }
@@ -157,13 +157,13 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-xl font-heading">Upload Document</DialogTitle>
+          <DialogTitle className="text-xl font-heading">Tải lên tài liệu</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2 overflow-hidden">
           {/* Drag & drop zone */}
           <div className="flex flex-col gap-2 min-w-0">
-            <Label>File</Label>
+            <Label>Tệp</Label>
             <div
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -233,7 +233,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-foreground font-medium">
-                      {dragOver ? "Drop file here" : "Drag & drop or click to browse"}
+                      {dragOver ? "Thả tệp tại đây" : "Kéo thả hoặc nhấn để chọn tệp"}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       PDF, DOCX, XLSX, CSV, TXT, MD, PPTX · Max 50 MB
@@ -246,7 +246,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {/* Knowledge Type */}
           <div className="flex flex-col gap-2">
-            <Label>Knowledge Type</Label>
+            <Label>Loại tri thức</Label>
             <Select value={typeId} onValueChange={(v) => setTypeId(v ?? "")}>
               <SelectTrigger className="bg-background w-full">
                 {typeId ? (() => { const t = types.find(x => x.id === typeId); return t ? (
@@ -254,10 +254,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
                     <span>{t.name}</span>
                   </div>
-                ) : <SelectValue placeholder="Select type (optional)" />; })() : <SelectValue placeholder="Select type (optional)" />}
+                 ) : <SelectValue placeholder="Chọn loại (tuỳ chọn)" />; })() : <SelectValue placeholder="Chọn loại (tuỳ chọn)" />}
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value="">Không chọn</SelectItem>
                 {types.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     <div className="flex items-center gap-2">
@@ -272,7 +272,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {/* Visibility / Scope */}
           <div className="flex flex-col gap-2">
-            <Label>Visibility</Label>
+            <Label>Phạm vi truy cập</Label>
             <Select value={scopeType} onValueChange={(v) => {
               const val = v ?? "global";
               setScopeType(val);
@@ -283,42 +283,42 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                   <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                     {scopeType === "global" ? "public" : scopeType === "department" ? "domain" : "folder_special"}
                   </span>
-                  <span className="capitalize">{scopeType === "project" ? "Workspace" : scopeType}</span>
+                  <span className="capitalize">{scopeType === "global" ? "Toàn bộ" : scopeType === "project" ? "Không gian" : "Đơn vị"}</span>
                 </div>
               </SelectTrigger>
               <SelectContent className="min-w-[220px]">
                 <SelectItem value="global">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>public</span>
-                    Global (All employees)
+                    Toàn bộ (Tất cả người dùng)
                   </div>
                 </SelectItem>
                 <SelectItem value="department">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>domain</span>
-                    Department
+                    Đơn vị
                   </div>
                 </SelectItem>
                 <SelectItem value="project">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined" style={{ fontSize: 14 }}>folder_special</span>
-                    Workspace
+                    Không gian
                   </div>
                 </SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Restrict access or leave as Global to make it readable by everyone.
+              Giới hạn truy cập hoặc để Toàn bộ để mọi người đều đọc được.
             </p>
           </div>
 
           {/* Scope entity picker */}
           {scopeType === "department" && (
             <div className="flex flex-col gap-1.5">
-              <Label>Target Department</Label>
+              <Label>Đơn vị đích</Label>
               <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
                 <SelectTrigger className="bg-background">
-                  <span>{scopeId ? (departments.find(d => d.id === scopeId)?.name ?? "Select...") : "Select department..."}</span>
+                  <span>{scopeId ? (departments.find(d => d.id === scopeId)?.name ?? "Chọn…") : "Chọn đơn vị…"}</span>
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map((d) => (
@@ -333,10 +333,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           {scopeType === "project" && (
             <div className="flex flex-col gap-1.5">
-              <Label>Target Workspace</Label>
+              <Label>Không gian đích</Label>
               <Select value={scopeId} onValueChange={(v) => setScopeId(v ?? "")}>
                 <SelectTrigger className="bg-background">
-                  <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Select...") : "Select workspace..."}</span>
+                  <span>{scopeId ? (projects.find(p => p.id === scopeId)?.name ?? "Chọn…") : "Chọn không gian…"}</span>
                 </SelectTrigger>
                 <SelectContent>
                   {projects.map((p) => (
@@ -358,7 +358,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
 
           <div className="flex justify-end gap-2 mt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              Huỷ
             </Button>
             <Button
               disabled={!file || uploading}
@@ -370,10 +370,10 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
                   <span className="material-symbols-outlined animate-spin text-sm">
                     progress_activity
                   </span>
-                  Uploading...
+                  Đang tải lên…
                 </span>
               ) : (
-                "Upload"
+                "Tải lên"
               )}
             </Button>
           </div>

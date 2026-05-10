@@ -62,7 +62,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
     }
   };
 
-  const authorLabel = draft.author_name ?? "Unknown";
+  const authorLabel = draft.author_name ?? "Không rõ";
   const dateLabel = new Date(draft.created_at).toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -78,7 +78,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-            Pending draft by <span className="font-semibold">{authorLabel}</span>
+            Bản nháp chờ duyệt bởi <span className="font-semibold">{authorLabel}</span>
             <span className="font-normal text-amber-700 dark:text-amber-400"> · {dateLabel}</span>
           </p>
           {draft.note && (
@@ -123,7 +123,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
                 : "text-amber-700 dark:text-amber-400 hover:bg-amber-100/60 dark:hover:bg-amber-800/30"
             }`}
           >
-            {t === "proposed" ? "Proposed" : "Current page"}
+            {t === "proposed" ? "Đề xuất" : "Trang hiện tại"}
           </button>
         ))}
       </div>
@@ -134,7 +134,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
           draft.content_md.trim() ? (
             <WikiContent markdown={draft.content_md} />
           ) : (
-            <p className="text-sm text-amber-700/60 italic">Empty content.</p>
+            <p className="text-sm text-amber-700/60 italic">Nội dung trống.</p>
           )
         ) : null}
       </div>
@@ -143,13 +143,13 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
       {rejecting && (
         <div className="px-4 pb-3">
           <label className="block text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">
-            Rejection reason (required)
+            Lý do từ chối (bắt buộc)
           </label>
           <textarea
             value={rejectNote}
             onChange={(e) => setRejectNote(e.target.value)}
             rows={2}
-            placeholder="Tell the contributor why this draft was rejected…"
+            placeholder="Cho người đóng góp biết lý do từ chối bản nháp này…"
             className="w-full rounded-lg border border-amber-300/70 dark:border-amber-700/40 bg-white/70 dark:bg-black/20 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/40 resize-none placeholder:text-amber-400/70"
           />
         </div>
@@ -170,7 +170,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
               disabled={busy}
               className="border-amber-300/60 dark:border-amber-700/40"
             >
-              Cancel
+              Huỷ
             </Button>
             <Button
               size="sm"
@@ -184,7 +184,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
               ) : (
                 <span className="material-symbols-outlined text-sm">cancel</span>
               )}
-              Confirm Reject
+              Xác nhận từ chối
             </Button>
           </>
         ) : (
@@ -197,7 +197,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
               className="border-amber-300/60 dark:border-amber-700/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100/60 dark:hover:bg-amber-800/30"
             >
               <span className="material-symbols-outlined text-sm mr-1">cancel</span>
-              Reject
+              Từ chối
             </Button>
             <Button
               size="sm"
@@ -210,7 +210,7 @@ export function WikiDraftBanner({ drafts, onApproved, onRejected }: Props) {
               ) : (
                 <span className="material-symbols-outlined text-sm">check_circle</span>
               )}
-              Approve
+              Duyệt
             </Button>
           </>
         )}

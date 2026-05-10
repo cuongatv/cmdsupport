@@ -128,7 +128,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
       setContent(cleanedContent);
     } catch (err) {
       console.error("[FileExplorer] Failed to load file content:", err);
-      setContent("Error loading file content.");
+      setContent("Lỗi khi tải nội dung tệp.");
     } finally {
       setContentLoading(false);
     }
@@ -241,7 +241,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
         <div className="px-5 py-4 border-b border-border bg-secondary/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-sm text-primary/70">account_tree</span>
-            <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Skill Explorer</h4>
+            <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Trình khám phá Skill</h4>
           </div>
           <span className="text-[10px] tabular-nums font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">{files.length}</span>
         </div>
@@ -255,7 +255,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
           ) : files.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 opacity-40 text-center px-4">
               <span className="material-symbols-outlined text-4xl mb-2">folder_open</span>
-              <p className="text-xs font-medium">No files available in this package.</p>
+              <p className="text-xs font-medium">Không có tệp trong gói này.</p>
             </div>
           ) : (
             renderTree(fileTree)
@@ -282,7 +282,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
                     onClick={() => navigator.clipboard.writeText(content)}
                   >
                     <span className="material-symbols-outlined text-xs">content_copy</span>
-                    Copy
+                    Sao chép
                   </Button>
                 )}
                 <div className="flex flex-col items-end">
@@ -299,7 +299,7 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
               {contentLoading ? (
                 <div className="flex flex-col items-center justify-center h-full gap-4">
                   <span className="material-symbols-outlined animate-spin text-primary/30 text-5xl">progress_activity</span>
-                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Loading content...</p>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Đang tải nội dung...</p>
                 </div>
               ) : content ? (
                 selectedPath.toLowerCase().endsWith(".md") ? (
@@ -321,8 +321,8 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
                     <span className="material-symbols-outlined text-5xl">visibility_off</span>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm font-bold uppercase tracking-widest">No Preview Available</p>
-                    <p className="text-xs mt-1 text-muted-foreground">Binary or non-text files cannot be previewed.</p>
+                    <p className="text-sm font-bold uppercase tracking-widest">Không có bản xem trước</p>
+                    <p className="text-xs mt-1 text-muted-foreground">Các tệp nhị phân hoặc không phải văn bản không thể xem trước.</p>
                   </div>
                 </div>
               )}
@@ -334,8 +334,8 @@ export function SkillFileExplorer({ skillId, version }: SkillFileExplorerProps) 
               <span className="material-symbols-outlined text-8xl text-primary/40">account_tree</span>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-serif text-foreground">Skill Explorer</p>
-              <p className="text-xs mt-2 uppercase tracking-widest font-bold">Select a file from the tree to preview its content</p>
+              <p className="text-2xl font-serif text-foreground">Trình khám phá Skill</p>
+              <p className="text-xs mt-2 uppercase tracking-widest font-bold">Chọn một tệp từ cây thư mục để xem nội dung</p>
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
 # MCP & Claude Integration
 
-Arkon exposes a Model Context Protocol (MCP) server at `/mcp`. Employees connect Claude Desktop — or any MCP-compatible client — using a personal token. Claude then has access to the compiled wiki, raw source documents, and AI skills, all filtered to the employee's permission scope.
+CMD Support exposes a Model Context Protocol (MCP) server at `/mcp`. Employees connect Claude Desktop — or any MCP-compatible client — using a personal token. Claude then has access to the compiled wiki, raw source documents, and AI skills, all filtered to the employee's permission scope.
 
 ---
 
@@ -18,13 +18,13 @@ Locate the Claude Desktop config file:
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add the Arkon server:
+Add the CMD Support server:
 
 ```json
 {
   "mcpServers": {
-    "arkon": {
-      "url": "https://your-arkon-server/mcp",
+    "cmd_support": {
+      "url": "https://your-cmd-support-server/mcp",
       "headers": {
         "Authorization": "Bearer ark_xxxxxxxxxxxxxxxxxxxx"
       }
@@ -37,7 +37,7 @@ For local development:
 ```json
 {
   "mcpServers": {
-    "arkon": {
+    "cmd_support": {
       "url": "http://localhost:5055/mcp",
       "headers": {
         "Authorization": "Bearer ark_xxxxxxxxxxxxxxxxxxxx"
@@ -49,7 +49,7 @@ For local development:
 
 ### Step 3 — Restart Claude Desktop
 
-Arkon tools will appear in Claude's tool list. The employee's wiki knowledge is immediately available.
+CMD Support tools will appear in Claude's tool list. The employee's wiki knowledge is immediately available.
 
 ---
 
@@ -246,12 +246,12 @@ A single employee can have multiple active tokens (e.g. Claude Desktop + Claude.
 
 ---
 
-## Using Arkon with Claude.ai (remote MCP)
+## Using CMD Support with Claude.ai (remote MCP)
 
-Claude.ai supports remote MCP servers. Add Arkon as a remote server with the same URL and token:
+Claude.ai supports remote MCP servers. Add CMD Support as a remote server with the same URL and token:
 
 ```
-URL: https://your-arkon-server/mcp
+URL: https://your-cmd-support-server/mcp
 Header: Authorization: Bearer ark_xxxxxxxxxxxxxxxxxxxx
 ```
 
@@ -285,5 +285,5 @@ For the exact wording from the original document, I can check:
 | "Authentication required" error | Check that `Authorization: Bearer ark_...` header is set correctly |
 | "Invalid or inactive token" | Token may have been revoked; generate a new one |
 | Tools return empty results | Employee may have no accessible knowledge types — check their role in the portal |
-| Connection refused | Ensure the Arkon API is running and accessible from the client network |
-| HTTPS certificate errors | Configure a valid TLS certificate on your Arkon server |
+| Connection refused | Ensure the CMD Support API is running and accessible from the client network |
+| HTTPS certificate errors | Configure a valid TLS certificate on your CMD Support server |

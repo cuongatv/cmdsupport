@@ -1,25 +1,28 @@
 import type { Metadata } from "next";
-import { EB_Garamond, Manrope } from "next/font/google";
+import { Roboto } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
-const garamond = EB_Garamond({
-  subsets: ["latin"],
-  variable: "--font-heading",
-  display: "swap",
-});
-
-const manrope = Manrope({
-  subsets: ["latin"],
+const roboto = Roboto({
+  subsets: ["latin", "vietnamese"],
+  weight: ["100", "300", "400", "500", "700", "900"],
+  style: ["normal", "italic"],
   variable: "--font-sans",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Arkon - Knowledge Base Center",
+  title: "CMD Support — Trợ lý Tư vấn KHDN BIDV",
   description:
-    "Centralized knowledge management and access control for Claude ecosystem",
+    "Hệ thống quản lý tri thức và tư vấn khách hàng doanh nghiệp BIDV",
+  icons: {
+    icon: [
+      { url: "/bidv-logo.webp", type: "image/webp" },
+    ],
+    shortcut: "/bidv-logo.webp",
+    apple: "/bidv-logo.webp",
+  },
 };
 
 export default function RootLayout({
@@ -28,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${garamond.variable} ${manrope.variable}`}>
+    <html lang="vi" className={roboto.variable}>
       <head>
         <link
           rel="stylesheet"

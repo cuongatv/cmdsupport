@@ -71,7 +71,7 @@ export function SkillSearchDialog({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search AI skills by name, description or tags..."
+            placeholder="Tìm kiếm AI Skills theo tên, mô tả hoặc tag..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -94,14 +94,14 @@ export function SkillSearchDialog({
                 search_off
               </span>
               <p className="text-sm text-muted-foreground">
-                {query ? `No skills matching "${query}"` : "No skills found."}
+                {query ? `Không tìm thấy skill phù hợp "${query}"` : "Không có skill nào."}
               </p>
             </div>
           ) : (
             <div className="flex flex-col">
               <div className="px-4 py-2">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  Results ({filtered.length})
+                  Kết quả ({filtered.length})
                 </span>
               </div>
               {filtered.slice(0, 50).map((skill) => (
@@ -140,15 +140,15 @@ export function SkillSearchDialog({
         <div className="border-t border-border/50 px-4 py-3 flex items-center gap-4 text-[10px] text-muted-foreground bg-secondary/10">
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[9px] shadow-sm">↵</kbd>
-            select
+            chọn
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[9px] shadow-sm">↑↓</kbd>
-            navigate
+            di chuyển
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[9px] shadow-sm">Esc</kbd>
-            close
+            đóng
           </span>
         </div>
       </DialogContent>

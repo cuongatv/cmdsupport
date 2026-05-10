@@ -24,9 +24,9 @@ type Props = {
   onNodeClick?: (slug: string) => void;
 };
 
-const EDGE_COLOR = "rgba(120,112,106,0.35)";
-const EDGE_HIGHLIGHT = "#c2652a";
-const LABEL_COLOR = "#3a302a";
+const EDGE_COLOR = "rgba(95,118,118,0.35)";
+const EDGE_HIGHLIGHT = "#006B68";
+const LABEL_COLOR = "#0F2A2A";
 
 export function WikiGraph({
   nodes: rawNodes,
@@ -318,7 +318,7 @@ export function WikiGraph({
   const scopeCounts = React.useMemo(() => {
     const counts: Record<string, number> = {};
     for (const n of rawNodes) {
-      const label = n.scope_type === "project" ? (n.scope_name || "Workspace") : "Global";
+      const label = n.scope_type === "project" ? (n.scope_name || "Không gian nghiệp vụ") : "Toàn hệ thống";
       counts[label] = (counts[label] ?? 0) + 1;
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -328,7 +328,7 @@ export function WikiGraph({
     if (onNodeClick) {
       onNodeClick(slug);
     } else {
-      router.push(`/wiki/${slug}`);
+      router.push(`/admin/wiki/${slug}`);
     }
   };
 
@@ -336,7 +336,7 @@ export function WikiGraph({
     <div
       ref={containerRef}
       className={`relative w-full overflow-hidden ${mini ? "rounded-xl border border-border" : ""}`}
-      style={{ height: height ?? "100%", background: "var(--color-background, #faf5ee)" }}
+      style={{ height: height ?? "100%", background: "var(--color-background, #FDFFFF)" }}
     >
       <svg
         ref={svgRef}
@@ -478,7 +478,7 @@ export function WikiGraph({
                 {/* Solid background to fully occlude edges behind */}
                 <circle
                   r={isHovered ? r * 1.3 + 1 : r + 1}
-                  fill="var(--color-background, #faf5ee)"
+                  fill="var(--color-background, #FDFFFF)"
                   opacity={isDimmed ? 0 : 1}
                   style={{ transition: "r 200ms ease" }}
                 />
@@ -487,7 +487,7 @@ export function WikiGraph({
                   r={isHovered ? r * 1.3 : r}
                   fill={color}
                   opacity={isDimmed ? 0.15 : 1}
-                  stroke={isCenter ? "#3a302a" : isHovered ? color : "rgba(255,255,255,0.8)"}
+                  stroke={isCenter ? "#0F2A2A" : isHovered ? color : "rgba(255,255,255,0.8)"}
                   strokeWidth={isCenter ? 2.5 : isHovered ? 2 : 1}
                   style={{ transition: "r 200ms ease, opacity 200ms ease" }}
                 />
@@ -526,8 +526,8 @@ export function WikiGraph({
             left: Math.min(tooltip.x + 12, dimensions.w - 200),
             top: Math.max(tooltip.y - 8, 8),
             background: "var(--color-card, #fff)",
-            color: "var(--color-foreground, #3a302a)",
-            border: "1px solid var(--color-border, rgba(216,208,200,0.6))",
+            color: "var(--color-foreground, #0F2A2A)",
+            border: "1px solid var(--color-border, rgba(15,42,42,0.10))",
             maxWidth: 220,
           }}
         >
@@ -538,7 +538,7 @@ export function WikiGraph({
               style={{ background: wikiTypeColor(tooltip.type) }}
             />
             <span className="capitalize">{tooltip.type}</span>
-            <span className="ml-auto">{tooltip.degree} links</span>
+            <span className="ml-auto">{tooltip.degree} liên kết</span>
           </div>
           {tooltip.scopeType && (
             <div className="flex items-center gap-1.5 mt-1 pt-1 border-t border-border/50 text-muted-foreground">
@@ -546,7 +546,7 @@ export function WikiGraph({
                 {tooltip.scopeType === "project" ? "folder_special" : "public"}
               </span>
               <span className="truncate">
-                {tooltip.scopeType === "project" ? (tooltip.scopeName || "Workspace") : "Global"}
+                {tooltip.scopeType === "project" ? (tooltip.scopeName || "Không gian nghiệp vụ") : "Toàn hệ thống"}
               </span>
             </div>
           )}
@@ -556,7 +556,7 @@ export function WikiGraph({
       {/* Legend */}
       {!mini && (
         <div className="absolute bottom-3 left-3 rounded-xl border border-border bg-card/90 backdrop-blur-sm px-3 py-2.5 text-xs shadow-sm max-w-[240px]">
-          <div className="mb-1.5 font-semibold text-foreground text-xs">Node Types</div>
+          <div className="mb-1.5 font-semibold text-foreground text-xs">Loại nút</div>
           <div className="flex flex-col gap-1">
             {Object.entries(typeCounts)
               .sort((a, b) => b[1] - a[1])
@@ -583,7 +583,7 @@ export function WikiGraph({
           {/* Scope legend */}
           {scopeCounts.length > 0 && (
             <>
-              <div className="mt-2 pt-2 border-t border-border/50 mb-1.5 font-semibold text-foreground text-xs">Scope</div>
+              <div className="mt-2 pt-2 border-t border-border/50 mb-1.5 font-semibold text-foreground text-xs">Phạm vi</div>
               <div className="flex flex-col gap-1">
                 {scopeCounts.map(([scope, count]) => (
                   <div
@@ -591,7 +591,7 @@ export function WikiGraph({
                     className="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent/30 transition-colors"
                   >
                     <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: 12 }}>
-                      {scope === "Global" ? "public" : "folder_special"}
+                       {scope === "Toàn hệ thống" ? "public" : "folder_special"}
                     </span>
                     <span className="text-muted-foreground truncate">{scope}</span>
                     <span className="text-muted-foreground/60 ml-auto tabular-nums">{count}</span>
@@ -609,7 +609,7 @@ export function WikiGraph({
           <button
             onClick={() => setZoom((z) => Math.min(5, z * 1.2))}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-            title="Zoom In"
+            title="Phóng to"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
           </button>
@@ -619,7 +619,7 @@ export function WikiGraph({
           <button
             onClick={() => setZoom((z) => Math.max(0.2, z / 1.2))}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-            title="Zoom Out"
+            title="Thu nhỏ"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>remove</span>
           </button>
@@ -627,7 +627,7 @@ export function WikiGraph({
           <button
             onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
-            title="Reset View"
+            title="Đặt lại"
           >
             <span className="material-symbols-outlined" style={{ fontSize: 14 }}>fit_screen</span>
           </button>

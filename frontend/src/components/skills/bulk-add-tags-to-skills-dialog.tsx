@@ -56,7 +56,7 @@ export function BulkAddTagsToSkillsDialog({
       onOpenChange(false);
     } catch (error) {
       const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
-      alert("Failed to add tags to skills: " + msg);
+      alert("Thêm tag cho skill thất bại: " + msg);
     } finally {
       setLoading(false);
     }
@@ -103,14 +103,14 @@ export function BulkAddTagsToSkillsDialog({
     }}>
       <DialogContent className="sm:max-w-[450px]">
         <DialogHeader>
-          <DialogTitle>Add Tags to {skillIds.length} Skills</DialogTitle>
+          <DialogTitle>Thêm Tag cho {skillIds.length} Skill</DialogTitle>
           <DialogDescription>
-            Enter or select tags. These will be added to all selected skills.
+            Nhập hoặc chọn tag. Các tag này sẽ được thêm vào tất cả skill đã chọn.
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4 grid gap-2 relative">
-          <Label>Tags</Label>
+          <Label>Tag</Label>
           <div 
             className={cn(
               "flex flex-wrap gap-1.5 p-2 min-h-[42px] border border-border rounded-md bg-secondary/5 transition-all cursor-text",
@@ -138,7 +138,7 @@ export function BulkAddTagsToSkillsDialog({
               ref={inputRef}
               type="text"
               className="flex-1 bg-transparent border-none outline-none text-sm min-w-[120px] py-0.5"
-              placeholder={selectedTags.length === 0 ? "Type to add or search..." : ""}
+              placeholder={selectedTags.length === 0 ? "Nhập để thêm hoặc tìm kiếm..." : ""}
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -162,9 +162,9 @@ export function BulkAddTagsToSkillsDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Huỷ</Button>
           <Button disabled={loading || selectedTags.length === 0} onClick={handleSave}>
-            {loading ? "Adding..." : "Add Tags"}
+            {loading ? "Đang thêm..." : "Thêm Tag"}
           </Button>
         </DialogFooter>
       </DialogContent>

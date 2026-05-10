@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # --- Database ---
     database_url: str = Field(
-        default="postgresql+asyncpg://arkon:arkon_secret@localhost:5432/arkon",
+        default="postgresql+asyncpg://arkon:arkon_secret@localhost:5432/cmd_support",
         description="PostgreSQL connection string (async)",
     )
 
@@ -28,21 +28,34 @@ class Settings(BaseSettings):
         description="Secret key for signing JWT tokens and encrypting config values",
     )
     default_admin_email: str = Field(
-        default="admin@arkon.local",
+        default="admin@cmdsupport.com",
         description="Email for the initial admin account (created on first startup)",
     )
     default_admin_password: str = Field(
-        default="admin123",
+        default="cmd@1234",
         description="Password for the initial admin account",
     )
+
+    # --- Storage backend ---
+    storage_backend: str = Field(default="minio", description="'minio' | 's3'")
 
     # --- MinIO ---
     minio_endpoint: str = Field(default="localhost:9000")
     minio_access_key: str = Field(default="minioadmin")
     minio_secret_key: str = Field(default="minioadmin123")
-    minio_bucket: str = Field(default="arkon-files")
+    minio_bucket: str = Field(default="cmd-support-files")
     minio_secure: bool = Field(default=False)
     minio_presign_expiry_hours: int = Field(default=24)
+
+    # --- S3 (when storage_backend='s3') ---
+    s3_region: str = Field(default="ap-southeast-1")
+    s3_bucket: str = Field(default="cmd-support-files")
+    s3_endpoint_url: Optional[str] = Field(default=None, description="Custom endpoint (LocalStack/test)")
+    s3_access_key_id: Optional[str] = Field(default=None, description="If empty, use IAM role/instance profile")
+    s3_secret_access_key: Optional[str] = Field(default=None)
+    s3_use_ssl: bool = Field(default=True)
+    s3_addressing_style: str = Field(default="virtual", description="'virtual' | 'path'")
+    s3_presign_expiry_hours: int = Field(default=24)
 
     # --- CORS ---
     cors_origins: str = Field(default="*")

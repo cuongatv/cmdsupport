@@ -37,18 +37,18 @@ export function SystemHealthCard() {
   return (
     <div className="bg-card rounded-xl p-6 border border-border shadow-sahara">
       <div className="flex justify-between items-center border-b border-border pb-3 mb-4">
-        <h3 className="text-xl tracking-tight text-foreground">System Health</h3>
+        <h3 className="text-xl tracking-tight text-foreground">Tình trạng hệ thống</h3>
         <span className={`text-xs font-medium flex items-center gap-1 ${allHealthy ? "text-primary" : "text-destructive"}`}>
           <span className="material-symbols-outlined text-sm">
             {allHealthy ? "check_circle" : "warning"}
           </span>
-          {allHealthy ? "MCP Server Online" : "Degraded"}
+          {allHealthy ? "MCP Server trực tuyến" : "Có sự cố"}
         </span>
       </div>
 
       <div className="grid grid-cols-3 gap-4">
         <HealthItem label="API" status={health.api} />
-        <HealthItem label="Database" status={health.database} />
+        <HealthItem label="Cơ sở dữ liệu" status={health.database} />
         <HealthItem label="Worker" status={health.worker} />
       </div>
     </div>

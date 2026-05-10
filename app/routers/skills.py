@@ -288,24 +288,22 @@ async def list_skill_files(
         logger.warning(f"No storage_path found for skill {skill_id} version {version}")
         return []
 
-    # List objects in MinIO
-    from app.config import settings
-    logger.info(f"Listing MinIO objects with bucket={settings.minio_bucket} prefix={prefix}")
+    # List objects in storage
     # Ensure prefix ends with / for clean relative path replacement
     prefix_for_list = prefix if prefix.endswith("/") else f"{prefix}/"
-    logger.info(f"[Debug] Listing files: skill_id={skill_id}, version={version}, prefix_for_list={prefix_for_list}")
-    objects = storage_service.client.list_objects(settings.minio_bucket, prefix=prefix_for_list, recursive=True)
+    logger.info(f"Listing files: skill_id={skill_id}, version={version}, prefix={prefix_for_list}")
+    objects = storage_service.list_objects(prefix=prefix_for_list)
     
     files = []
     for obj in objects:
         # Extract relative path from full object name
-        rel_path = obj.object_name.replace(prefix_for_list, "", 1)
+        rel_path = obj["name"].replace(prefix_for_list, "", 1)
         if not rel_path: continue
         
         files.append({
             "path": rel_path,
-            "size": obj.size,
-            "last_modified": obj.last_modified.isoformat() if obj.last_modified else None,
+            "size": obj["size"],
+            "last_modified": obj["last_modified"],
             "is_text": is_text_file(rel_path)
         })
         

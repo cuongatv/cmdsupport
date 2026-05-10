@@ -42,7 +42,7 @@ export function ProjectDetail({ project, isAdmin, onBack }: Props) {
       setAllSources(src.items || []);
     } catch (err) {
       console.error(err);
-      setError("Failed to load project details");
+      setError("Không thể tải chi tiết không gian");
     }
   }, [project.id]);
 
@@ -76,9 +76,9 @@ export function ProjectDetail({ project, isAdmin, onBack }: Props) {
   const availableSources = allSources.filter((s) => !sourceIds.has(s.id));
 
   const tabConfig = [
-    { key: "wiki" as const, label: "Wiki", count: wikiPages.length, icon: "auto_stories" },
-    { key: "sources" as const, label: "Documents", count: sources.length, icon: "description" },
-    { key: "members" as const, label: "Members", count: members.length, icon: "group" },
+    { key: "wiki" as const, label: "Tri thức", count: wikiPages.length, icon: "auto_stories" },
+    { key: "sources" as const, label: "Tài liệu", count: sources.length, icon: "description" },
+    { key: "members" as const, label: "Thành viên", count: members.length, icon: "group" },
   ];
 
   return (
@@ -89,7 +89,7 @@ export function ProjectDetail({ project, isAdmin, onBack }: Props) {
         <div className="flex items-center gap-3 pb-3 shrink-0">
           <Button variant="ghost" size="sm" onClick={onBack} className="h-8 px-2">
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            <span className="ml-1 text-sm">Back</span>
+            <span className="ml-1 text-sm">Quay lại</span>
           </Button>
           <div className="w-px h-5 bg-border" />
           <span className="material-symbols-outlined text-primary text-lg">

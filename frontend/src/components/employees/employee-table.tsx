@@ -97,7 +97,7 @@ export function EmployeeTable({
   };
 
   const handleRevokeToken = async (id: string) => {
-    if (!confirm("Revoke this employee's MCP token?")) return;
+    if (!confirm("Thu hồi MCP token của người dùng này?")) return;
     setActionError(null);
     try {
       await api(`/api/employees/${id}/token`, { method: "DELETE" });
@@ -108,7 +108,7 @@ export function EmployeeTable({
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this employee? This cannot be undone.")) return;
+    if (!confirm("Xoá người dùng này? Hành động không thể hoàn tác.")) return;
     setActionError(null);
     try {
       await api(`/api/employees/${id}`, { method: "DELETE" });
@@ -143,7 +143,7 @@ export function EmployeeTable({
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by name or email..."
+              placeholder="Tìm theo tên hoặc email…"
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[280px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -158,7 +158,7 @@ export function EmployeeTable({
           </div>
         </form>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {total} employee{total !== 1 ? "s" : ""}
+          {total} người dùng
         </span>
       </div>
 
@@ -173,18 +173,18 @@ export function EmployeeTable({
         ) : employees.length === 0 ? (
           <EmptyState
             icon="group"
-            title={search ? "No results found" : "No employees"}
-            description={search ? `No employees matching "${search}"` : "Add employees to give them access to the knowledge base."}
+            title={search ? "Không tìm thấy kết quả" : "Chưa có người dùng"}
+            description={search ? `Không tìm thấy người dùng phù hợp "${search}"` : "Thêm người dùng để cấp quyền truy cập kho tri thức."}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Employee</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">System Role</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Position</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Status</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Người dùng</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Vai trò hệ thống</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Chức vụ</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Đơn vị</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Trạng thái</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">MCP Token</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[60px]"></TableHead>
               </TableRow>
@@ -230,7 +230,7 @@ export function EmployeeTable({
                         }`} />
                       <span className={`text-xs ${emp.is_active ? "text-green-700" : "text-muted-foreground"
                         }`}>
-                        {emp.is_active ? "Active" : "Inactive"}
+                        {emp.is_active ? "Hoạt động" : "Ngưng"}
                       </span>
                     </div>
                   </TableCell>
@@ -238,7 +238,7 @@ export function EmployeeTable({
                     {emp.has_token ? (
                       <span className="text-xs text-green-600 flex items-center gap-1">
                         <span className="material-symbols-outlined text-sm filled">vpn_key</span>
-                        Connected
+                        Đã kết nối
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground/50">—</span>
@@ -253,24 +253,24 @@ export function EmployeeTable({
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => onEdit(emp)}>
                           <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>edit</span>
-                          Edit
+                          Sửa
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleToggle(emp.id)}>
                           <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>
                             {emp.is_active ? "lock" : "lock_open"}
                           </span>
-                          {emp.is_active ? "Deactivate" : "Activate"}
+                          {emp.is_active ? "Vô hiệu hoá" : "Kích hoạt"}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         {emp.has_token ? (
                           <DropdownMenuItem onClick={() => handleRevokeToken(emp.id)}>
                             <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>vpn_key_off</span>
-                            Revoke Token
+                            Thu hồi Token
                           </DropdownMenuItem>
                         ) : (
                           <DropdownMenuItem onClick={() => handleGenerateToken(emp.id)}>
                             <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>vpn_key</span>
-                            Generate Token
+                            Tạo Token
                           </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
@@ -279,7 +279,7 @@ export function EmployeeTable({
                           className="text-destructive"
                         >
                           <span className="material-symbols-outlined text-base mr-2 " style={{ fontSize: 16 }}>delete</span>
-                          Delete
+                          Xoá
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -295,7 +295,7 @@ export function EmployeeTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <span className="text-xs text-muted-foreground">
-            Page {page} of {totalPages}
+            Trang {page} / {totalPages}
           </span>
           <div className="flex items-center gap-1">
             <Button
@@ -360,12 +360,12 @@ export function EmployeeTable({
           <DialogHeader>
             <DialogTitle className="text-xl flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">vpn_key</span>
-              MCP Token Generated
+              MCP Token đã tạo
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 mt-2">
             <p className="text-sm text-muted-foreground">
-              Copy this token and share it securely with the employee. It will not be shown again.
+              Sao chép token này và chia sẻ an toàn với người dùng. Token sẽ không hiển thị lại.
             </p>
             <div className="bg-secondary rounded-lg px-4 py-3 font-mono text-sm break-all select-all">
               {tokenDialog?.token}
@@ -383,13 +383,13 @@ export function EmployeeTable({
                 }}
               >
                 <span className="material-symbols-outlined text-base mr-1">content_copy</span>
-                Copy Token
+                Sao chép Token
               </Button>
               <Button
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={() => setTokenDialog(null)}
               >
-                Done
+                Xong
               </Button>
             </div>
           </div>

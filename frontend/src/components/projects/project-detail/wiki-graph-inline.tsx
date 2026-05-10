@@ -62,15 +62,15 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
           </button>
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base text-muted-foreground">hub</span>
-            <span className="text-sm font-semibold text-foreground">Workspace Graph</span>
+            <span className="text-sm font-semibold text-foreground">Đồ thị không gian nghiệp vụ</span>
           </div>
           {graphData && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-1">
               <span className="rounded-md bg-muted px-2 py-0.5 tabular-nums font-medium">
-                {filteredData?.nodes.length ?? 0} pages
+                {filteredData?.nodes.length ?? 0} trang
               </span>
               <span className="rounded-md bg-muted px-2 py-0.5 tabular-nums font-medium">
-                {filteredData?.edges.length ?? 0} links
+                {filteredData?.edges.length ?? 0} liên kết
               </span>
             </div>
           )}
@@ -82,7 +82,7 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
             <span className="material-symbols-outlined text-sm text-muted-foreground">search</span>
             <input
               type="text"
-              placeholder="Find node..."
+              placeholder="Tìm nút..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
@@ -116,12 +116,12 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
                   className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-all border"
                   style={{
                     background: active ? `${color}14` : "transparent",
-                    color: active ? color : "var(--color-muted-foreground, #78706a)",
+                    color: active ? color : "var(--color-muted-foreground, #5F7676)",
                     borderColor: active ? `${color}30` : "transparent",
                   }}
                   title={wikiTypeGroupLabel(type)}
                 >
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? color : "var(--color-muted-foreground, #78706a)" }} />
+                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? color : "var(--color-muted-foreground, #5F7676)" }} />
                   <span className="material-symbols-outlined" style={{ fontSize: 12 }}>{wikiTypeIcon(type)}</span>
                   <span className="hidden sm:inline">{wikiTypeGroupLabel(type)}</span>
                 </button>
@@ -157,7 +157,7 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
         ) : !filteredData || filteredData.nodes.length === 0 ? (
           <div className="w-full h-full flex flex-col items-center justify-center gap-3">
             <span className="material-symbols-outlined text-5xl text-muted-foreground/30">hub</span>
-            <p className="text-sm text-muted-foreground font-medium">No wiki pages yet</p>
+            <p className="text-sm text-muted-foreground font-medium">Chưa có trang tri thức</p>
           </div>
         ) : (
           <WikiGraph
@@ -175,7 +175,7 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
         <SheetContent showCloseButton={false} className="w-[400px] sm:w-[540px] p-0 flex flex-col border-l border-border gap-0">
           <SheetHeader className="px-6 py-4 border-b border-border bg-card shrink-0 flex flex-row items-center justify-between space-y-0">
             <SheetTitle className="text-lg font-heading flex-1 truncate pr-4 text-left">
-              {previewLoading ? "Loading..." : previewData?.title ?? previewSlug}
+              {previewLoading ? "Đang tải..." : previewData?.title ?? previewSlug}
             </SheetTitle>
             <SheetClose
               render={<Button variant="ghost" size="icon-sm" className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground" />}
@@ -191,7 +191,7 @@ export function WikiGraphInline({ projectId, onBack }: { projectId: string; onBa
             ) : previewData ? (
               <WikiContent markdown={previewData.content_md} />
             ) : (
-              <p className="text-sm text-muted-foreground py-16 text-center">Failed to load content.</p>
+              <p className="text-sm text-muted-foreground py-16 text-center">Không thể tải nội dung.</p>
             )}
           </div>
         </SheetContent>

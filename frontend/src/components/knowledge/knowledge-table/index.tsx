@@ -60,7 +60,7 @@ export function KnowledgeTable({
   const [searchInput, setSearchInput] = React.useState(search);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this document? This cannot be undone.")) return;
+    if (!confirm("Xoá tài liệu này? Hành động không thể hoàn tác.")) return;
     setActionError(null);
     try {
       await api(`/api/sources/${id}`, { method: "DELETE" });
@@ -108,7 +108,7 @@ export function KnowledgeTable({
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search documents..."
+              placeholder="Tìm kiếm tài liệu…"
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[260px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -123,7 +123,7 @@ export function KnowledgeTable({
           </div>
         </form>
         <span className="text-xs text-muted-foreground tabular-nums">
-          {total} document{total !== 1 ? "s" : ""}
+          {total} tài liệu
         </span>
       </div>
 
@@ -138,22 +138,22 @@ export function KnowledgeTable({
         ) : sources.length === 0 ? (
           <EmptyState
             icon="cloud_upload"
-            title={search ? "No results found" : "No documents found"}
-            description={search ? `No documents matching "${search}"` : "Upload documents to start building your knowledge base."}
+            title={search ? "Không tìm thấy kết quả" : "Chưa có tài liệu"}
+            description={search ? `Không tìm thấy tài liệu phù hợp "${search}"` : "Tải lên tài liệu để bắt đầu xây dựng kho tri thức."}
           />
         ) : (
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Document</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Category</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Visibility</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Department</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Pages</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Tài liệu</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Phân loại</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Phạm vi</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Đơn vị</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Trang</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Wiki</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Contributed By</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Status</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Created</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Người đóng góp</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Trạng thái</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground">Ngày tạo</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground text-right w-[60px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -248,8 +248,8 @@ export function KnowledgeTable({
                   {/* Created date */}
                   <TableCell>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {new Date(source.created_at).toLocaleDateString("en-US", {
-                        month: "short", day: "numeric", year: "numeric",
+                      {new Date(source.created_at).toLocaleDateString("vi-VN", {
+                        day: "2-digit", month: "2-digit", year: "numeric",
                       })}
                     </span>
                   </TableCell>
@@ -263,7 +263,7 @@ export function KnowledgeTable({
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setEditSource(source)}>
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
-                          Edit
+                          Sửa
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => handleReingest(source.id)}
@@ -272,7 +272,7 @@ export function KnowledgeTable({
                           <span className={`material-symbols-outlined mr-2 ${reingestingIds.has(source.id) ? "animate-spin" : ""}`} style={{ fontSize: 16 }}>
                             refresh
                           </span>
-                          {reingestingIds.has(source.id) ? "Re-ingesting..." : "Re-ingest"}
+                           {reingestingIds.has(source.id) ? "Đang xử lý lại…" : "Xử lý lại"}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -280,7 +280,7 @@ export function KnowledgeTable({
                           className="text-destructive"
                         >
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>delete</span>
-                          Delete
+                          Xoá
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -296,7 +296,7 @@ export function KnowledgeTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-3">
           <span className="text-xs text-muted-foreground">
-            Page {page} of {totalPages}
+            Trang {page} / {totalPages}
           </span>
           <div className="flex items-center gap-1">
             <Button

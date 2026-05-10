@@ -23,7 +23,7 @@ function LinkItem({
   const label = slug.split("/").pop() ?? slug;
   return (
     <Link
-      href={`/wiki/${slug}`}
+      href={`/admin/wiki/${slug}`}
       className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors group"
     >
       <span className="material-symbols-outlined text-xs text-muted-foreground group-hover:text-primary transition-colors">
@@ -86,7 +86,7 @@ export function WikiSidebarRight({ slug, page }: Props) {
           info
         </span>
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Page Info
+          Thông tin trang
         </span>
       </div>
 
@@ -102,15 +102,15 @@ export function WikiSidebarRight({ slug, page }: Props) {
           {/* Version & Date */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div>
-              <p className="text-muted-foreground/60 mb-0.5">Version</p>
+              <p className="text-muted-foreground/60 mb-0.5">Phiên bản</p>
               <p className="text-foreground font-medium">v{page.version}</p>
             </div>
             <div>
-              <p className="text-muted-foreground/60 mb-0.5">Updated</p>
+              <p className="text-muted-foreground/60 mb-0.5">Ngày cập nhật</p>
               <p className="text-foreground font-medium">
-                {new Date(page.updated_at).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
+                {new Date(page.updated_at).toLocaleDateString("vi-VN", {
+                  day: "2-digit",
+                  month: "2-digit",
                   year: "numeric",
                 })}
               </p>
@@ -120,7 +120,7 @@ export function WikiSidebarRight({ slug, page }: Props) {
           {/* Knowledge Types */}
           {page.knowledge_type_slugs.length > 0 && (
             <div>
-              <p className="text-xs text-muted-foreground/60 mb-1.5">Knowledge Types</p>
+              <p className="text-xs text-muted-foreground/60 mb-1.5">Loại tri thức</p>
               <div className="flex flex-wrap gap-1">
                 {page.knowledge_type_slugs.map((kt) => (
                   <span
@@ -138,14 +138,14 @@ export function WikiSidebarRight({ slug, page }: Props) {
           {page.source_ids.length > 0 && (
             <div>
               <p className="text-xs text-muted-foreground/60 mb-1.5">
-                Source Documents ({page.source_ids.length})
+                Tài liệu nguồn ({page.source_ids.length})
               </p>
               <Link
-                href="/knowledge"
+                href="/admin/knowledge"
                 className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
               >
                 <span className="material-symbols-outlined text-xs">open_in_new</span>
-                View in Knowledge Base
+                Xem trong Kho tri thức
               </Link>
             </div>
           )}
@@ -156,19 +156,19 @@ export function WikiSidebarRight({ slug, page }: Props) {
         {/* Connections */}
         {(page.backlinks.length > 0 || page.outlinks.length > 0) ? (
           <>
-            <Section title="Backlinks" icon="arrow_back" count={page.backlinks.length}>
+            <Section title="Liên kết đến" icon="arrow_back" count={page.backlinks.length}>
               {page.backlinks.map((s) => (
                 <LinkItem key={s} slug={s} direction="back" />
               ))}
             </Section>
-            <Section title="Outlinks" icon="arrow_forward" count={page.outlinks.length}>
+            <Section title="Liên kết đi" icon="arrow_forward" count={page.outlinks.length}>
               {page.outlinks.map((s) => (
                 <LinkItem key={s} slug={s} direction="forward" />
               ))}
             </Section>
           </>
         ) : (
-          <p className="text-xs text-muted-foreground py-1">No connections yet.</p>
+          <p className="text-xs text-muted-foreground py-1">Chưa có liên kết nào.</p>
         )}
       </div>
 
@@ -177,7 +177,7 @@ export function WikiSidebarRight({ slug, page }: Props) {
         <div className="shrink-0 border-t border-border p-4 bg-card/40">
           <div className="flex items-center gap-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             <span className="material-symbols-outlined text-xs">hub</span>
-            Local Graph
+            Đồ thị cục bộ
           </div>
           <div className="rounded-xl overflow-hidden border border-border shadow-sm">
             <WikiGraphMini

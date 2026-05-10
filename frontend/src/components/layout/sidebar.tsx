@@ -43,30 +43,48 @@ type WorkspaceItem = {
 const navSections: NavSection[] = [
   {
     id: "org-knowledge",
-    label: "Org Knowledge",
+    label: "Kho tri thức",
     items: [
-      { label: "Documents", href: "/knowledge", icon: "description", requiredPermissions: ["doc:read:own_dept", "doc:read:all"] },
-      { label: "Wiki", href: "/wiki", icon: "auto_stories", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
-      { label: "AI Skills", href: "/skills", icon: "bolt", requiredPermissions: ["skill:read:own_dept", "skill:read:all"] },
+      { label: "Tài liệu", href: "/admin/knowledge", icon: "description", requiredPermissions: ["doc:read:own_dept", "doc:read:all"] },
+      { label: "Tri thức", href: "/admin/wiki", icon: "auto_stories", requiredPermissions: ["wiki:read:own_dept", "wiki:read:all"] },
+      { label: "AI Skills", href: "/admin/skills", icon: "bolt", requiredPermissions: ["skill:read:own_dept", "skill:read:all"] },
+    ],
+  },
+  {
+    id: "cmd-support",
+    label: "CMD Support",
+    items: [
+      { label: "Tư vấn KHDN", href: "/admin/cmd-support", icon: "smart_toy",
+        requiredPermissions: ["cmd:advice:create", "cmd:advice:read:own", "cmd:advice:read:all"] },
+      { label: "Lịch sử tư vấn", href: "/admin/cmd-support/history", icon: "history",
+        requiredPermissions: ["cmd:advice:read:own", "cmd:advice:read:all"] },
+    ],
+  },
+  {
+    id: "task-management",
+    label: "Vận hành",
+    requiredPermissions: ["task:read:own_dept", "task:read:all"],
+    items: [
+      { label: "Quản lý công việc", href: "/admin/tasks", icon: "task_alt", requiredPermissions: ["task:read:own_dept", "task:read:all"] },
     ],
   },
   {
     id: "organization",
-    label: "Organization",
+    label: "Tổ chức",
     requiredPermissions: ["org:departments:read", "org:employees:read", "org:roles:read"],
     items: [
-      { label: "Departments", href: "/departments", icon: "domain", requiredPermissions: ["org:departments:read"] },
-      { label: "Employees", href: "/employees", icon: "group", requiredPermissions: ["org:employees:read"] },
-      { label: "Roles", href: "/roles", icon: "manage_accounts", requiredPermissions: ["org:roles:read"] },
+      { label: "Đơn vị", href: "/admin/departments", icon: "domain", requiredPermissions: ["org:departments:read"] },
+      { label: "Người dùng", href: "/admin/employees", icon: "group", requiredPermissions: ["org:employees:read"] },
+      { label: "Vai trò", href: "/admin/roles", icon: "manage_accounts", requiredPermissions: ["org:roles:read"] },
     ],
   },
   {
     id: "system",
-    label: "System",
+    label: "Hệ thống",
     requiredPermissions: ["org:audit:read", "org:settings:read"],
     items: [
-      { label: "Audit Log", href: "/audit", icon: "policy", requiredPermissions: ["org:audit:read"] },
-      { label: "Settings", href: "/settings", icon: "settings", requiredPermissions: ["org:settings:read"] },
+      { label: "Nhật ký kiểm toán", href: "/admin/audit", icon: "policy", requiredPermissions: ["org:audit:read"] },
+      { label: "Cài đặt", href: "/admin/settings", icon: "settings", requiredPermissions: ["org:settings:read"] },
     ],
   },
 ];
@@ -94,17 +112,17 @@ function useGroupToggle(groupId: string, defaultOpen: boolean) {
 /* ─── Helpers ─── */
 
 function isActive(href: string, pathname: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
 }
 
 /** Pick a color for workspace icon based on workspace type */
 function workspaceColor(type: string): string {
   const colors: Record<string, string> = {
-    internal: "#c2652a",
+    internal: "#006B68",
     customer: "#2a7ec2",
     partner: "#2ac265",
   };
-  return colors[type] || "#78706a";
+  return colors[type] || "#5F7676";
 }
 
 /* ─── Sub-components ─── */
@@ -199,7 +217,7 @@ function SidebarWorkspacesSection({
 
   const SIDEBAR_LIMIT = 10;
   const hasActiveChild = workspaces.some((w) =>
-    pathname.startsWith(`/workspaces`) && pathname.includes(w.id)
+    pathname.startsWith(`/admin/workspaces`) && pathname.includes(w.id)
   );
   const isOpen = open || hasActiveChild;
   const displayedWorkspaces = workspaces.slice(0, SIDEBAR_LIMIT);
@@ -214,7 +232,7 @@ function SidebarWorkspacesSection({
           onClick={toggle}
           className="flex flex-1 items-center gap-1 px-2 py-[3px] text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60 group-hover/ws:text-muted-foreground transition-colors duration-100"
         >
-          <span>Workspaces</span>
+          <span>Không gian nghiệp vụ</span>
           <span
             className="material-symbols-outlined text-[14px] transition-all duration-150 opacity-0 group-hover/ws:opacity-100"
             style={{
@@ -227,9 +245,9 @@ function SidebarWorkspacesSection({
         </button>
         {canCreate && (
           <Link
-            href="/?new=1"
+            href="/admin?new=1"
             className="shrink-0 w-5 h-5 flex items-center justify-center rounded text-muted-foreground/40 hover:bg-black/[0.04] hover:text-muted-foreground transition-all duration-100 opacity-0 group-hover/ws:opacity-100 mr-1"
-            title="New Workspace"
+            title="Tạo không gian"
           >
             <span
               className="material-symbols-outlined text-[16px]"
@@ -255,16 +273,16 @@ function SidebarWorkspacesSection({
               <span className="material-symbols-outlined text-[14px] text-muted-foreground/40 animate-spin">
                 progress_activity
               </span>
-              <span className="text-[12px] text-muted-foreground/40">Loading…</span>
+              <span className="text-[12px] text-muted-foreground/40">Đang tải…</span>
             </div>
           ) : workspaces.length === 0 ? (
             <div className="ml-3 px-2 py-[5px] text-[12px] text-muted-foreground/40">
-              No workspaces
+              Chưa có không gian làm việc
             </div>
           ) : (
             <>
               {displayedWorkspaces.map((ws) => {
-                const href = `/workspaces/${ws.id}`;
+                const href = `/admin/workspaces/${ws.id}`;
                 const active = pathname === href;
 
                 return (
@@ -288,11 +306,11 @@ function SidebarWorkspacesSection({
               })}
               {hasMore && (
                 <Link
-                  href="/"
+                  href="/admin"
                   className="flex items-center gap-2 ml-3 px-2 py-[5px] text-[12px] text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-100"
                 >
                   <span className="material-symbols-outlined text-[14px]">more_horiz</span>
-                  <span>{workspaces.length - SIDEBAR_LIMIT} more…</span>
+                  <span>{workspaces.length - SIDEBAR_LIMIT} thêm…</span>
                 </Link>
               )}
             </>
@@ -321,15 +339,15 @@ function OrgHeader({
       <DropdownMenu>
         <DropdownMenuTrigger className="flex items-center gap-2.5 rounded-md px-1.5 py-1.5 hover:bg-black/[0.03] transition-colors cursor-pointer min-w-0 w-full">
           <Image
-            src="/logo.png"
-            alt="Arkon"
+            src="/bidv-logo.webp"
+            alt="CMD Support"
             width={24}
             height={24}
             className="shrink-0 rounded-[4px]"
           />
           <div className="flex flex-col items-start min-w-0">
             <span className="text-[15px] font-semibold text-primary truncate leading-tight font-heading">
-              Arkon
+              CMD Support
             </span>
             {user && (
               <span className="text-[10px] text-muted-foreground/70 truncate leading-tight">
@@ -351,13 +369,13 @@ function OrgHeader({
               <DropdownMenuSeparator />
             </>
           )}
-          <DropdownMenuItem onClick={() => router.push("/profile")}>
+          <DropdownMenuItem onClick={() => router.push("/admin/profile")}>
             <span className="material-symbols-outlined mr-2 text-base">person</span>
-            Profile
+            Hồ sơ
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleLogout} className="text-destructive">
             <span className="material-symbols-outlined mr-2 text-base">logout</span>
-            Sign out
+            Đăng xuất
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -377,7 +395,7 @@ export function Sidebar() {
   });
 
   return (
-    <nav className="hidden md:flex flex-col h-full w-[240px] shrink-0 bg-[#f7f5f2] border-r border-black/[0.04]">
+    <nav className="flex flex-col h-full w-[240px] shrink-0 bg-sidebar border-r border-sidebar-border">
       {/* Org Header + User */}
       <div className="pt-2">
         <OrgHeader user={user} />
@@ -390,7 +408,7 @@ export function Sidebar() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1 sidebar-scrollbar">
         {/* Dashboard */}
         <SidebarNavItem
-          item={{ label: "Dashboard", href: "/", icon: "dashboard" }}
+          item={{ label: "Dashboard", href: "/admin", icon: "dashboard" }}
           pathname={pathname}
         />
 
@@ -411,7 +429,7 @@ export function Sidebar() {
       {/* Bottom meta */}
       <div className="px-3 py-2 border-t border-black/[0.04]">
         <span className="text-[10px] text-muted-foreground/40 font-medium">
-          On-Premise · Internal
+          On-Premise · Nội bộ
         </span>
       </div>
     </nav>

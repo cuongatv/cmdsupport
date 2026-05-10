@@ -16,6 +16,7 @@ from app.database import get_db
 from app.database.models import Department, Employee, Role
 from app.services.mcp_auth_service import MCPAuthService
 from app.services.auth_service import get_current_user, require_admin, require_permission, hash_password
+from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
 from app.services.audit_service import log_audit
 
 router = APIRouter()
@@ -222,19 +223,41 @@ async def create_employee(
     if body.role not in ("admin", "employee"):
         raise HTTPException(400, "Role must be 'admin' or 'employee'")
 
+    custom_role_id = uuid.UUID(body.custom_role_id) if body.custom_role_id else None
+    if body.role == "employee" and custom_role_id is None:
+        custom_role = (await db.execute(
+            select(Role).where(Role.name == "Employee", Role.is_system == True)
+        )).scalar_one_or_none()
+        if custom_role is None:
+            custom_role = Role(
+                name="Employee",
+                description="Default employee permissions",
+                permissions=EMPLOYEE_DEFAULT_PERMISSIONS,
+                is_system=True,
+            )
+            db.add(custom_role)
+            await db.flush()
+        custom_role_id = custom_role.id
+
     emp = Employee(
         name=body.name,
         email=body.email,
         password_hash=hash_password(body.password),
         role=body.role,
         department_id=uuid.UUID(body.department_id),
-        custom_role_id=uuid.UUID(body.custom_role_id) if body.custom_role_id else None,
+        custom_role_id=custom_role_id,
     )
     db.add(emp)
     await log_audit(db, _user, "create", "employee", str(emp.id), reason=emp.email)
     await db.flush()
+    await db.commit()
 
-    return {"id": str(emp.id), "name": emp.name, "email": emp.email}
+    return {
+        "id": str(emp.id),
+        "name": emp.name,
+        "email": emp.email,
+        "custom_role_id": str(emp.custom_role_id) if emp.custom_role_id else None,
+    }
 
 
 @router.put("/employees/{emp_id}")

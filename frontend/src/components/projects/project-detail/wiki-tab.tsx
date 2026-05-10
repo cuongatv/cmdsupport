@@ -85,8 +85,8 @@ export function WikiTab({ project, wikiPages, wikiLoading, wikiIndexMd }: Props)
             ) : wikiPages.length === 0 ? (
               <EmptyState
                 icon="auto_stories"
-                title="No wiki pages yet"
-                description="Upload documents in this workspace to automatically compile knowledge into wiki pages."
+                title="Chưa có trang tri thức"
+                description="Tải lên tài liệu trong không gian nghiệp vụ này để tự động biên soạn tri thức thành các trang wiki."
               />
             ) : (
               <>
@@ -99,7 +99,7 @@ export function WikiTab({ project, wikiPages, wikiLoading, wikiIndexMd }: Props)
                     <span className="text-sm font-semibold text-foreground">
                       {wikiPages.length}
                     </span>
-                    <span className="text-xs text-muted-foreground">Pages</span>
+                    <span className="text-xs text-muted-foreground">Trang</span>
                   </div>
                   {Object.entries(wikiTypeCounts)
                     .sort((a, b) => b[1] - a[1])
@@ -121,10 +121,10 @@ export function WikiTab({ project, wikiPages, wikiLoading, wikiIndexMd }: Props)
                           schedule
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          Updated{" "}
-                          {new Date(wikiPages[0].updated_at).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
+                          Cập nhật{" "}
+                          {new Date(wikiPages[0].updated_at).toLocaleDateString("vi-VN", {
+                            day: "2-digit",
+                            month: "2-digit",
                           })}
                         </span>
                       </div>
@@ -134,7 +134,7 @@ export function WikiTab({ project, wikiPages, wikiLoading, wikiIndexMd }: Props)
                       className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-sahara"
                     >
                       <span className="material-symbols-outlined text-base">hub</span>
-                      Graph View
+                      Đồ thị
                     </button>
                   </div>
                 </div>
@@ -157,7 +157,7 @@ export function WikiTab({ project, wikiPages, wikiLoading, wikiIndexMd }: Props)
                             : "border-transparent text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        {wt === "all" ? "All" : wikiTypeGroupLabel(wt)}
+                        {wt === "all" ? "Tất cả" : wikiTypeGroupLabel(wt)}
                         <span className="ml-1.5 tabular-nums text-muted-foreground">
                           {count}
                         </span>

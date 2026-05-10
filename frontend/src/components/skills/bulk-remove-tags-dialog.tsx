@@ -55,7 +55,7 @@ export function BulkRemoveTagsDialog({
       onOpenChange(false);
     } catch (error) {
       const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
-      alert("Failed to remove tags from skills: " + msg);
+      alert("Gỡ tag khỏi skill thất bại: " + msg);
     } finally {
       setLoading(false);
     }
@@ -90,15 +90,15 @@ export function BulkRemoveTagsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="material-symbols-outlined text-destructive">label_off</span>
-            Remove Tags from {skillIds.length} Skills
+            Gỡ Tag khỏi {skillIds.length} Skill
           </DialogTitle>
           <DialogDescription>
-            Select the tags you want to remove from all selected skills.
+            Chọn các tag bạn muốn gỡ khỏi tất cả skill đã chọn.
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4 grid gap-2 relative">
-          <Label>Selected Tags to Remove</Label>
+          <Label>Tag đã chọn để gỡ</Label>
           <div 
             className={cn(
               "flex flex-wrap gap-1.5 p-2 min-h-[42px] border border-border rounded-md bg-secondary/5 transition-all cursor-text",
@@ -126,7 +126,7 @@ export function BulkRemoveTagsDialog({
               ref={inputRef}
               type="text"
               className="flex-1 bg-transparent border-none outline-none text-sm min-w-[120px] py-0.5"
-              placeholder={selectedTags.length === 0 ? "Type to search tags..." : ""}
+              placeholder={selectedTags.length === 0 ? "Nhập để tìm kiếm tag..." : ""}
               value={tagInput}
               onChange={(e) => setTagInput(e.target.value)}
             />
@@ -153,13 +153,13 @@ export function BulkRemoveTagsDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Huỷ</Button>
           <Button 
             variant="destructive"
             disabled={loading || selectedTags.length === 0} 
             onClick={handleSave}
           >
-            {loading ? "Removing..." : "Remove Tags"}
+            {loading ? "Đang gỡ..." : "Gỡ Tag"}
           </Button>
         </DialogFooter>
       </DialogContent>

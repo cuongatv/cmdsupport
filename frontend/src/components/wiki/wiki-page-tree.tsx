@@ -134,7 +134,7 @@ export function WikiPageTree({
         <button
           onClick={() => setCollapsed(false)}
           className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Expand page tree"
+          title="Mở rộng cây trang"
         >
           <span className="material-symbols-outlined text-base">chevron_right</span>
         </button>
@@ -147,7 +147,7 @@ export function WikiPageTree({
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
         <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
-          Pages
+          Trang
         </span>
         <span className="text-xs text-muted-foreground tabular-nums bg-muted rounded-md px-1.5 py-0.5">
           {totalCount}
@@ -155,7 +155,7 @@ export function WikiPageTree({
         <button
           onClick={() => setCollapsed(true)}
           className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Collapse"
+          title="Thu gọn"
         >
           <span className="material-symbols-outlined text-base">chevron_left</span>
         </button>
@@ -169,7 +169,7 @@ export function WikiPageTree({
           </span>
           <input
             type="text"
-            placeholder="Filter pages..."
+            placeholder="Lọc trang..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="flex-1 text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
@@ -198,7 +198,7 @@ export function WikiPageTree({
             ))}
           </div>
         ) : grouped.size === 0 ? (
-          <p className="text-xs text-muted-foreground px-4 py-3">No pages found.</p>
+          <p className="text-xs text-muted-foreground px-4 py-3">Không tìm thấy trang nào.</p>
         ) : (
           GROUP_ORDER.filter((t) => grouped.has(t)).map((type) => {
             const items = grouped.get(type)!;
@@ -257,7 +257,7 @@ export function WikiPageTree({
                             </button>
                           ) : (
                             <Link
-                              href={`/wiki/${page.slug}${linkQueryParams || ""}`}
+                              href={`/admin/wiki/${page.slug}${linkQueryParams || ""}`}
                               className={cn(
                                 "flex-1 flex items-center gap-2 px-2 py-1.5 text-xs min-w-0 transition-all",
                                 isActive
@@ -279,9 +279,9 @@ export function WikiPageTree({
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDelete(page.slug); }}
                               className="shrink-0 mr-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse transition-colors"
-                              title={`Click again to confirm delete "${page.title}"`}
+                              title={`Bấm lần nữa để xác nhận xoá "${page.title}"`}
                             >
-                              Confirm
+                              Xác nhận
                             </button>
                           ) : (
                             <button

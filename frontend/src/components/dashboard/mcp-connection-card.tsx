@@ -26,13 +26,13 @@ export function McpConnectionCard() {
   return (
     <div className="bg-surface-variant rounded-xl p-6 border border-border">
       <h3 className="text-xl tracking-tight text-foreground mb-2">
-        MCP Connection
+        Kết nối MCP
       </h3>
       <p className="text-xs text-muted-foreground mb-4">
-        Connect Claude Desktop to Arkon with this config snippet.
+        Kết nối Claude Desktop với Arkon bằng đoạn cấu hình dưới đây.
       </p>
 
-      <div className="bg-[#3a302a] rounded-lg p-4 font-mono text-xs text-[#faf5ee] overflow-x-auto">
+      <div className="bg-[#0F2A2A] rounded-lg p-4 font-mono text-xs text-[#FDFFFF] overflow-x-auto">
         <pre>{configSnippet}</pre>
       </div>
 
@@ -45,7 +45,7 @@ export function McpConnectionCard() {
         <span className="material-symbols-outlined text-sm mr-1">
           {copied ? "check" : "content_copy"}
         </span>
-        {copied ? "Copied!" : "Copy Config"}
+        {copied ? "Đã sao chép!" : "Sao chép cấu hình"}
       </Button>
     </div>
   );

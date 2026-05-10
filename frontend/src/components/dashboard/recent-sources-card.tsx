@@ -35,7 +35,7 @@ export function RecentSourcesCard() {
   return (
     <div className="bg-card rounded-xl p-6 border border-border shadow-sahara">
       <h3 className="text-xl tracking-tight text-foreground border-b border-border pb-3 mb-4">
-        Recent Documents
+        Tài liệu gần đây
       </h3>
 
       {loading ? (
@@ -47,8 +47,8 @@ export function RecentSourcesCard() {
       ) : sources.length === 0 ? (
         <EmptyState
           icon="description"
-          title="No documents yet"
-          description="Upload your first document in the Knowledge Base"
+          title="Chưa có tài liệu"
+          description="Tải lên tài liệu đầu tiên trong Kho tri thức"
         />
       ) : (
         <div className="flex flex-col gap-3">
@@ -107,7 +107,7 @@ function StatusBadge({ status }: { status: string }) {
         variants[status] || variants.pending
       }`}
     >
-      {status}
+      {status === "ready" ? "sẵn sàng" : status === "processing" ? "đang xử lý" : status === "error" ? "lỗi" : status === "pending" ? "đang chờ" : status}
     </span>
   );
 }

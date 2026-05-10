@@ -1,5 +1,5 @@
 """
-Arkon MCP Tools — LLM Wiki + raw source drill-down for Claude.
+CMD Support MCP Tools — LLM Wiki + raw source drill-down for Claude.
 
 The wiki layer is the primary surface: Claude searches and reads markdown
 pages compiled from sources. Raw-source tools (PageIndex-style) act as a
@@ -38,7 +38,7 @@ async def _get_identity():
     if not token:
         return None, (
             "Authentication required. Configure your MCP token in Claude Desktop:\n"
-            '{"mcpServers": {"arkon": {"url": "...", '
+            '{"mcpServers": {"cmd_support": {"url": "...", '
             '"headers": {"Authorization": "Bearer <your-token>"}}}}'
         )
 

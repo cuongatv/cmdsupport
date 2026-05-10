@@ -22,6 +22,8 @@ from sqlalchemy import (
     Text,
     Integer,
     Boolean,
+    CheckConstraint,
+    Float,
     UniqueConstraint,
     func,
 )
@@ -721,4 +723,347 @@ class AuditLog(Base):
         Index("ix_audit_log_timestamp", "timestamp"),
         Index("ix_audit_log_principal", "principal_id"),
         Index("ix_audit_log_resource", "resource_type", "resource_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# CMD Support — Provinces, Industries, Advisory Sessions
+# ---------------------------------------------------------------------------
+
+class Province(Base):
+    """Vietnamese province/city (34 units after 2025 merger)."""
+    __tablename__ = "provinces"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    short_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    region: Mapped[str] = mapped_column(String(10), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Industry(Base):
+    """VSIC 2018 industry classification (level 1 = 21, level 2 = 88)."""
+    __tablename__ = "industries"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("industries_level_idx", "level"),
+        Index("industries_parent_idx", "parent_code"),
+    )
+
+
+class CmdAdvisorySession(Base):
+    """A CMD advisory session — LLM-generated product recommendation for a corporate customer."""
+    __tablename__ = "cmd_advisory_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    province_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    province_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    industry_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    industry_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    customer_segment: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True,
+        comment="Phân khúc KHDN: sme | midcom | public_admin",
+    )
+    needs: Mapped[str] = mapped_column(Text, nullable=False)
+    additional_context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retrieved_wiki_page_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), default=list
+    )
+    retrieved_source_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), default=list
+    )
+    result_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    model_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    model_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    prompt_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    scope_type: Mapped[str] = mapped_column(String(20), default="global")
+    scope_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(30), default="ready")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    created_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[created_by_id]
+    )
+
+    __table_args__ = (
+        Index("cmd_advisory_created_by_idx", "created_by_id"),
+        Index("cmd_advisory_created_at_idx", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Native Task Management
+# ---------------------------------------------------------------------------
+
+class TaskProject(Base):
+    """A native task project scoped to exactly one parent: workspace XOR department."""
+    __tablename__ = "task_projects"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    identifier: Mapped[str] = mapped_column(String(10), nullable=False)  # e.g. "PROJ"
+    # XOR parent: exactly one of workspace_id / department_id must be set
+    workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("departments.id", ondelete="CASCADE"), nullable=True)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    allow_any_employee: Mapped[bool] = mapped_column(Boolean, default=False, comment="If True, any active employee can be assigned")
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    workspace: Mapped[Optional["Project"]] = relationship(foreign_keys=[workspace_id])
+    department: Mapped[Optional["Department"]] = relationship(foreign_keys=[department_id])
+    created_by: Mapped[Optional["Employee"]] = relationship(foreign_keys=[created_by_id])
+    states: Mapped[list["TaskState"]] = relationship(back_populates="task_project", cascade="all, delete-orphan")
+    labels: Mapped[list["TaskLabel"]] = relationship(back_populates="task_project", cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="task_project", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint(
+            "(workspace_id IS NOT NULL)::int + (department_id IS NOT NULL)::int = 1",
+            name="ck_task_project_scope_xor",
+        ),
+        Index("ix_task_projects_workspace_id", "workspace_id"),
+        Index("ix_task_projects_department_id", "department_id"),
+    )
+
+
+class TaskState(Base):
+    """A workflow state within a task project (e.g., Backlog, Todo, In Progress)."""
+    __tablename__ = "task_states"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("task_projects.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    group: Mapped[str] = mapped_column(String(50), nullable=False, comment="backlog|todo|in_progress|review|done|cancelled")
+    color: Mapped[Optional[str]] = mapped_column(String(20))
+    position: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    task_project: Mapped["TaskProject"] = relationship(back_populates="states")
+
+    __table_args__ = (
+        Index("ix_task_states_project_id", "task_project_id"),
+    )
+
+
+class Task(Base):
+    """A unit of work in a task project."""
+    __tablename__ = "tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("task_projects.id", ondelete="CASCADE"), nullable=False)
+    state_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("task_states.id", ondelete="RESTRICT"), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String(20), default="none", comment="none|low|medium|high|urgent")
+    parent_task_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
+    reporter_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    position: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0, comment="Fractional position within Kanban state lane")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="Optimistic concurrency version")
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    task_project: Mapped["TaskProject"] = relationship(back_populates="tasks", foreign_keys=[task_project_id])
+    state: Mapped["TaskState"] = relationship(foreign_keys=[state_id])
+    parent_task: Mapped[Optional["Task"]] = relationship(back_populates="subtasks", remote_side="Task.id", foreign_keys=[parent_task_id])
+    subtasks: Mapped[list["Task"]] = relationship(back_populates="parent_task", foreign_keys=[parent_task_id])
+    reporter: Mapped[Optional["Employee"]] = relationship(foreign_keys=[reporter_id])
+    created_by: Mapped[Optional["Employee"]] = relationship(foreign_keys=[created_by_id])
+    assignees: Mapped[list["TaskAssignee"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    label_links: Mapped[list["TaskLabelLink"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    comments: Mapped[list["TaskComment"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    attachments: Mapped[list["TaskAttachment"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    activities: Mapped[list["TaskActivity"]] = relationship(back_populates="task", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_tasks_project_id", "task_project_id"),
+        Index("ix_tasks_state_id", "state_id"),
+        Index("ix_tasks_parent_task_id", "parent_task_id"),
+        Index("ix_tasks_reporter_id", "reporter_id"),
+        Index("ix_tasks_due_date", "due_date"),
+        Index("ix_tasks_deleted_at", "deleted_at"),
+        Index("ix_tasks_priority", "priority"),
+    )
+
+
+class TaskAssignee(Base):
+    """Many-to-many between Task and Employee."""
+    __tablename__ = "task_assignees"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), primary_key=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    task: Mapped["Task"] = relationship(back_populates="assignees")
+    employee: Mapped["Employee"] = relationship(foreign_keys=[employee_id])
+
+
+class TaskLabel(Base):
+    """A label/tag scoped to a task project."""
+    __tablename__ = "task_labels"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("task_projects.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String(20))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    task_project: Mapped["TaskProject"] = relationship(back_populates="labels")
+
+    __table_args__ = (
+        UniqueConstraint("task_project_id", "name", name="uq_task_label_project_name"),
+        Index("ix_task_labels_project_id", "task_project_id"),
+    )
+
+
+class TaskLabelLink(Base):
+    """Many-to-many between Task and TaskLabel."""
+    __tablename__ = "task_label_links"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    label_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("task_labels.id", ondelete="CASCADE"), primary_key=True)
+
+    task: Mapped["Task"] = relationship(back_populates="label_links")
+    label: Mapped["TaskLabel"] = relationship(foreign_keys=[label_id])
+
+
+class TaskComment(Base):
+    """A comment on a task."""
+    __tablename__ = "task_comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    author_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_edited: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    task: Mapped["Task"] = relationship(back_populates="comments")
+    author: Mapped[Optional["Employee"]] = relationship(foreign_keys=[author_id])
+
+    __table_args__ = (
+        Index("ix_task_comments_task_id", "task_id"),
+        Index("ix_task_comments_author_id", "author_id"),
+    )
+
+
+class TaskAttachment(Base):
+    """A file attachment on a task, stored in MinIO/S3."""
+    __tablename__ = "task_attachments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    uploaded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1000), nullable=False, comment="MinIO/S3 object key — never expose directly")
+    content_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    task: Mapped["Task"] = relationship(back_populates="attachments")
+    uploaded_by: Mapped[Optional["Employee"]] = relationship(foreign_keys=[uploaded_by_id])
+
+    __table_args__ = (
+        Index("ix_task_attachments_task_id", "task_id"),
+    )
+
+
+class TaskActivity(Base):
+    """Immutable activity record for a task (state change, assignment, etc.)."""
+    __tablename__ = "task_activities"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    verb: Mapped[str] = mapped_column(String(50), nullable=False, comment="created|state_changed|assigned|unassigned|commented|attachment_added|attachment_removed|priority_changed|due_date_changed|title_changed|description_changed|label_added|label_removed|archived|restored")
+    field_name: Mapped[Optional[str]] = mapped_column(String(100))
+    old_value: Mapped[Optional[str]] = mapped_column(Text)
+    new_value: Mapped[Optional[str]] = mapped_column(Text)
+    meta: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    task: Mapped["Task"] = relationship(back_populates="activities")
+    actor: Mapped[Optional["Employee"]] = relationship(foreign_keys=[actor_id])
+
+    __table_args__ = (
+        Index("ix_task_activities_task_id", "task_id"),
+        Index("ix_task_activities_created_at", "created_at"),
+    )
+
+
+class Notification(Base):
+    """In-app notification for an employee, polled every 30 seconds."""
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    notification_type: Mapped[str] = mapped_column(String(50), nullable=False, comment="assigned|mentioned|commented|state_changed|due_soon")
+    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    recipient: Mapped["Employee"] = relationship(foreign_keys=[recipient_id])
+    actor: Mapped[Optional["Employee"]] = relationship(foreign_keys=[actor_id])
+    task: Mapped[Optional["Task"]] = relationship(foreign_keys=[task_id])
+
+    __table_args__ = (
+        Index("ix_notifications_recipient_id", "recipient_id"),
+        Index("ix_notifications_is_read", "is_read"),
+        Index("ix_notifications_task_id", "task_id"),
+        Index("ix_notifications_created_at", "created_at"),
     )

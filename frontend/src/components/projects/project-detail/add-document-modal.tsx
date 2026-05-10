@@ -53,8 +53,8 @@ export function AddDocumentModal({
 
   const validateFile = (file: File): string | null => {
     const ext = "." + file.name.split(".").pop()?.toLowerCase();
-    if (!ALLOWED_EXTS.includes(ext)) return `Unsupported file type: ${ext}`;
-    if (file.size > MAX_SIZE) return `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max: 50 MB`;
+    if (!ALLOWED_EXTS.includes(ext)) return `Định dạng không hỗ trợ: ${ext}`;
+    if (file.size > MAX_SIZE) return `Tệp quá lớn (${(file.size / 1024 / 1024).toFixed(1)} MB). Tối đa: 50 MB`;
     return null;
   };
 
@@ -105,7 +105,7 @@ export function AddDocumentModal({
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
       <DialogContent className="sm:max-w-[520px] p-0 overflow-hidden">
         <DialogHeader className="px-6 pt-6 pb-0">
-          <DialogTitle className="text-lg font-heading">Add Document</DialogTitle>
+          <DialogTitle className="text-lg font-heading">Thêm tài liệu</DialogTitle>
         </DialogHeader>
 
         {/* Mode tabs */}
@@ -122,7 +122,7 @@ export function AddDocumentModal({
               <span className="material-symbols-outlined text-sm">
                 {m === "upload" ? "cloud_upload" : "add"}
               </span>
-              {m === "upload" ? "Upload File" : "Add Existing"}
+              {m === "upload" ? "Tải lên tệp" : "Thêm tài liệu có sẵn"}
             </button>
           ))}
         </div>
@@ -176,7 +176,7 @@ export function AddDocumentModal({
                     <div className="text-center min-w-0 max-w-full">
                       <p className="text-sm font-medium text-foreground truncate max-w-[360px]">{selectedFile.name}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {(selectedFile.size / 1024).toFixed(0)} KB · Click to change
+                        {(selectedFile.size / 1024).toFixed(0)} KB · Bấm để đổi tệp
                       </p>
                     </div>
                   </>
@@ -188,10 +188,10 @@ export function AddDocumentModal({
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-medium text-foreground">
-                        {dragOver ? "Drop file here" : "Drag & drop or click to browse"}
+                        {dragOver ? "Thả tệp vào đây" : "Kéo thả hoặc bấm để chọn tệp"}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        PDF, DOCX, XLSX, CSV, TXT, MD, PPTX · Max 50 MB
+                        PDF, DOCX, XLSX, CSV, TXT, MD, PPTX · Tối đa 50 MB
                       </p>
                     </div>
                   </>
@@ -213,12 +213,12 @@ export function AddDocumentModal({
                 {uploading ? (
                   <>
                     <span className="material-symbols-outlined text-base mr-2 animate-spin">progress_activity</span>
-                    Uploading...
+                    Đang tải lên...
                   </>
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-base mr-2">upload</span>
-                    Upload
+                    Tải lên
                   </>
                 )}
               </Button>
@@ -229,8 +229,8 @@ export function AddDocumentModal({
               {availableSources.length === 0 ? (
                 <div className="py-8 flex flex-col items-center gap-2">
                   <span className="material-symbols-outlined text-3xl text-muted-foreground/40">description</span>
-                  <p className="text-sm text-muted-foreground">No available documents to link</p>
-                  <p className="text-xs text-muted-foreground">All documents are already in this workspace.</p>
+                  <p className="text-sm text-muted-foreground">Không có tài liệu nào để liên kết</p>
+                  <p className="text-xs text-muted-foreground">Tất cả tài liệu đã có trong không gian nghiệp vụ này.</p>
                 </div>
               ) : (
                 <>
@@ -241,7 +241,7 @@ export function AddDocumentModal({
                           {availableSources.find(s => s.id === selectedSourceId)?.title || selectedSourceId}
                         </span>
                       ) : (
-                        <SelectValue placeholder="Select an existing document to add..." />
+                        <SelectValue placeholder="Chọn tài liệu có sẵn để thêm..." />
                       )}
                     </SelectTrigger>
                     <SelectContent>
@@ -271,12 +271,12 @@ export function AddDocumentModal({
                     {linking ? (
                       <>
                         <span className="material-symbols-outlined text-base mr-2 animate-spin">progress_activity</span>
-                        Linking...
+                        Đang liên kết...
                       </>
                     ) : (
                       <>
                         <span className="material-symbols-outlined text-base mr-2">add_link</span>
-                        Link to Workspace
+                        Liên kết vào không gian nghiệp vụ
                       </>
                     )}
                   </Button>

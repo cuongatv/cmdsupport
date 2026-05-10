@@ -1,12 +1,12 @@
 # AI Skills
 
-AI Skills are versioned agent packages that employees can access through Claude via MCP. Upload a skill package, assign it to departments or workspaces, and it becomes available in Claude's tool context for employees with the right permissions.
+AI Skills are versioned agent packages that employees can access through Claude via MCP. Upload a skill package, assign it to departments or workspaces, and it becomes available in Claude's tool context for employees with the right permissions. Skills are managed through CMD Support's admin portal.
 
 ---
 
 ## What is a Skill?
 
-A Skill is a packaged capability — a custom agent, a specialized prompt, or a tool bundle — that your organization develops and distributes through Arkon. Think of it as an internal app store for AI capabilities.
+A Skill is a packaged capability — a custom agent, a specialized prompt, or a tool bundle — that your organization develops and distributes through CMD Support. Think of it as an internal app store for AI capabilities.
 
 Examples:
 - A **document generator** that fills in report templates from structured input
@@ -79,7 +79,7 @@ Skills follow the same dual-realm permission model as documents and wiki:
 ## Skill visibility in MCP
 
 When an employee connects Claude via MCP:
-1. Arkon resolves their identity and permission scope
+1. CMD Support resolves their identity and permission scope
 2. Skills accessible to this employee (based on department + workspace membership) are included in the MCP context
 3. Claude can reference and use these skills in conversation
 

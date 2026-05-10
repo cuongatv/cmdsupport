@@ -48,6 +48,12 @@ def _get_embedding_class(provider: ProviderType) -> type[EmbeddingProvider]:
     elif provider == ProviderType.OPENAI:
         from app.ai.providers.openai_provider import OpenAIEmbedding
         return OpenAIEmbedding
+    elif provider == ProviderType.OPENROUTER:
+        from app.ai.providers.openrouter_provider import OpenRouterEmbedding
+        return OpenRouterEmbedding
+    elif provider == ProviderType.WTBOSS:
+        from app.ai.providers.wtboss_provider import WTBossEmbedding
+        return WTBossEmbedding
     raise ValueError(f"Unsupported embedding provider: {provider}")
 
 
@@ -61,6 +67,12 @@ def _get_llm_class(provider: ProviderType) -> type[LLMProvider]:
     elif provider == ProviderType.ANTHROPIC:
         from app.ai.providers.anthropic_provider import AnthropicLLM
         return AnthropicLLM
+    elif provider == ProviderType.OPENROUTER:
+        from app.ai.providers.openrouter_provider import OpenRouterLLM
+        return OpenRouterLLM
+    elif provider == ProviderType.WTBOSS:
+        from app.ai.providers.wtboss_provider import WTBossLLM
+        return WTBossLLM
     raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
@@ -71,6 +83,12 @@ def _get_vision_class(provider: ProviderType) -> type[VisionProvider]:
     elif provider == ProviderType.OPENAI:
         from app.ai.providers.openai_provider import OpenAIVision
         return OpenAIVision
+    elif provider == ProviderType.OPENROUTER:
+        from app.ai.providers.openrouter_provider import OpenRouterVision
+        return OpenRouterVision
+    elif provider == ProviderType.WTBOSS:
+        from app.ai.providers.wtboss_provider import WTBossVision
+        return WTBossVision
     raise ValueError(f"Unsupported vision provider: {provider}")
 
 
@@ -190,6 +208,11 @@ SUPPORTED_PROVIDERS = {
         {"id": "openai", "name": "OpenAI", "models": [
             "text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002",
         ]},
+        {"id": "openrouter", "name": "OpenRouter", "models": [
+            "openai/text-embedding-3-small",
+            "openai/text-embedding-3-large",
+        ]},
+        {"id": "wtboss", "name": "WTBoss AI Gateway", "models": []},
     ],
     "llm": [
         {"id": "google", "name": "Google Gemini", "models": [
@@ -201,6 +224,31 @@ SUPPORTED_PROVIDERS = {
         {"id": "anthropic", "name": "Anthropic", "models": [
             "claude-sonnet-4-20250514", "claude-haiku-4-20250514",
         ]},
+        {"id": "openrouter", "name": "OpenRouter", "models": [
+            "openai/gpt-4o-mini",
+            "openai/gpt-4o",
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3.5-haiku",
+            "google/gemini-2.0-flash-001",
+            "google/gemini-2.5-pro",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "mistralai/mistral-large",
+            "qwen/qwen-2.5-72b-instruct",
+        ]},
+        {"id": "wtboss", "name": "WTBoss AI Gateway", "models": [
+            "warp/ops-max-fast",
+            "warp/claude-opus-4-7",
+            "warp/claude-opus-4-6",
+            "warp/claude-sonnet-4-6",
+            "warp/gpt-5.4",
+            "warp/gpt-5.4-mini",
+            "warp/gpt-5.3-codex",
+            "boss/gpt-5.5",
+            "boss/gpt-5.4",
+            "boss/gpt-5.4-mini",
+            "boss/gpt-5.3-codex",
+        ]},
     ],
     "vision": [
         {"id": "google", "name": "Google Gemini", "models": [
@@ -208,6 +256,18 @@ SUPPORTED_PROVIDERS = {
         ]},
         {"id": "openai", "name": "OpenAI", "models": [
             "gpt-4o", "gpt-4o-mini",
+        ]},
+        {"id": "openrouter", "name": "OpenRouter", "models": [
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-3.5-sonnet",
+            "google/gemini-2.0-flash-001",
+        ]},
+        {"id": "wtboss", "name": "WTBoss AI Gateway", "models": [
+            "warp/claude-opus-4-7",
+            "warp/claude-sonnet-4-6",
+            "warp/gpt-5.4",
+            "boss/gpt-5.5",
         ]},
     ],
 }

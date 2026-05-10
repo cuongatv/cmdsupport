@@ -1,6 +1,6 @@
-# Contributing to Arkon
+# Contributing to CMD Support
 
-First off, thank you for considering contributing to Arkon! Every contribution — bug reports, feature requests, code, documentation — is valuable and appreciated.
+First off, thank you for considering contributing to CMD Support! Every contribution — bug reports, feature requests, code, documentation — is valuable and appreciated.
 
 ## 📋 Table of Contents
 
@@ -18,7 +18,7 @@ First off, thank you for considering contributing to Arkon! Every contribution �
 
 ## Code of Conduct
 
-Be respectful, constructive, and professional. We want Arkon to be a welcoming space for everyone regardless of experience level, identity, or background.
+Be respectful, constructive, and professional. We want CMD Support to be a welcoming space for everyone regardless of experience level, identity, or background.
 
 ---
 
@@ -318,10 +318,10 @@ Use the appropriate label:
 
 ## License
 
-By contributing to Arkon, you agree that your contributions will be licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+By contributing to CMD Support, you agree that your contributions will be licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).
 
-> **Note:** Arkon is licensed for **noncommercial use only**. If you need a commercial license, please contact the Arkon team.
+> **Note:** CMD Support is licensed for **noncommercial use only**. If you need a commercial license, please contact the CMD Support team.
 
 ---
 
-_Thank you for helping make Arkon better!_ 🚀
+_Thank you for helping make CMD Support better!_ 🚀

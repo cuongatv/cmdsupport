@@ -93,7 +93,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
   };
 
   const handleRemove = async (empId: string) => {
-    if (!confirm("Remove this member's access?")) return;
+    if (!confirm("Gỡ quyền truy cập của thành viên này?")) return;
     setError("");
     try {
       await api(`/api/scopes/${scopeType}/${scopeId}/members/${empId}`, { method: "DELETE" });
@@ -110,7 +110,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">Access Control — {label}</DialogTitle>
+          <DialogTitle className="text-xl">Quản lý truy cập — {label}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 mt-1">
@@ -121,11 +121,11 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
             </span>
             <div className="flex flex-col">
               <span className="font-medium">
-                {scopeType === "department" ? "Realm 1: Org Knowledge" : "Realm 2: Workspace"}
+                {scopeType === "department" ? "Phạm vi 1: Tri thức tổ chức" : "Phạm vi 2: Không gian nghiệp vụ"}
               </span>
               <span>
-                Assign roles to employees to grant them access to this scope. 
-                Members will be able to read or maintain documents according to their role.
+                Gán vai trò cho người dùng để cấp quyền truy cập phạm vi này.
+                Thành viên sẽ có thể đọc hoặc quản lý tài liệu theo vai trò của họ.
               </span>
             </div>
           </div>
@@ -146,7 +146,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                     })()}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Select employee to add..." />
+                  <SelectValue placeholder="Chọn người dùng để thêm..." />
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -163,10 +163,10 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="reader">Reader</SelectItem>
-                <SelectItem value="contributor">Contributor</SelectItem>
-                <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="reader">Xem</SelectItem>
+                <SelectItem value="contributor">Đóng góp</SelectItem>
+                <SelectItem value="owner">Chủ sở hữu</SelectItem>
+                <SelectItem value="admin">Quản trị</SelectItem>
               </SelectContent>
             </Select>
 
@@ -175,14 +175,14 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
               onClick={handleAdd}
               className="bg-primary text-primary-foreground shrink-0"
             >
-              {saving ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : "Add"}
+              {saving ? <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> : "Thêm"}
             </Button>
           </div>
 
           {/* Member list */}
           <div className="border border-border rounded-xl bg-card overflow-hidden">
             <div className="bg-muted/50 px-4 py-2 border-b border-border">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Members ({members.length})</h3>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Thành viên hiện tại ({members.length})</h3>
             </div>
             
             {loading ? (
@@ -191,7 +191,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
               </div>
             ) : members.length === 0 ? (
               <div className="p-4">
-                <EmptyState icon="group_off" title="No members" description="This scope has no specific members assigned yet." />
+                <EmptyState icon="group_off" title="Chưa có thành viên" description="Phạm vi này chưa được gán thành viên cụ thể." />
               </div>
             ) : (
               <div className="flex flex-col divide-y divide-border max-h-60 overflow-y-auto">
@@ -210,7 +210,7 @@ export function ScopeMembersDialog({ open, onOpenChange, label, scopeType, scope
                       <button
                         onClick={() => handleRemove(m.employee_id)}
                         className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                        title="Remove access"
+                        title="Gỡ quyền truy cập"
                       >
                         <span className="material-symbols-outlined text-base">close</span>
                       </button>

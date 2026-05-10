@@ -1,4 +1,4 @@
-# Arkon — How to Run (Development)
+# CMD Support — How to Run (Development)
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ Start PostgreSQL, Redis, and MinIO. If you have Docker:
 docker run -d --name arkon-pg \
   -e POSTGRES_USER=arkon \
   -e POSTGRES_PASSWORD=arkon_secret \
-  -e POSTGRES_DB=arkon \
+  -e POSTGRES_DB=cmd_support \
   -p 5432:5432 \
   pgvector/pgvector:pg16
 
@@ -98,15 +98,15 @@ You need **4 terminals**.
 uvicorn app.main:app --host 0.0.0.0 --port 5055 --reload
 ```
 
-On first startup, Arkon will:
+On first startup, CMD Support will:
 - Create the MinIO bucket if it doesn't exist
 - **Auto-create the default admin account** from `.env` (if no admin exists yet)
 
 You should see:
 ```
-SUCCESS  Default admin created: admin@arkon.local
-SUCCESS  Arkon MCP Server ready at /mcp
-SUCCESS  Arkon API started successfully
+SUCCESS  Default admin created: admin@cmdsupport.com
+SUCCESS  CMD Support MCP Server ready at /mcp
+SUCCESS  CMD Support API started successfully
 ```
 
 ### Terminal 2: Wiki Worker
@@ -163,7 +163,7 @@ http://localhost:5055/docs
 ```bash
 curl -X POST http://localhost:5055/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@arkon.local", "password": "admin123"}'
+  -d '{"email": "admin@cmdsupport.com", "password": "cmd@1234"}'
 ```
 
 Response:
@@ -174,7 +174,7 @@ Response:
   "user": {
     "id": "...",
     "name": "Admin",
-    "email": "admin@arkon.local",
+    "email": "admin@cmdsupport.com",
     "role": "admin"
   }
 }
@@ -227,7 +227,7 @@ After generating an MCP token for an employee, add to Claude Desktop config (`cl
 ```json
 {
   "mcpServers": {
-    "arkon": {
+    "cmd_support": {
       "url": "http://localhost:5055/mcp",
       "headers": {
         "Authorization": "Bearer ark_xxxx..."

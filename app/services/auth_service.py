@@ -148,6 +148,42 @@ async def get_current_user(
     return employee
 
 
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[Employee]:
+    """
+    Like get_current_user but returns None instead of raising 401
+    when credentials are missing or invalid. Used for public endpoints
+    that optionally benefit from knowing who the caller is.
+    """
+    if not credentials:
+        return None
+
+    payload = decode_access_token(credentials.credentials)
+    if not payload:
+        return None
+
+    result = await db.execute(
+        select(Employee)
+        .options(selectinload(Employee.department), selectinload(Employee.custom_role))
+        .where(Employee.id == uuid.UUID(payload["sub"]))
+    )
+    employee = result.scalar_one_or_none()
+    if not employee or not employee.is_active:
+        return None
+
+    if employee.role == "employee" and not employee.custom_role:
+        from app.database.models import Role
+        sys_role = (await db.execute(
+            select(Role).where(Role.name == "Employee", Role.is_system == True)
+        )).scalar_one_or_none()
+        if sys_role:
+            employee.custom_role = sys_role
+
+    return employee
+
+
 async def require_admin(
     current_user: Employee = Depends(get_current_user),
 ) -> Employee:

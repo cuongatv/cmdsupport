@@ -41,7 +41,7 @@ export function AddTagsDialog({ onTagsAdded }: AddTagsDialogProps) {
       onTagsAdded();
     } catch (error) {
       const msg = error instanceof ApiError ? (error.data as any)?.detail || error.message : "Unknown error";
-      alert("Failed to add tags: " + msg);
+      alert("Thêm tag thất bại: " + msg);
     } finally {
       setLoading(false);
     }
@@ -60,20 +60,20 @@ export function AddTagsDialog({ onTagsAdded }: AddTagsDialogProps) {
         render={
           <Button className="h-8 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sahara">
             <span className="material-symbols-outlined text-sm mr-1">add</span>
-            Add Tags
+            Thêm Tag
           </Button>
         }
       />
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Add New Tags</DialogTitle>
+          <DialogTitle>Thêm Tag mới</DialogTitle>
           <DialogDescription>
-            Enter tag names separated by commas (e.g. ai, bot, tool-1).
+            Nhập tên tag, phân cách bằng dấu phẩy (ví dụ: ai, bot, tool-1).
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
-          <Label htmlFor="tag-input">Tag Names</Label>
+          <Label htmlFor="tag-input">Tên Tag</Label>
           <Input 
             id="tag-input"
             placeholder="tag1, tag2, tag3..."
@@ -83,14 +83,14 @@ export function AddTagsDialog({ onTagsAdded }: AddTagsDialogProps) {
             autoFocus
           />
           <p className="text-[10px] text-muted-foreground mt-2 italic">
-            * Allowed characters: letters, numbers, underscore, hyphen, and comma.
+            * Ký tự cho phép: chữ cái, số, dấu gạch dưới, gạch ngang và dấu phẩy.
           </p>
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setIsOpen(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => setIsOpen(false)}>Huỷ</Button>
           <Button disabled={loading || !inputValue.trim()} onClick={handleSave}>
-            {loading ? "Saving..." : "Save Tags"}
+            {loading ? "Đang lưu..." : "Lưu Tag"}
           </Button>
         </DialogFooter>
       </DialogContent>

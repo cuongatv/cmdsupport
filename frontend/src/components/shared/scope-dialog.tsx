@@ -26,12 +26,12 @@ export function ScopeDialog({ open, onOpenChange, label }: Props) {
         <DialogHeader>
           <DialogTitle className="text-lg flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">lock</span>
-            Personal Access — {label}
+            Quyền truy cập cá nhân — {label}
           </DialogTitle>
         </DialogHeader>
         <div className="py-4">
           <p className="text-sm text-muted-foreground">
-            Personal access scope management will be available in a future update.
+            Quản lý phạm vi truy cập cá nhân sẽ có trong bản cập nhật tương lai.
           </p>
         </div>
       </DialogContent>

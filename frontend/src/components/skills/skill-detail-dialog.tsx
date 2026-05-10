@@ -31,7 +31,7 @@ export function SkillDetailDialog({
               </div>
               <div>
                 <DialogTitle className="text-xl font-serif">{skillName}</DialogTitle>
-                <p className="text-xs text-muted-foreground font-manrope">Package Explorer</p>
+                <p className="text-xs text-muted-foreground font-manrope">Trình khám phá gói</p>
               </div>
             </div>
             <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-tighter bg-muted/50">

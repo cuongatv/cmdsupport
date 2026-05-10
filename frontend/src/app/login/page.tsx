@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -21,9 +22,9 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/");
+      router.push("/admin");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {
       setLoading(false);
     }
@@ -33,18 +34,26 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md px-8">
         {/* Brand */}
-        <div className="text-center mb-10">
+        <div className="flex flex-col items-center text-center mb-10">
+          <Image
+            src="/bidv-logo.webp"
+            alt="CMD Support"
+            width={72}
+            height={72}
+            priority
+            className="mb-4"
+          />
           <h1 className="text-5xl tracking-tight text-foreground mb-2">
-            Arkon
+            CMD Support
           </h1>
           <p className="text-muted-foreground text-sm">
-            Enterprise AI Control Center
+            Trợ lý tư vấn khách hàng doanh nghiệp BIDV
           </p>
         </div>
 
         {/* Login Card */}
         <div className="bg-card rounded-xl border border-border shadow-sahara p-8">
-          <h2 className="text-2xl text-foreground mb-6">Sign in</h2>
+          <h2 className="text-2xl text-foreground mb-6">Đăng nhập</h2>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
@@ -54,7 +63,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@arkon.local"
+                placeholder="admin@cmdsupport.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -65,12 +74,12 @@ export default function LoginPage() {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="password" className="text-sm font-medium">
-                Password
+                Mật khẩu
               </Label>
               <Input
                 id="password"
                 type="password"
-                placeholder="Enter password"
+                placeholder="Nhập mật khẩu"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -94,18 +103,23 @@ export default function LoginPage() {
                   <span className="material-symbols-outlined animate-spin text-base">
                     progress_activity
                   </span>
-                  Signing in...
+                    Đang đăng nhập…
                 </span>
               ) : (
-                "Sign in"
+                "Đăng nhập"
               )}
             </Button>
           </form>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          Arkon v0.1 — On-Premise Deployment
-        </p>
+        <div className="text-center mt-6 space-y-1">
+          <p className="text-xs text-muted-foreground">
+            CMD Support — Phiên bản Pilot
+          </p>
+          <p className="text-[11px] text-muted-foreground/70">
+            Hệ thống nội bộ BIDV. Truy cập có ghi log.
+          </p>
+        </div>
       </div>
     </div>
   );

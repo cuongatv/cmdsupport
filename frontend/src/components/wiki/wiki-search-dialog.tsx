@@ -69,7 +69,7 @@ export function WikiSearchDialog({
   }, [filtered]);
 
   const navigate = (slug: string) => {
-    router.push(`/wiki/${slug}`);
+    router.push(`/admin/wiki/${slug}`);
     onOpenChange(false);
   };
 
@@ -84,7 +84,7 @@ export function WikiSearchDialog({
           <input
             ref={inputRef}
             type="text"
-            placeholder="Search wiki pages..."
+            placeholder="Tìm kiếm trang tri thức..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -103,7 +103,7 @@ export function WikiSearchDialog({
         <div className="max-h-96 overflow-y-auto py-2">
           {filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground px-4 py-6 text-center">
-              {query ? "No pages match your search." : "No pages yet."}
+              {query ? "Không tìm thấy trang phù hợp." : "Chưa có trang nào."}
             </p>
           ) : (
             GROUP_ORDER.filter((t) => grouped.has(t)).map((type) => (
@@ -148,13 +148,13 @@ export function WikiSearchDialog({
         <div className="border-t border-border px-4 py-2 flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <kbd className="px-1 py-0.5 rounded border border-border font-mono text-xs">↵</kbd>
-            navigate
+            điều hướng
           </span>
           <span className="flex items-center gap-1">
             <kbd className="px-1 py-0.5 rounded border border-border font-mono text-xs">Esc</kbd>
-            close
+            đóng
           </span>
-          <span className="ml-auto">{filtered.length} pages</span>
+          <span className="ml-auto">{filtered.length} trang</span>
         </div>
       </DialogContent>
     </Dialog>

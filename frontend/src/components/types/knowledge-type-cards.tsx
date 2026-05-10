@@ -23,7 +23,7 @@ type Props = {
 
 export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props) {
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this knowledge type?")) return;
+    if (!confirm("Xoá loại tri thức này?")) return;
     await api(`/api/knowledge-types/${id}`, { method: "DELETE" });
     onRefresh();
   };
@@ -42,8 +42,8 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
     return (
       <EmptyState
         icon="category"
-        title="No knowledge types"
-        description="Create types to categorize your documents"
+        title="Chưa có loại tri thức"
+        description="Tạo loại tri thức để phân loại tài liệu"
       />
     );
   }
@@ -68,7 +68,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
             </div>
             {type.source_count !== undefined && (
               <span className="text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                {type.source_count} docs
+                {type.source_count} tài liệu
               </span>
             )}
           </div>
@@ -82,7 +82,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
           <div className="flex gap-2 pt-2 border-t border-border">
             <Button variant="ghost" size="sm" onClick={() => onEdit(type)} className="text-xs">
               <span className="material-symbols-outlined text-sm mr-1">edit</span>
-              Edit
+              Sửa
             </Button>
             <Button
               variant="ghost"
@@ -91,7 +91,7 @@ export function KnowledgeTypeCards({ types, loading, onEdit, onRefresh }: Props)
               className="text-xs text-destructive hover:text-destructive"
             >
               <span className="material-symbols-outlined text-sm mr-1">delete</span>
-              Delete
+              Xoá
             </Button>
           </div>
         </div>

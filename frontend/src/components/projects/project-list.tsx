@@ -36,13 +36,13 @@ export function ProjectList({ projects, loading, isAdmin, onEdit, onOpen, onRefr
   const [error, setError] = React.useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Delete this project? Members will lose access to its documents.")) return;
+    if (!confirm("Xoá không gian này? Thành viên sẽ mất quyền truy cập tài liệu.")) return;
     setError(null);
     try {
       await api(`/api/projects/${id}`, { method: "DELETE" });
       onRefresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete");
+      setError(err instanceof Error ? err.message : "Xoá thất bại");
     }
   };
 
@@ -61,8 +61,8 @@ export function ProjectList({ projects, loading, isAdmin, onEdit, onOpen, onRefr
       <div className="bg-card rounded-xl border border-border shadow-sahara">
         <EmptyState
           icon="workspaces"
-          title="No workspaces yet"
-          description="Create a workspace to organize projects or customer engagements"
+          title="Chưa có không gian nào"
+          description="Tạo không gian để tổ chức dự án hoặc tương tác khách hàng"
         />
       </div>
     );
@@ -102,7 +102,7 @@ export function ProjectList({ projects, loading, isAdmin, onEdit, onOpen, onRefr
                       : "text-sky-600 border-sky-300"
                   }`}
                 >
-                  {project.workspace_type === "customer" ? "Customer" : "Project"}
+                  {project.workspace_type === "customer" ? "Khách hàng" : "Dự án"}
                 </Badge>
                 <Badge
                   variant="outline"
@@ -124,14 +124,14 @@ export function ProjectList({ projects, loading, isAdmin, onEdit, onOpen, onRefr
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(project); }}>
                           <span className="material-symbols-outlined text-base mr-2">edit</span>
-                          Edit
+                          Sửa
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={(e) => { e.stopPropagation(); handleDelete(project.id); }}
                           className="text-destructive focus:text-destructive"
                         >
                           <span className="material-symbols-outlined text-base mr-2">delete</span>
-                          Delete
+                          Xoá
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -143,11 +143,11 @@ export function ProjectList({ projects, loading, isAdmin, onEdit, onOpen, onRefr
             <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-sm">group</span>
-                {project.member_count} members
+                {project.member_count} thành viên
               </span>
               <span className="flex items-center gap-1">
                 <span className="material-symbols-outlined text-sm">description</span>
-                {project.source_count} docs
+                {project.source_count} tài liệu
               </span>
             </div>
           </div>

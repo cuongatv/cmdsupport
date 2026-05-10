@@ -79,7 +79,7 @@ export function KnowledgeTypeDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -90,24 +90,24 @@ export function KnowledgeTypeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Knowledge Type" : "Create Knowledge Type"}
+            {isEdit ? "Sửa loại tri thức" : "Tạo loại tri thức"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label>Name</Label>
+            <Label>Tên</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Product Documentation"
+              placeholder="Ví dụ: Tài liệu sản phẩm"
               required
               className="bg-background"
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Color</Label>
+            <Label>Màu sắc</Label>
             <div className="flex flex-wrap gap-2">
               {PRESET_COLORS.map((c) => (
                 <button
@@ -129,7 +129,7 @@ export function KnowledgeTypeDialog({
                     background:
                       "conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
                   }}
-                  title="Pick custom color"
+                  title="Chọn màu tuỳ chỉnh"
                 >
                   <span className="w-full h-full rounded-full bg-background flex items-center justify-center">
                     <span className="material-symbols-outlined text-muted-foreground" style={{ fontSize: "14px" }}>
@@ -149,11 +149,11 @@ export function KnowledgeTypeDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label>Description</Label>
+            <Label>Mô tả</Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
+              placeholder="Mô tả (tuỳ chọn)..."
               rows={2}
               className="bg-background"
             />
@@ -167,14 +167,14 @@ export function KnowledgeTypeDialog({
 
           <div className="flex justify-end gap-2 mt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              Huỷ
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? "Đang lưu..." : isEdit ? "Cập nhật" : "Tạo"}
             </Button>
           </div>
         </form>

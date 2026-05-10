@@ -1,6 +1,6 @@
 # Setup Guide
 
-Two ways to run Arkon: **Docker** (recommended for production) or **Development** (for local development and contributing).
+Two ways to run CMD Support: **Docker** (recommended for production) or **Development** (for local development and contributing).
 
 ---
 
@@ -50,12 +50,12 @@ docker compose up -d
 This starts four containers:
 | Container | Purpose |
 |---|---|
-| `arkon_api` | FastAPI backend + MCP server (port 5055) |
-| `arkon_worker` | Background worker — document ingestion + wiki compilation |
-| `arkon_worker_skills` | Background worker — AI skill processing |
-| `arkon_frontend` | Next.js admin portal (port 3119) |
+| `cmd_api` | FastAPI backend + MCP server (port 5055) |
+| `cmd_worker` | Background worker — document ingestion + wiki compilation |
+| `cmd_worker_skills` | Background worker — AI skill processing |
+| `cmd_frontend` | Next.js admin portal (port 3119) |
 
-Workers start only after `arkon_api` passes its health check, so there is no race condition on startup.
+Workers start only after `cmd_api` passes its health check, so there is no race condition on startup.
 
 > Note: you need to separately run PostgreSQL, Redis, and MinIO, or add them to `docker-compose.yml`. The included compose file assumes they are already available via the `DATABASE_URL`, `REDIS_HOST`, and `MINIO_ENDPOINT` env vars.
 
@@ -81,10 +81,10 @@ Recommended LLMs for wiki compilation (large context window):
 ### 5. Run database migrations
 
 ```bash
-docker exec arkon_api alembic upgrade head
+docker exec cmd_api alembic upgrade head
 ```
 
-> On first startup, the API runs migrations automatically before serving requests. You only need to run this manually after upgrading Arkon.
+> On first startup, the API runs migrations automatically before serving requests. You only need to run this manually after upgrading CMD Support.
 
 ---
 
@@ -109,7 +109,7 @@ Start infrastructure services with Docker:
 docker run -d --name arkon-pg \
   -e POSTGRES_USER=arkon \
   -e POSTGRES_PASSWORD=arkon_secret \
-  -e POSTGRES_DB=arkon \
+  -e POSTGRES_DB=cmd_support \
   -p 5432:5432 \
   pgvector/pgvector:pg16
 
@@ -134,8 +134,8 @@ For local development, the defaults in `.env.example` work out of the box except
 
 ```env
 SECRET_KEY=dev-only-not-for-production
-DEFAULT_ADMIN_EMAIL=admin@arkon.local
-DEFAULT_ADMIN_PASSWORD=admin123
+DEFAULT_ADMIN_EMAIL=admin@cmdsupport.com
+DEFAULT_ADMIN_PASSWORD=cmd@1234
 MINIO_SECRET_KEY=minioadmin123
 ```
 
@@ -180,9 +180,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 5055 --reload
 On first startup you should see:
 ```
 SUCCESS  MinIO bucket ready
-SUCCESS  Default admin created: admin@arkon.local
-SUCCESS  Arkon MCP Server ready at /mcp
-SUCCESS  Arkon API started successfully
+SUCCESS  Default admin created: admin@cmdsupport.com
+SUCCESS  CMD Support MCP Server ready at /mcp
+SUCCESS  CMD Support API started successfully
 ```
 
 **Terminal 2 — Wiki worker:**
@@ -234,12 +234,12 @@ See [MCP & Claude](MCP.md) for the connection guide.
 |---|---|---|
 | `DATABASE_URL` | — | PostgreSQL connection string (asyncpg format) |
 | `SECRET_KEY` | — | JWT signing secret. Must be changed in production. |
-| `DEFAULT_ADMIN_EMAIL` | `admin@arkon.local` | Admin account email (created on first startup) |
-| `DEFAULT_ADMIN_PASSWORD` | `admin123` | Admin account password |
+| `DEFAULT_ADMIN_EMAIL` | `admin@cmdsupport.com` | Admin account email (created on first startup) |
+| `DEFAULT_ADMIN_PASSWORD` | `cmd@1234` | Admin account password |
 | `MINIO_ENDPOINT` | `localhost:9000` | MinIO server address |
 | `MINIO_ACCESS_KEY` | `minioadmin` | MinIO access key |
 | `MINIO_SECRET_KEY` | — | MinIO secret key |
-| `MINIO_BUCKET` | `arkon-files` | Bucket name for uploaded files |
+| `MINIO_BUCKET` | `cmd-support-files` | Bucket name for uploaded files |
 | `MINIO_SECURE` | `false` | Use HTTPS for MinIO (`true` in production) |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |

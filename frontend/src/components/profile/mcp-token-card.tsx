@@ -33,7 +33,7 @@ export function McpTokenCard() {
   };
 
   const handleRevoke = async () => {
-    if (!confirm("Revoke your MCP token? Claude Desktop will disconnect.")) return;
+    if (!confirm("Thu hồi MCP token? Claude Desktop sẽ ngắt kết nối.")) return;
     try {
       await api("/api/my/mcp-token", { method: "DELETE" });
       setToken(null);
@@ -59,7 +59,7 @@ export function McpTokenCard() {
             MCP Token
           </h3>
           <p className="text-xs text-muted-foreground">
-            Connect your Claude Desktop to Arkon
+            Kết nối Claude Desktop với CMD Support
           </p>
         </div>
       </div>
@@ -67,7 +67,7 @@ export function McpTokenCard() {
       {token ? (
         /* Token was just generated — show it */
         <div className="flex flex-col gap-3">
-          <div className="bg-[#3a302a] rounded-lg p-3 font-mono text-xs text-[#faf5ee] break-all">
+          <div className="bg-[#0F2A2A] rounded-lg p-3 font-mono text-xs text-[#FDFFFF] break-all">
             {token}
           </div>
           <div className="flex gap-2">
@@ -75,7 +75,7 @@ export function McpTokenCard() {
               <span className="material-symbols-outlined text-sm mr-1">
                 {copied ? "check" : "content_copy"}
               </span>
-              {copied ? "Copied!" : "Copy Token"}
+              {copied ? "Đã sao chép!" : "Sao chép Token"}
             </Button>
             <Button
               variant="ghost"
@@ -86,7 +86,7 @@ export function McpTokenCard() {
               <span className="material-symbols-outlined text-sm mr-1">
                 vpn_key_off
               </span>
-              Revoke
+              Thu hồi
             </Button>
           </div>
         </div>
@@ -95,7 +95,7 @@ export function McpTokenCard() {
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 px-4 py-3 rounded-lg border border-green-200">
             <span className="material-symbols-outlined text-base">check_circle</span>
-            <span>MCP Token is active. Your token was shown when generated — it cannot be retrieved again for security.</span>
+            <span>MCP Token đang hoạt động. Token đã được hiển thị khi tạo — không thể lấy lại vì lý do bảo mật.</span>
           </div>
           <div className="flex gap-2">
             <Button
@@ -105,7 +105,7 @@ export function McpTokenCard() {
               size="sm"
             >
               <span className="material-symbols-outlined text-sm mr-1">refresh</span>
-              {loading ? "Regenerating..." : "Regenerate Token"}
+              {loading ? "Đang tạo lại…" : "Tạo lại Token"}
             </Button>
             <Button
               variant="ghost"
@@ -116,7 +116,7 @@ export function McpTokenCard() {
               <span className="material-symbols-outlined text-sm mr-1">
                 vpn_key_off
               </span>
-              Revoke
+              Thu hồi
             </Button>
           </div>
         </div>
@@ -127,7 +127,7 @@ export function McpTokenCard() {
           disabled={loading}
           className="bg-primary text-primary-foreground hover:bg-primary/90"
         >
-          {loading ? "Generating..." : "Generate MCP Token"}
+          {loading ? "Đang tạo…" : "Tạo MCP Token"}
         </Button>
       )}
     </div>

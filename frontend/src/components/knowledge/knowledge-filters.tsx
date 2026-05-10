@@ -36,11 +36,11 @@ export function KnowledgeFilters({
       {/* Knowledge Type filter */}
       <div className="bg-card rounded-xl p-5 border border-border shadow-sahara">
         <h4 className="text-sm font-semibold text-foreground mb-3">
-          Knowledge Type
+          Loại tri thức
         </h4>
         <div className="flex flex-col gap-1">
           <FilterItem
-            label="All Types"
+            label="Tất cả"
             active={selectedType === null}
             onClick={() => onSelectType(null)}
           />
@@ -62,11 +62,11 @@ export function KnowledgeFilters({
       {departments.length > 0 && (
         <div className="bg-card rounded-xl p-5 border border-border shadow-sahara">
           <h4 className="text-sm font-semibold text-foreground mb-3">
-            Department
+            Đơn vị
           </h4>
           <div className="flex flex-col gap-1">
             <FilterItem
-              label="All Departments"
+              label="Tất cả đơn vị"
               active={selectedDepartment === null}
               onClick={() => onSelectDepartment(null)}
             />

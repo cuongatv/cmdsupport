@@ -242,15 +242,35 @@ class OpenAIVision(VisionProvider):
         return ""
 
     async def test_connection(self) -> tuple[bool, str]:
+        # Direct one-shot call WITHOUT the retry-and-swallow logic in
+        # analyze_image() so genuine errors (auth, blocked, model not found)
+        # surface to the user instead of returning a false-positive OK.
         try:
-            # Quick test with a tiny 1x1 PNG
             tiny_png = (
                 b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
                 b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
                 b"\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00"
                 b"\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
             )
-            result = await self.analyze_image(tiny_png, "image/png", "What is this?")
+            data_url = f"data:image/png;base64,{base64.b64encode(tiny_png).decode('utf-8')}"
+            response = await self.client.chat.completions.create(
+                model=self.config.model_id,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "What is this?"},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url, "detail": "low"},
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=16,
+                temperature=0,
+            )
+            _ = response.choices[0].message.content or ""
             return True, f"OK — model={self.config.model_id}"
         except Exception as e:
             return False, f"OpenAI Vision error: {e}"

@@ -70,7 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem("arkon_token");
+    // Migrate token from old key (arkon_token) to new key (cmd_support_token)
+    if (typeof window !== "undefined") {
+      const oldToken = localStorage.getItem("arkon_token");
+      const newToken = localStorage.getItem("cmd_support_token");
+      if (oldToken && !newToken) {
+        localStorage.setItem("cmd_support_token", oldToken);
+        localStorage.removeItem("arkon_token");
+      }
+    }
+
+    const token = localStorage.getItem("cmd_support_token");
     if (token) {
       refresh();
     } else {

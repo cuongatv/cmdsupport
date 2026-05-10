@@ -166,7 +166,7 @@ export function WikiEditor({
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}
             >
-              {t === "edit" ? "Edit" : "Preview"}
+              {t === "edit" ? "Sửa" : "Xem trước"}
             </button>
           ))}
         </div>
@@ -213,7 +213,7 @@ export function WikiEditor({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             className="w-full min-h-[400px] resize-y p-4 font-mono text-sm leading-6 bg-background text-foreground focus:outline-none placeholder:text-muted-foreground"
-            placeholder="Write markdown here..."
+            placeholder="Viết nội dung markdown tại đây..."
             spellCheck={false}
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "b") {
@@ -232,7 +232,7 @@ export function WikiEditor({
           {content.trim() ? (
             <WikiContent markdown={content} />
           ) : (
-            <p className="text-sm text-muted-foreground italic">Nothing to preview.</p>
+            <p className="text-sm text-muted-foreground italic">Không có nội dung để xem trước.</p>
           )}
         </div>
       )}
@@ -245,7 +245,7 @@ export function WikiEditor({
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder={notePlaceholder ?? "Optional — describe what you changed"}
+            placeholder={notePlaceholder ?? "Tuỳ chọn — mô tả nội dung thay đổi"}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground"
           />
         </div>
@@ -256,7 +256,7 @@ export function WikiEditor({
 
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
-            Cancel
+            Huỷ
           </Button>
           <Button
             size="sm"
@@ -267,7 +267,7 @@ export function WikiEditor({
             {saving ? (
               <>
                 <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                Saving…
+                Đang lưu…
               </>
             ) : (
               <>

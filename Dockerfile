@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir .
 
 # Copy application source
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1

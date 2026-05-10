@@ -115,14 +115,14 @@ export function RoleDialog({ open, onOpenChange, role, permissions, onSaved }: P
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Role" : "Create Role"}
+            {isEdit ? "Sửa vai trò" : "Tạo vai trò"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5 mt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="role-name">Name</Label>
+              <Label htmlFor="role-name">Tên</Label>
               <Input
                 id="role-name"
                 value={name}
@@ -134,12 +134,12 @@ export function RoleDialog({ open, onOpenChange, role, permissions, onSaved }: P
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="role-desc">Description</Label>
+              <Label htmlFor="role-desc">Mô tả</Label>
               <Input
                 id="role-desc"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional"
+                placeholder="Tuỳ chọn"
                 className="bg-background"
               />
             </div>
@@ -147,9 +147,9 @@ export function RoleDialog({ open, onOpenChange, role, permissions, onSaved }: P
 
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <Label className="text-base">Permissions</Label>
+              <Label className="text-base">Quyền</Label>
               <span className="text-xs text-muted-foreground">
-                {selected.size} of {permissions.length} selected
+                {selected.size} / {permissions.length} đã chọn
               </span>
             </div>
 
@@ -233,14 +233,14 @@ export function RoleDialog({ open, onOpenChange, role, permissions, onSaved }: P
 
           <div className="flex justify-end gap-2 mt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              Huỷ
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? "Đang lưu…" : isEdit ? "Cập nhật" : "Tạo"}
             </Button>
           </div>
         </form>

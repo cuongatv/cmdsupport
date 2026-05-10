@@ -1,22 +1,86 @@
-version: '3.8'
-
 # Backend image built once, reused by api + workers
 x-backend: &backend
   build:
     context: .
     dockerfile: Dockerfile
-  image: arkon-backend:latest
+  image: cmd-support-backend:latest
   env_file: [.env]
   restart: always
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
 
 services:
+  # 0a. PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cmd_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: arkon
+      POSTGRES_PASSWORD: arkon_secret
+      POSTGRES_DB: cmd_support
+    ports:
+      - "5432:5432"
+    volumes:
+      - arkon_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arkon -d cmd_support"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 0b. Redis (background job queue)
+  redis:
+    image: redis:7-alpine
+    container_name: cmd_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - arkon_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 0c. MinIO (S3-compatible object storage)
+  minio:
+    image: minio/minio:latest
+    container_name: cmd_minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - arkon_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   # 1. API
   api:
     <<: *backend
-    container_name: arkon_api
+    container_name: cmd_api
     ports:
       - "5055:5055"
-    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 5055
+    command: sh -c "alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 5055"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')"]
@@ -28,20 +92,32 @@ services:
   # 2. Background worker (main queue)
   worker:
     <<: *backend
-    container_name: arkon_worker
+    container_name: cmd_worker
     command: python -m arq app.worker.WorkerSettings
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys; sys.exit(0 if any('arq' in open(f'/proc/{p}/cmdline').read() for p in os.listdir('/proc') if p.isdigit()) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # 3. Background worker (skills queue)
   worker_skills:
     <<: *backend
-    container_name: arkon_worker_skills
+    container_name: cmd_worker_skills
     command: python -m arq app.worker.SkillWorkerSettings
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,sys; sys.exit(0 if any('arq' in open(f'/proc/{p}/cmdline').read() for p in os.listdir('/proc') if p.isdigit()) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # 4. Frontend (Next.js standalone)
   frontend:
@@ -50,8 +126,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5055}
-    image: arkon-frontend:latest
-    container_name: arkon_frontend
+    image: cmd-support-frontend:latest
+    container_name: cmd_frontend
     restart: always
     ports:
       - "3119:3000"
@@ -61,3 +137,20 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# Volume names kept as 'arkon_*' to preserve existing data; renamed product is CMD Support
+volumes:
+  arkon_pg_data:
+  arkon_redis_data:
+  arkon_minio_data:

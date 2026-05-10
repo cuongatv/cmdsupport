@@ -26,5 +26,6 @@ frontend/
 *.md
 docs/
 
-# Alembic (migrations run separately)
-alembic/
+# Alembic migrations are needed inside the image so the API container
+# can run `alembic upgrade head` on startup.
+

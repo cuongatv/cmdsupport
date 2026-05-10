@@ -26,15 +26,15 @@ class ApiError extends Error {
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("arkon_token");
+  return localStorage.getItem("cmd_support_token");
 }
 
 export function setToken(token: string) {
-  localStorage.setItem("arkon_token", token);
+  localStorage.setItem("cmd_support_token", token);
 }
 
 export function clearToken() {
-  localStorage.removeItem("arkon_token");
+  localStorage.removeItem("cmd_support_token");
 }
 
 export async function api<T = unknown>(

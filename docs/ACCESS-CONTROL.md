@@ -1,6 +1,6 @@
 # Access Control
 
-Arkon has a dual-realm permission system:
+CMD Support has a dual-realm permission system:
 
 1. **Global realm** — department-based RBAC for organization-wide resources (documents, wiki, skills)
 2. **Workspace realm** — membership-based roles for project-scoped resources

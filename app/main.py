@@ -1,5 +1,5 @@
 """
-Arkon — Enterprise AI Control Center.
+CMD Support — Trợ lý Tư vấn Khách hàng Doanh nghiệp.
 FastAPI application entry point.
 """
 
@@ -59,7 +59,7 @@ async def seed_default_admin():
 async def lifespan(app: FastAPI):
     """Startup & shutdown logic (composed with FastMCP lifespan)."""
     async with mcp_http_app.lifespan(app):
-        logger.info("Starting Arkon API...")
+        logger.info("Starting CMD Support API...")
 
         # Ensure MinIO bucket exists
         try:
@@ -79,16 +79,16 @@ async def lifespan(app: FastAPI):
             logger.warning("⚠️  DEFAULT_ADMIN_PASSWORD is 'admin123' — change the admin password after first login!")
 
         # MCP server ready
-        logger.success("Arkon MCP Server ready at /mcp")
-        logger.success("Arkon API started successfully")
+        logger.success("CMD Support MCP Server ready at /mcp")
+        logger.success("CMD Support API started successfully")
         yield
 
-        logger.info("Arkon API shutdown complete")
+        logger.info("CMD Support API shutdown complete")
 
 
 app = FastAPI(
-    title="Arkon API",
-    description="Enterprise AI Control Center — Knowledge Base & Skill Management",
+    title="CMD Support API",
+    description="Trợ lý Tư vấn Khách hàng Doanh nghiệp — Quản lý Tri thức & Kỹ năng AI",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -108,7 +108,7 @@ app.add_middleware(
 app.mount("/mcp", mcp_http_app)
 
 # --- REST API Routers ---
-from app.routers import sources, notes, auth, admin_settings, rbac, knowledge_types, projects, roles, wiki, wiki_drafts, audit, skills  # noqa: E402
+from app.routers import sources, notes, auth, admin_settings, rbac, knowledge_types, projects, roles, wiki, wiki_drafts, audit, skills, cmd_support, tasks, notifications  # noqa: E402
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
@@ -122,13 +122,16 @@ app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(roles.router, prefix="/api", tags=["roles"])
 app.include_router(audit.router, prefix="/api", tags=["audit"])
 app.include_router(skills.router, prefix="/api", tags=["skills"])
+app.include_router(cmd_support.router, prefix="/api", tags=["cmd-support"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 
 
 @app.get("/")
 async def root():
     return {
-        "name": "Arkon",
-        "description": "Enterprise AI Control Center",
+        "name": "CMD Support",
+        "description": "Trợ lý Tư vấn Khách hàng Doanh nghiệp BIDV",
         "version": "0.1.0",
         "mcp_endpoint": "/mcp",
         "docs": "/docs",

@@ -1,5 +1,5 @@
 """
-Arkon MCP Resources — static/semi-static data exposed to Claude.
+CMD Support MCP Resources — static/semi-static data exposed to Claude.
 
 Resources provide context Claude can read at session start without calling a tool.
 """
@@ -13,10 +13,10 @@ def register_resources(mcp: FastMCP):
 
     @mcp.resource("arkon://about")
     async def about_arkon() -> str:
-        """About this Arkon instance — capabilities and instructions."""
+        """About this CMD Support instance — capabilities and instructions."""
         return (
-            "# Arkon Knowledge Base\n\n"
-            "You are connected to an Arkon enterprise LLM Wiki. Knowledge is organized "
+            "# CMD Support Knowledge Base\n\n"
+            "You are connected to CMD Support — an enterprise LLM Wiki for BIDV corporate advisory. Knowledge is organized "
             "as interlinked markdown wiki pages, compiled from source documents by an "
             "LLM and kept up to date over time. Wiki pages contain the synthesis; raw "
             "sources are available for precise citations.\n\n"

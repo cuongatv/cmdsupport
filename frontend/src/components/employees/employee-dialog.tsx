@@ -79,8 +79,8 @@ export function EmployeeDialog({
   const handleCreateDepartment = () => {
     setInlinePrompt({
       open: true,
-      title: "Create Department",
-      label: "Department Name",
+      title: "Tạo đơn vị",
+      label: "Tên đơn vị",
       value: "",
       saving: false,
       error: "",
@@ -99,8 +99,8 @@ export function EmployeeDialog({
   const handleCreateRole = () => {
     setInlinePrompt({
       open: true,
-      title: "Create Position",
-      label: "Position Name",
+      title: "Tạo chức vụ",
+      label: "Tên chức vụ",
       value: "",
       saving: false,
       error: "",
@@ -164,7 +164,7 @@ export function EmployeeDialog({
         await api(`/api/employees/${employee.id}`, { method: "PUT", body });
       } else {
         if (!password) {
-          setError("Password is required");
+          setError("Mật khẩu là bắt buộc");
           setSaving(false);
           return;
         }
@@ -174,7 +174,7 @@ export function EmployeeDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -186,13 +186,13 @@ export function EmployeeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Employee" : "Add Employee"}
+            {isEdit ? "Sửa người dùng" : "Thêm người dùng"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="emp-name">Name</Label>
+            <Label htmlFor="emp-name">Tên</Label>
             <Input
               id="emp-name"
               value={name}
@@ -216,34 +216,34 @@ export function EmployeeDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="emp-password">
-              Password {isEdit && "(leave blank to keep current)"}
+              Mật khẩu {isEdit && "(để trống nếu giữ nguyên)"}
             </Label>
             <Input
               id="emp-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={isEdit ? "••••••••" : "Min 8 characters"}
+              placeholder={isEdit ? "••••••••" : "Tối thiểu 8 ký tự"}
               className="bg-background"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label>System Role</Label>
+              <Label>Vai trò hệ thống</Label>
               <Select value={role} onValueChange={(v) => v && setRole(v)}>
                 <SelectTrigger className="bg-background">
                   {role === "admin" ? "Admin" : role === "employee" ? "Employee" : <SelectValue />}
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="employee">Employee</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="employee">Nhân viên</SelectItem>
+                  <SelectItem value="admin">Quản trị</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label>Department</Label>
+              <Label>Đơn vị</Label>
               <Select 
                 value={deptId} 
                 onValueChange={(v) => {
@@ -255,7 +255,7 @@ export function EmployeeDialog({
                 }}
               >
                 <SelectTrigger className="bg-background">
-                  {deptId ? (localDepartments.find(d => d.id === deptId)?.name || deptId) : <SelectValue placeholder="Select" />}
+                  {deptId ? (localDepartments.find(d => d.id === deptId)?.name || deptId) : <SelectValue placeholder="Chọn" />}
                 </SelectTrigger>
                 <SelectContent className="!w-max min-w-(--anchor-width)">
                   {localDepartments.map((d) => (
@@ -267,7 +267,7 @@ export function EmployeeDialog({
                   <SelectItem value="__new__" className="text-primary font-medium focus:text-primary">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm">add</span>
-                      Create new department...
+                      Tạo đơn vị mới…
                     </span>
                   </SelectItem>
                 </SelectContent>
@@ -277,7 +277,7 @@ export function EmployeeDialog({
 
           {role === "employee" && (
             <div className="flex flex-col gap-2">
-              <Label>Position</Label>
+              <Label>Chức vụ</Label>
               <Select
                 value={customRoleId || "__none__"}
                 onValueChange={(v) => {
@@ -289,10 +289,10 @@ export function EmployeeDialog({
                 }}
               >
                 <SelectTrigger className="bg-background">
-                  {customRoleId ? (localRoles.find(r => r.id === customRoleId)?.name || customRoleId) : "None"}
+                  {customRoleId ? (localRoles.find(r => r.id === customRoleId)?.name || customRoleId) : "Không"}
                 </SelectTrigger>
                 <SelectContent className="!w-max min-w-(--anchor-width)">
-                  <SelectItem value="__none__">None</SelectItem>
+                  <SelectItem value="__none__">Không</SelectItem>
                   {localRoles.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
                       {r.name}
@@ -302,7 +302,7 @@ export function EmployeeDialog({
                   <SelectItem value="__new__" className="text-primary font-medium focus:text-primary">
                     <span className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-sm">add</span>
-                      Create new position...
+                      Tạo chức vụ mới…
                     </span>
                   </SelectItem>
                 </SelectContent>
@@ -322,14 +322,14 @@ export function EmployeeDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              Huỷ
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? "Đang lưu…" : isEdit ? "Cập nhật" : "Tạo"}
             </Button>
           </div>
         </form>
@@ -362,13 +362,13 @@ export function EmployeeDialog({
           </div>
           <div className="flex justify-end gap-2 mt-2">
             <Button type="button" variant="outline" onClick={() => setInlinePrompt(p => ({ ...p, open: false }))}>
-              Cancel
+              Huỷ
             </Button>
             <Button 
               disabled={inlinePrompt.saving || !inlinePrompt.value.trim()} 
               onClick={submitInlinePrompt}
             >
-              {inlinePrompt.saving ? "Saving..." : "Create"}
+              {inlinePrompt.saving ? "Đang lưu…" : "Tạo"}
             </Button>
           </div>
         </DialogContent>

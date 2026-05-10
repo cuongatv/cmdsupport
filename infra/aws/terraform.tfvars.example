@@ -1,0 +1,56 @@
+# =============================================================================
+# terraform.tfvars.example — Mẫu giá trị cấu hình
+# Copy file này thành terraform.tfvars và điều chỉnh theo nhu cầu
+# =============================================================================
+
+# ─── Chung ───────────────────────────────────────────────────────────────────
+aws_region  = "ap-southeast-1"
+environment = "pilot"
+domain_name = "cmdsupport.com"
+
+# ─── Networking ──────────────────────────────────────────────────────────────
+vpc_cidr = "10.20.0.0/16"
+az_count = 2
+
+# ─── Database ────────────────────────────────────────────────────────────────
+db_instance_class        = "db.t4g.medium" # prod: "db.r6g.large"
+db_multi_az              = false            # prod: true
+db_deletion_protection   = false            # pilot: false cho dễ teardown; prod: true
+db_allocated_storage     = 50
+db_max_allocated_storage = 200
+
+# ─── Cache ───────────────────────────────────────────────────────────────────
+use_serverless_redis = true           # Valkey serverless
+redis_node_type      = "cache.t4g.micro" # fallback nếu use_serverless_redis = false
+
+# ─── Compute (ECS) ──────────────────────────────────────────────────────────
+api_desired_count      = 1
+worker_desired_count   = 1
+frontend_desired_count = 1
+api_cpu                = 512
+api_memory             = 1024
+worker_cpu             = 512
+worker_memory          = 1024
+frontend_cpu           = 512
+frontend_memory        = 1024
+
+# Image tags — lần đầu dùng "bootstrap", sau đó CI sẽ update
+image_tag_api      = "bootstrap"
+image_tag_frontend = "bootstrap"
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+log_retention_days = 30
+
+# ─── Edge / CDN ──────────────────────────────────────────────────────────────
+enable_cloudfront = false # Bật cho prod nếu cần CDN
+
+# ─── CI/CD ───────────────────────────────────────────────────────────────────
+github_repo = "your-org/cmd-support" # Thay bằng repo thực tế
+
+# ─── Monitoring ──────────────────────────────────────────────────────────────
+alarm_email = "" # Điền email để nhận alarm
+
+# ─── Tags bổ sung ────────────────────────────────────────────────────────────
+tags_extra = {
+  Team = "cmd-support"
+}

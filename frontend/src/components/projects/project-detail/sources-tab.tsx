@@ -32,7 +32,7 @@ export function SourcesTab({
   const [showAddDocModal, setShowAddDocModal] = useState(false);
 
   const handleRemoveSource = async (sourceId: string) => {
-    if (!confirm("Remove this document from the workspace?")) return;
+    if (!confirm("Gỡ tài liệu này khỏi không gian nghiệp vụ?")) return;
     onError(null);
     try {
       await api(`/api/projects/${project.id}/sources/${sourceId}`, { method: "DELETE" });
@@ -52,7 +52,7 @@ export function SourcesTab({
               <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-4 py-2 shadow-sahara">
                 <span className="material-symbols-outlined text-sm text-primary">description</span>
                 <span className="text-sm font-semibold">{sources.length}</span>
-                <span className="text-xs text-muted-foreground">Documents</span>
+                <span className="text-xs text-muted-foreground">Tài liệu</span>
               </div>
               {(() => {
                 const ready = sources.filter((s) => s.status === "ready").length;
@@ -65,19 +65,19 @@ export function SourcesTab({
                     {ready > 0 && (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <span className="w-2 h-2 rounded-full bg-green-500" />
-                        {ready} ready
+                        {ready} sẵn sàng
                       </div>
                     )}
                     {processing > 0 && (
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                        {processing} processing
+                        {processing} đang xử lý
                       </div>
                     )}
                     {errored > 0 && (
                       <div className="flex items-center gap-1.5 text-xs text-destructive">
                         <span className="w-2 h-2 rounded-full bg-destructive" />
-                        {errored} failed
+                        {errored} lỗi
                       </div>
                     )}
                   </>
@@ -93,7 +93,7 @@ export function SourcesTab({
             size="sm"
           >
             <span className="material-symbols-outlined text-base mr-1.5">add</span>
-            Add Document
+            Thêm tài liệu
           </Button>
         )}
       </div>
@@ -106,9 +106,9 @@ export function SourcesTab({
               folder_open
             </span>
           </div>
-          <h3 className="text-base font-heading text-foreground">No documents yet</h3>
+          <h3 className="text-base font-heading text-foreground">Chưa có tài liệu</h3>
           <p className="text-sm text-muted-foreground max-w-sm text-center">
-            Upload files or link existing documents to build this workspace's knowledge base.
+            Tải lên tệp hoặc liên kết tài liệu có sẵn để xây dựng kho tri thức cho không gian nghiệp vụ này.
           </p>
           {isAdmin && (
             <Button
@@ -118,7 +118,7 @@ export function SourcesTab({
               className="mt-2"
             >
               <span className="material-symbols-outlined text-base mr-1.5">add</span>
-              Add your first document
+              Thêm tài liệu đầu tiên
             </Button>
           )}
         </div>
@@ -218,9 +218,9 @@ export function SourcesTab({
                   </div>
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {s.added_at
-                      ? new Date(s.added_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
+                      ? new Date(s.added_at).toLocaleDateString("vi-VN", {
+                          day: "2-digit",
+                          month: "2-digit",
                         })
                       : ""}
                   </span>
@@ -235,7 +235,7 @@ export function SourcesTab({
                           className="text-destructive focus:text-destructive"
                         >
                           <span className="material-symbols-outlined text-base mr-2">delete</span>
-                          Remove
+                          Gỡ
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>

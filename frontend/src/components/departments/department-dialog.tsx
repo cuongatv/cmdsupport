@@ -60,7 +60,7 @@ export function DepartmentDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      setError(err instanceof Error ? err.message : "Lưu thất bại");
     } finally {
       setSaving(false);
     }
@@ -71,13 +71,13 @@ export function DepartmentDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl">
-            {isEdit ? "Edit Department" : "Create Department"}
+            {isEdit ? "Sửa đơn vị" : "Tạo đơn vị"}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="dept-name">Name</Label>
+            <Label htmlFor="dept-name">Tên</Label>
             <Input
               id="dept-name"
               value={name}
@@ -89,12 +89,12 @@ export function DepartmentDialog({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="dept-desc">Description</Label>
+            <Label htmlFor="dept-desc">Mô tả</Label>
             <Textarea
               id="dept-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description..."
+              placeholder="Mô tả (tuỳ chọn)…"
               rows={3}
               className="bg-background"
             />
@@ -112,14 +112,14 @@ export function DepartmentDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              Huỷ
             </Button>
             <Button
               type="submit"
               disabled={saving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {saving ? "Saving..." : isEdit ? "Update" : "Create"}
+              {saving ? "Đang lưu…" : isEdit ? "Cập nhật" : "Tạo"}
             </Button>
           </div>
         </form>

@@ -1,10 +1,10 @@
-![Arkon Banner](docs/assets/banner.png)
+![CMD Support Banner](docs/assets/banner.png)
 
-# Arkon - Enterprise AI Knowledge Hub
+# CMD Support - Enterprise AI Knowledge Hub
 
 **Connect your organization's knowledge to any Ai Client. Self-hosted, on-premise.**
 
-Arkon is the central layer between your documents and your employees' AI clients. Upload your SOPs, policies, product specs, and internal docs - Arkon compiles them into a structured knowledge wiki and serves it directly to Claude via MCP. Every employee gets the right context, automatically, without copy-pasting.
+CMD Support is the central layer between your documents and your employees' AI clients. Upload your SOPs, policies, product specs, and internal docs - CMD Support compiles them into a structured knowledge wiki and serves it directly to Claude via MCP. Every employee gets the right context, automatically, without copy-pasting.
 
 [Setup Guide](docs/SETUP.md) · [Architecture](docs/ARCHITECTURE.md) · [Wiki System](docs/WIKI.md) · [MCP & Claude](docs/MCP.md) · [AI Skills](docs/SKILLS.md) · [Access Control](docs/ACCESS-CONTROL.md)
 
@@ -16,7 +16,7 @@ Most organizations adopt AI team-by-team, with no shared knowledge, inconsistent
 
 ![Problem](docs/assets/Problem.png)
 
-Arkon treats your AI client as a managed organizational resource - not a personal chatbot.
+CMD Support treats your AI client as a managed organizational resource - not a personal chatbot.
 
 ---
 
@@ -53,7 +53,7 @@ Create a workspace → add members from any department → attach documents. Eac
 Upload custom agent packages and make them available to employees through Claude. Skills are versioned, department-scoped, and distributed via MCP.
 
 ### MCP Server
-Employees connect Claude Desktop (or any MCP client) to Arkon using a personal token. Claude gets access to the compiled wiki, raw source documents, and AI skills - all filtered to the employee's permission scope.
+Employees connect Claude Desktop (or any MCP client) to CMD Support using a personal token. Claude gets access to the compiled wiki, raw source documents, and AI skills - all filtered to the employee's permission scope.
 
 → See [MCP & Claude](docs/MCP.md) for the full tool reference.
 
@@ -101,8 +101,8 @@ Once an employee account is created and an MCP token is generated:
 ```json
 {
   "mcpServers": {
-    "arkon": {
-      "url": "https://your-arkon-server/mcp",
+    "cmd_support": {
+      "url": "https://your-cmd-support-server/mcp",
       "headers": {
         "Authorization": "Bearer ark_xxxxxxxxxxxx"
       }
@@ -119,7 +119,7 @@ Add this to `claude_desktop_config.json` and restart Claude Desktop. The employe
 
 ## Architecture
 
-![Arkon System Design](docs/assets/Architecture.png)
+![CMD Support System Design](docs/assets/Architecture.png)
 
 **Stack:** FastAPI · PostgreSQL + pgvector · Redis (arq) · MinIO · Next.js · Tailwind CSS
 
@@ -142,7 +142,7 @@ Add this to `claude_desktop_config.json` and restart Claude Desktop. The employe
 - [x] AI Skills - versioned, department-scoped agent packages
 - [x] Full RBAC - department permissions + workspace membership roles
 - [x] Audit log
-- [ ] Arkon CLI - one-command employee setup
+- [ ] CMD Support CLI - one-command employee setup
 - [ ] Notification system for draft review requests
 - [ ] Usage analytics dashboard
 
@@ -150,7 +150,7 @@ Add this to `claude_desktop_config.json` and restart Claude Desktop. The employe
 
 ## License
 
-Arkon is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+CMD Support is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
 
 Free to use for internal tooling, research, personal projects, and non-profit use.
 

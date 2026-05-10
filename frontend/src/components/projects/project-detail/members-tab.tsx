@@ -20,30 +20,30 @@ import { Member, Employee, Project } from "./types";
 
 const ROLE_DESCRIPTIONS: Record<string, string[]> = {
   viewer: [
-    "View members, sources, and wiki pages of the workspace",
-    "View the wiki graph and wiki index of the workspace",
-    "No other permissions",
+    "Xem thành viên, tài liệu và trang tri thức của không gian nghiệp vụ",
+    "Xem đồ thị tri thức và mục lục wiki",
+    "Không có quyền khác",
   ],
   contributor: [
-    "All Viewer permissions",
-    "Propose wiki drafts for pages in the workspace (create drafts pending editor approval)",
-    "Propose edits via MCP (propose_wiki_edit)",
+    "Tất cả quyền của Xem",
+    "Đề xuất bản nháp trang tri thức (chờ biên tập duyệt)",
+    "Đề xuất chỉnh sửa qua MCP (propose_wiki_edit)",
   ],
   editor: [
-    "All Contributor permissions",
-    "Direct edit wiki pages in the workspace (bypassing review)",
-    "Approve or reject drafts for workspace pages",
-    "Add or remove sources from the workspace (link existing source, upload file, add URL)",
-    "Review drafts via MCP (list_pending_drafts, review_draft, approve_draft, reject_draft)",
-    "Edit wiki via MCP (edit_wiki_page)",
+    "Tất cả quyền của Đóng góp",
+    "Sửa trực tiếp trang tri thức (không cần duyệt)",
+    "Duyệt hoặc từ chối bản nháp",
+    "Thêm hoặc gỡ tài liệu nguồn (liên kết, tải lên, thêm URL)",
+    "Duyệt bản nháp qua MCP (list_pending_drafts, review_draft, approve_draft, reject_draft)",
+    "Sửa wiki qua MCP (edit_wiki_page)",
   ],
   admin: [
-    "All Editor permissions",
-    "Add or remove members from the workspace",
-    "Change member roles",
-    "Rename or archive the workspace",
-    "Cannot delete the workspace (only system admins can delete)",
-    "Guard: cannot delete or demote yourself if you are the last admin",
+    "Tất cả quyền của Biên tập",
+    "Thêm hoặc gỡ thành viên",
+    "Thay đổi vai trò thành viên",
+    "Đổi tên hoặc lưu trữ không gian nghiệp vụ",
+    "Không thể xoá không gian nghiệp vụ (chỉ quản trị hệ thống mới xoá được)",
+    "Không thể xoá hoặc hạ quyền chính mình nếu là quản trị cuối cùng",
   ],
 };
 
@@ -83,7 +83,7 @@ export function MembersTab({
   };
 
   const handleRemoveMember = async (empId: string) => {
-    if (!confirm("Remove this member from the project?")) return;
+    if (!confirm("Gỡ thành viên này khỏi không gian nghiệp vụ?")) return;
     onError(null);
     try {
       await api(`/api/projects/${project.id}/members/${empId}`, { method: "DELETE" });
@@ -123,7 +123,7 @@ export function MembersTab({
                   })()}
                 </span>
               ) : (
-                <SelectValue placeholder="Select employee to add..." />
+                <SelectValue placeholder="Chọn người dùng để thêm..." />
               )}
             </SelectTrigger>
             <SelectContent>
@@ -139,14 +139,14 @@ export function MembersTab({
             onClick={handleAddMember}
             className="bg-primary text-primary-foreground hover:bg-primary/90 shrink-0"
           >
-            Add
+            Thêm
           </Button>
         </div>
       )}
 
       {members.length === 0 ? (
         <div className="bg-card rounded-xl border border-border shadow-sahara">
-          <EmptyState icon="group" title="No members yet" description="Add employees to give them access to this workspace's knowledge." />
+          <EmptyState icon="group" title="Chưa có thành viên" description="Thêm người dùng để cấp quyền truy cập tri thức của không gian nghiệp vụ này." />
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

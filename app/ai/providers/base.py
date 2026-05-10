@@ -22,6 +22,8 @@ class ProviderType(str, Enum):
     GOOGLE = "google"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    OPENROUTER = "openrouter"
+    WTBOSS = "wtboss"
     OLLAMA = "ollama"
     VOYAGE = "voyage"
     COHERE = "cohere"
