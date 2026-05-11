@@ -95,3 +95,4 @@ session-*.md
 # Playwright reports
 frontend/test-results/
 frontend/playwright-report/
+.gstack/
