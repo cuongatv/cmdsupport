@@ -314,8 +314,8 @@ async def compile_source_with_agent(
             )
             return state.summary()
         except Exception as e:
-            logger.warning(f"WikiAgent: LLM call failed at step {step}: {e}")
-            break
+            logger.error(f"WikiAgent: LLM call failed at step {step}: {e}")
+            raise
 
         messages.append(assistant_message_from_turn(turn))
 
@@ -325,13 +325,23 @@ async def compile_source_with_agent(
 
         results: list[tuple[str, str, Any]] = []
         for call in turn.tool_calls:
-            state.record(call.name)
+            # Some gateways (e.g. wtboss) prepend "mcp__<server>__" to tool
+            # names. Strip any such prefix so dispatch matches the registered
+            # tool name. Only strip if the bare name is registered, otherwise
+            # leave as-is so the agent sees a real "Unknown tool" error.
+            tool_name = call.name
+            if tool_name not in handlers and "__" in tool_name:
+                bare = tool_name.rsplit("__", 1)[-1]
+                if bare in handlers:
+                    tool_name = bare
+
+            state.record(tool_name)
             await on_progress(
                 step,
-                f"{call.name}({_short_args(call.arguments)})",
+                f"{tool_name}({_short_args(call.arguments)})",
             )
 
-            handler = handlers.get(call.name)
+            handler = handlers.get(tool_name)
             if handler is None:
                 result: Any = {"error": f"Unknown tool: '{call.name}'"}
             else:
@@ -343,6 +353,8 @@ async def compile_source_with_agent(
                     logger.warning(f"WikiAgent: tool {call.name} raised: {e}")
                     result = {"error": str(e)}
 
+            # Echo back the ORIGINAL tool name from the call so the
+            # provider's tool-result message id/name match what the LLM sent.
             results.append((call.id, call.name, result))
 
         if state.finished:

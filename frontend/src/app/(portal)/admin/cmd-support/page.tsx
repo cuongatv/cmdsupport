@@ -6,11 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { CmdSupportBanner } from "@/components/cmd-support/banner";
 import { AdvisoryResult, type AdviceDetail } from "@/components/cmd-support/advisory-result";
 import { SegmentSelect } from "@/components/cmd-support/segment-select";
 import { ProvinceSelect } from "@/components/cmd-support/province-select";
 import { IndustrySelect } from "@/components/cmd-support/industry-select";
+
+type AdviceLanguage = "vi" | "en";
 
 export default function CmdSupportPage() {
   const [customerName, setCustomerName] = useState("");
@@ -19,7 +22,9 @@ export default function CmdSupportPage() {
   const [industryCode, setIndustryCode] = useState("");
   const [needs, setNeeds] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
+  const [adviceLanguage, setAdviceLanguage] = useState<AdviceLanguage>("vi");
   const [formErrors, setFormErrors] = useState<{ customer_name?: string; needs?: string }>({});
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdviceDetail | null>(null);
@@ -48,6 +53,7 @@ export default function CmdSupportPage() {
           industry_code: industryCode || undefined,
           needs: needs.trim(),
           additional_context: additionalContext.trim() || undefined,
+          advice_language: adviceLanguage,
         },
         timeoutMs: 120_000,
       });
@@ -128,6 +134,32 @@ export default function CmdSupportPage() {
             <div className="flex flex-col gap-1.5">
               <Label>Ngành nghề</Label>
               <IndustrySelect value={industryCode} onValueChange={setIndustryCode} disabled={submitting} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Ngôn ngữ tư vấn</Label>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-1">
+                {([
+                  ["vi", "Tiếng Việt"],
+                  ["en", "English"],
+                ] as const).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={submitting}
+                    onClick={() => setAdviceLanguage(value)}
+                    className={cn(
+                      "h-9 justify-center text-sm",
+                      adviceLanguage === value && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                    )}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Kết quả tư vấn sẽ hiển thị theo ngôn ngữ đã chọn.</p>
             </div>
 
             <div className="flex flex-col gap-1.5">

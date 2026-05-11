@@ -813,6 +813,12 @@ class CmdAdvisorySession(Base):
     status: Mapped[str] = mapped_column(String(30), default="ready")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    input_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    source_snapshot_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    retrieval_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    reuse_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    refresh_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    schema_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -827,6 +833,7 @@ class CmdAdvisorySession(Base):
     __table_args__ = (
         Index("cmd_advisory_created_by_idx", "created_by_id"),
         Index("cmd_advisory_created_at_idx", "created_at"),
+        Index("cmd_advisory_fingerprint_idx", "input_fingerprint"),
     )
 
 

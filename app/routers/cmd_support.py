@@ -26,6 +26,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 CUSTOMER_SEGMENTS = {"sme", "midcom", "public_admin"}
+ADVICE_LANGUAGES = {"vi", "en"}
 
 
 class AdviceCreateRequest(BaseModel):
@@ -38,6 +39,14 @@ class AdviceCreateRequest(BaseModel):
     )
     needs: str = Field(min_length=10, max_length=5000)
     additional_context: Optional[str] = Field(None, max_length=5000)
+    advice_language: str = Field(
+        "vi",
+        description="Ngôn ngữ kết quả tư vấn: vi | en (mặc định vi)",
+    )
+    force_refresh: bool = Field(
+        False,
+        description="Forçar nova chamada LLM mesmo com cache hit",
+    )
 
 
 class AdviceSummary(BaseModel):
@@ -60,6 +69,8 @@ class AdviceDetail(AdviceSummary):
     prompt_version: Optional[str] = None
     model_provider: Optional[str] = None
     model_id: Optional[str] = None
+    reuse_status: Optional[str] = None
+    schema_version: Optional[str] = None
     duration_ms: Optional[int] = None
     error_message: Optional[str] = None
 
@@ -106,6 +117,8 @@ def _to_detail(obj) -> AdviceDetail:
         prompt_version=obj.prompt_version,
         model_provider=obj.model_provider,
         model_id=obj.model_id,
+        reuse_status=obj.reuse_status,
+        schema_version=obj.schema_version,
         duration_ms=obj.duration_ms,
         error_message=obj.error_message,
     )
@@ -127,6 +140,12 @@ async def create_advice(
             status_code=400,
             detail="Phân khúc khách hàng không hợp lệ (sme | midcom | public_admin)",
         )
+    advice_language = body.advice_language.lower()
+    if advice_language not in ADVICE_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail="Ngôn ngữ tư vấn không hợp lệ (vi | en)",
+        )
     session_obj = await cmd_support_service.create_advice(
         db=db,
         user=user,
@@ -136,6 +155,8 @@ async def create_advice(
         customer_segment=segment,
         needs=body.needs,
         additional_context=body.additional_context,
+        advice_language=advice_language,
+        force_refresh=body.force_refresh,
     )
     return _to_detail(session_obj)
 

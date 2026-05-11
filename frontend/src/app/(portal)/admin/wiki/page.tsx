@@ -173,7 +173,7 @@ export default function WikiIndexPage() {
                     {displayPages.map((page) => (
                       <Link
                         key={page.slug}
-                        href={`/wiki/${page.slug}`}
+                        href={`/admin/wiki/${page.slug}`}
                         className="group block bg-card border border-border rounded-xl p-4 hover:border-primary/40 hover:shadow-sahara transition-all"
                       >
                         <div className="flex items-start justify-between gap-2 mb-2">

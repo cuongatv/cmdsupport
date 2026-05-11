@@ -201,13 +201,23 @@ async def ingest_file_task(ctx: dict, source_id: str):
                 "pages_updated": result["pages_updated"],
             }
 
-        except Exception as e:
-            logger.error(f"Ingestion failed for {source_id}: {e}")
-            source.status = "error"
-            source.error_message = str(e)[:500]
-            source.progress = 0
-            source.progress_message = f"Error: {str(e)[:200]}"
-            await session.commit()
+        except BaseException as e:
+            # BaseException catches arq's asyncio.CancelledError raised on
+            # job timeout (Exception alone misses it on some Python versions).
+            # We MUST set status='error' so the UI does not show "processing
+            # 67%" forever after a timeout.
+            etype = type(e).__name__
+            logger.error(f"Ingestion failed for {source_id}: {etype}: {e}")
+            try:
+                source.status = "error"
+                source.error_message = f"{etype}: {str(e)[:480]}"
+                source.progress = 0
+                source.progress_message = f"Error: {etype}"
+                await session.commit()
+            except Exception as commit_err:
+                logger.error(
+                    f"Failed to mark source {source_id} as errored: {commit_err}"
+                )
             raise
 
 
@@ -292,12 +302,19 @@ async def ingest_url_task(ctx: dict, source_id: str):
                 "pages_updated": result["pages_updated"],
             }
 
-        except Exception as e:
-            logger.error(f"URL ingestion failed for {source_id}: {e}")
-            source.status = "error"
-            source.error_message = str(e)[:500]
-            source.progress = 0
-            await session.commit()
+        except BaseException as e:
+            etype = type(e).__name__
+            logger.error(f"URL ingestion failed for {source_id}: {etype}: {e}")
+            try:
+                source.status = "error"
+                source.error_message = f"{etype}: {str(e)[:480]}"
+                source.progress = 0
+                source.progress_message = f"Error: {etype}"
+                await session.commit()
+            except Exception as commit_err:
+                logger.error(
+                    f"Failed to mark source {source_id} as errored: {commit_err}"
+                )
             raise
 
 

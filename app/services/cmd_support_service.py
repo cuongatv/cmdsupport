@@ -27,6 +27,10 @@ from app.database.models import (
     Province,
 )
 from app.services.audit_service import log_audit
+from app.services.cmd_advisory_fingerprint import (
+    compute_advisory_fingerprint,
+    compute_source_snapshot_hash,
+)
 
 # Sentinel UUID for anonymous audit log entries (principal_id is NOT NULL)
 _ANONYMOUS_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
@@ -105,6 +109,34 @@ SEGMENT_LABELS_VI = {
     "public_admin": "Hành chính sự nghiệp",
 }
 
+DEFAULT_DISCLAIMERS = {
+    "vi": "Cần RM xác minh điều kiện cấp tín dụng theo quy định BIDV hiện hành. Kết quả tư vấn chỉ mang tính tham khảo.",
+    "en": "The RM must verify credit eligibility under current BIDV regulations. This advisory result is for reference only.",
+}
+
+V2_REQUIRED_DEFAULTS: dict[str, object] = {
+    "executive_thesis": "",
+    "primary_products": [],
+    "cross_sell_products": [],
+    "upsell_products": [],
+    "operations_products": [],
+    "digital_channels": [],
+    "policies_incentives": [],
+    "bundle_advantages": "",
+    "schema_version": "v2.0",
+}
+
+
+def _normalize_v2_result(result_json: dict[str, object], language: str) -> dict[str, object]:
+    """Ensure a CMD advisory result carries the v2 response contract."""
+    normalized = dict(result_json)
+    for key, default_value in V2_REQUIRED_DEFAULTS.items():
+        if key not in normalized or normalized[key] is None:
+            normalized[key] = list(default_value) if isinstance(default_value, list) else default_value
+    normalized["schema_version"] = "v2.0"
+    normalized["advice_language"] = language
+    return normalized
+
 
 async def create_advice(
     db: AsyncSession,
@@ -115,9 +147,12 @@ async def create_advice(
     needs: str,
     additional_context: Optional[str],
     customer_segment: Optional[str] = "sme",
+    advice_language: str = "vi",
+    force_refresh: bool = False,
 ) -> CmdAdvisorySession:
     t0 = time.time()
     segment = (customer_segment or "sme").lower()
+    language = advice_language if advice_language in DEFAULT_DISCLAIMERS else "vi"
     segment_label = SEGMENT_LABELS_VI.get(segment, SEGMENT_LABELS_VI["sme"])
 
     # Resolve province
@@ -138,7 +173,12 @@ async def create_advice(
         if row:
             industry_name = row.name
 
-    # Check AI providers
+    # Check AI providers.
+    # Operator note: advisory LLM/embedding providers are resolved from the
+    # Settings-backed ProviderRegistry — there is no separate "advisory
+    # provider" setting. Changing the active LLM provider/model in Admin →
+    # Settings invalidates any prior advisory cache entry whose fingerprint
+    # was bound to the old provider/model (see cmd_advisory_fingerprint.py).
     from app.ai.registry import ProviderRegistry
     registry = ProviderRegistry(db)
     try:
@@ -155,6 +195,7 @@ async def create_advice(
             status_code=503,
             detail="Chưa cấu hình AI provider trong Cài đặt",
         )
+    llm_config = await registry._load_config("llm")
 
     # Build search query
     query_parts = [segment_label]
@@ -191,27 +232,71 @@ async def create_advice(
 
     retrieved_page_ids = [page.id for page, _ in results]
     retrieved_source_ids = list(all_source_ids)
+    input_fingerprint = compute_advisory_fingerprint(
+        customer_segment=segment,
+        province_code=province_code,
+        industry_code=industry_code,
+        needs=needs,
+        additional_context=additional_context,
+        advice_language=language,
+        prompt_version=PROMPT_VERSION,
+        model_provider=llm_config.provider.value,
+        model_id=llm_config.model_id,
+    )
+    source_snapshot_hash = compute_source_snapshot_hash(retrieved_page_ids)
+    reuse_status = "new"
+    refresh_reason = None
 
-    _default_disclaimer = "Cần RM xác minh điều kiện cấp tín dụng theo quy định BIDV hiện hành. Kết quả tư vấn chỉ mang tính tham khảo."
+    if not force_refresh:
+        existing_session = (
+            await db.execute(
+                select(CmdAdvisorySession)
+                .where(
+                    CmdAdvisorySession.input_fingerprint == input_fingerprint,
+                    CmdAdvisorySession.status == "ready",
+                )
+                .order_by(desc(CmdAdvisorySession.created_at))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing_session:
+            if existing_session.source_snapshot_hash == source_snapshot_hash:
+                await db.refresh(existing_session)
+                existing_session.reuse_status = "reused"
+                return existing_session
+            reuse_status = "refreshed"
+            refresh_reason = "source_snapshot_hash_changed"
+
+    _default_disclaimer = DEFAULT_DISCLAIMERS[language]
 
     # Short-circuit: no wiki results → skip LLM call
     if len(results) == 0:
         duration_ms = int((time.time() - t0) * 1000)
         result_json = {
+            "advice_language": language,
             "customer_context": {
                 "name": customer_name,
                 "province": province_name,
                 "industry": industry_name,
                 "detected_needs": [needs],
             },
-            "analysis": "Chưa có tài liệu liên quan trong kho tri thức nội bộ để phân tích nhu cầu khách hàng.",
+            "analysis": (
+                "No related documents were found in the internal knowledge base to analyze this customer need."
+                if language == "en"
+                else "Chưa có tài liệu liên quan trong kho tri thức nội bộ để phân tích nhu cầu khách hàng."
+            ),
             "recommendations": [],
             "red_flags": [],
             "offer_materials": [],
             "follow_up_questions": [],
-            "coverage_gaps": ["Chưa có tài liệu liên quan trong kho tri thức nội bộ"],
+            "coverage_gaps": [
+                "No related documents were found in the internal knowledge base"
+                if language == "en"
+                else "Chưa có tài liệu liên quan trong kho tri thức nội bộ"
+            ],
             "rm_disclaimer": _default_disclaimer,
         }
+        result_json = _normalize_v2_result(result_json, language)
         session_obj = CmdAdvisorySession(
             created_by_id=user.id if user else None,
             customer_name=customer_name,
@@ -225,11 +310,17 @@ async def create_advice(
             retrieved_wiki_page_ids=[],
             retrieved_source_ids=[],
             result_json=result_json,
-            model_provider=None,
-            model_id=None,
+            model_provider=llm_config.provider.value,
+            model_id=llm_config.model_id,
             prompt_version=PROMPT_VERSION,
             scope_type="global",
             status="ready",
+            input_fingerprint=input_fingerprint,
+            source_snapshot_hash=source_snapshot_hash,
+            retrieval_snapshot=context_blocks,
+            reuse_status=reuse_status,
+            refresh_reason=refresh_reason,
+            schema_version="v2.0",
             error_message=None,
             duration_ms=duration_ms,
         )
@@ -261,12 +352,14 @@ async def create_advice(
         needs=needs,
         additional_context=additional_context,
         context_blocks=context_blocks,
+        advice_language=language,
     )
 
     # Call LLM
     status = "ready"
     error_message = None
     result_json = None
+    raw_output = ""
 
     try:
         raw_output = await llm.generate(
@@ -281,10 +374,29 @@ async def create_advice(
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
         result_json = json.loads(cleaned)
+        if not isinstance(result_json, dict):
+            raise json.JSONDecodeError("LLM output root is not a JSON object", cleaned, 0)
     except json.JSONDecodeError:
         status = "failed"
         error_message = "LLM output không hợp lệ JSON"
-        result_json = {"raw": raw_output}
+        result_json = {
+            "schema_version": "v1",
+            "advice_language": language,
+            "customer_context": {
+                "name": customer_name,
+                "province": province_name,
+                "industry": industry_name,
+                "detected_needs": [needs],
+            },
+            "analysis": "",
+            "recommendations": [],
+            "red_flags": [],
+            "offer_materials": [],
+            "follow_up_questions": [],
+            "coverage_gaps": ["LLM output không hợp lệ JSON"],
+            "rm_disclaimer": _default_disclaimer,
+            "raw": raw_output,
+        }
     except Exception as e:
         status = "failed"
         error_message = f"Lỗi gọi LLM: {str(e)}"
@@ -292,6 +404,8 @@ async def create_advice(
 
     # Post-LLM validation (grounding hardening)
     if status == "ready" and isinstance(result_json, dict):
+        result_json["advice_language"] = language
+
         # Ensure customer_context exists
         if "customer_context" not in result_json:
             result_json["customer_context"] = {
@@ -310,6 +424,9 @@ async def create_advice(
             valid_recs = []
             dropped = 0
             for rec in recs:
+                if not isinstance(rec, dict):
+                    dropped += 1
+                    continue
                 citations = rec.get("citations")
                 if isinstance(citations, list) and len(citations) > 0:
                     # Validate confidence
@@ -321,8 +438,12 @@ async def create_advice(
             result_json["recommendations"] = valid_recs
             if dropped > 0:
                 logger.warning(f"CMD advice: loại {dropped} recommendation(s) vì thiếu citation")
-                gaps = result_json.get("coverage_gaps", []) or []
-                gaps.append(f"Đã loại {dropped} gợi ý vì thiếu trích dẫn")
+                existing_gaps = result_json.get("coverage_gaps", [])
+                gaps = existing_gaps if isinstance(existing_gaps, list) else []
+                if language == "en":
+                    gaps.append(f"Removed {dropped} recommendation(s) because citations were missing")
+                else:
+                    gaps.append(f"Đã loại {dropped} gợi ý vì thiếu trích dẫn")
                 result_json["coverage_gaps"] = gaps
 
         # Ensure rm_disclaimer has default value
@@ -333,10 +454,9 @@ async def create_advice(
         if "red_flags" not in result_json:
             result_json["red_flags"] = []
 
-    duration_ms = int((time.time() - t0) * 1000)
+        result_json = _normalize_v2_result(result_json, language)
 
-    # Get provider info
-    llm_config = await registry._load_config("llm")
+    duration_ms = int((time.time() - t0) * 1000)
 
     # Persist session
     session_obj = CmdAdvisorySession(
@@ -359,6 +479,12 @@ async def create_advice(
         status=status,
         error_message=error_message,
         duration_ms=duration_ms,
+        input_fingerprint=input_fingerprint,
+        source_snapshot_hash=source_snapshot_hash,
+        retrieval_snapshot=context_blocks,
+        reuse_status=reuse_status,
+        refresh_reason=refresh_reason,
+        schema_version=result_json.get("schema_version") if isinstance(result_json, dict) else None,
     )
     db.add(session_obj)
 

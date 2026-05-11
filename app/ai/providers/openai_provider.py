@@ -110,6 +110,66 @@ class OpenAILLM(LLMProvider):
             )
         return self._client
 
+    async def _create_chat(self, **kwargs):
+        """Wrap chat.completions.create with two layers of resilience:
+        1. Auto-retry without `temperature` when upstream model rejects it
+           (Claude Opus 4.7+ via OpenAI-compatible gateways).
+        2. Exponential backoff on transient 5xx gateway errors (502/503/504),
+           common with Cloudflare-fronted gateways like wtboss when LLM
+           context is large or origin is briefly overloaded.
+        """
+        # Backoffs: 15s, 45s, 120s. Total max wait ~3 min before giving up.
+        backoffs = [15, 45, 120]
+
+        async def _try_once():
+            return await self.client.chat.completions.create(**kwargs)
+
+        last_exc: Optional[BaseException] = None
+        for attempt, wait_s in enumerate([0, *backoffs]):
+            if wait_s > 0:
+                logger.warning(
+                    f"Retrying chat.completions after {wait_s}s "
+                    f"(attempt {attempt}/{len(backoffs)})..."
+                )
+                await asyncio.sleep(wait_s)
+            try:
+                return await _try_once()
+            except Exception as e:
+                msg = str(e)
+                # Layer 1: temperature deprecated → strip and retry immediately
+                if "temperature" in msg and ("deprecated" in msg or "not supported" in msg):
+                    kwargs.pop("temperature", None)
+                    logger.warning(
+                        f"Model {kwargs.get('model')} rejected `temperature`; retrying without it."
+                    )
+                    try:
+                        return await _try_once()
+                    except Exception as e2:
+                        e = e2
+                        msg = str(e2)
+                # Layer 2: transient 5xx gateway error → backoff retry
+                status = getattr(e, "status_code", None) or getattr(getattr(e, "response", None), "status_code", None)
+                is_transient_5xx = (
+                    status in (502, 503, 504)
+                    or "504" in msg
+                    or "502" in msg
+                    or "503" in msg
+                    or "Gateway time-out" in msg
+                    or "gateway_timeout" in msg
+                )
+                if is_transient_5xx and attempt < len(backoffs):
+                    last_exc = e
+                    logger.warning(
+                        f"Transient gateway error from {kwargs.get('model')}: "
+                        f"{msg[:200]}... will retry."
+                    )
+                    continue
+                raise
+        # Exhausted retries
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("chat.completions retry loop exited without result")
+
     async def generate(
         self,
         prompt: str,
@@ -122,7 +182,7 @@ class OpenAILLM(LLMProvider):
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        response = await self.client.chat.completions.create(
+        response = await self._create_chat(
             model=self.config.model_id,
             messages=messages,
             max_tokens=max_tokens,
@@ -143,7 +203,7 @@ class OpenAILLM(LLMProvider):
             openai_messages.append({"role": "system", "content": system})
         openai_messages.extend(neutral_to_openai_messages(messages))
 
-        response = await self.client.chat.completions.create(
+        response = await self._create_chat(
             model=self.config.model_id,
             messages=openai_messages,
             tools=tools,  # already in OpenAI format
@@ -217,7 +277,7 @@ class OpenAIVision(VisionProvider):
 
         for attempt in range(3):
             try:
-                response = await self.client.chat.completions.create(
+                kwargs = dict(
                     model=self.config.model_id,
                     messages=[
                         {
@@ -234,6 +294,15 @@ class OpenAIVision(VisionProvider):
                     max_tokens=1024,
                     temperature=0.2,
                 )
+                try:
+                    response = await self.client.chat.completions.create(**kwargs)
+                except Exception as e:
+                    msg = str(e)
+                    if "temperature" in msg and ("deprecated" in msg or "not supported" in msg):
+                        kwargs.pop("temperature", None)
+                        response = await self.client.chat.completions.create(**kwargs)
+                    else:
+                        raise
                 return response.choices[0].message.content or ""
             except Exception as e:
                 logger.warning(f"OpenAI Vision attempt {attempt + 1} failed: {e}")

@@ -51,6 +51,8 @@ export default function PublicHomePage() {
           industry_code: industryCode || undefined,
           needs: needs.trim(),
           additional_context: additionalContext.trim() || undefined,
+          // W1-T5: anonymous parity — same advice_language default as portal
+          advice_language: "vi",
         },
         timeoutMs: 120_000,
       });
