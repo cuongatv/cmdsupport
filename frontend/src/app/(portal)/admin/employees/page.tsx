@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmployeeTable } from "@/components/employees/employee-table";
 import { EmployeeDialog } from "@/components/employees/employee-dialog";
+import { ProvinceAssignmentTab } from "@/components/employees/province-assignment-tab";
 
 export type Department = {
   id: string;
@@ -55,6 +57,7 @@ export default function EmployeesPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<string>("users");
   const pageSize = 20;
 
   const loadEmployees = useCallback(async (p = 1, s = "") => {
@@ -100,33 +103,50 @@ export default function EmployeesPage() {
   return (
     <>
       <PageHeader
-        title="Người dùng"
-        description="Quản lý tài khoản người dùng và token truy cập MCP."
+        title="Tổ chức"
+        description="Quản lý tài khoản người dùng và thông tin cán bộ phụ trách Chi nhánh."
         action={
-          <Button
-            onClick={handleCreate}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <span className="material-symbols-outlined text-base mr-1">
-              person_add
-            </span>
-            Thêm người dùng
-          </Button>
+          tab === "users" ? (
+            <Button
+              onClick={handleCreate}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <span className="material-symbols-outlined text-base mr-1">
+                person_add
+              </span>
+              Thêm người dùng
+            </Button>
+          ) : null
         }
       />
 
-      <EmployeeTable
-        employees={employees}
-        loading={loading}
-        onEdit={handleEdit}
-        onRefresh={() => loadEmployees(page, search)}
-        page={page}
-        totalPages={totalPages}
-        total={total}
-        onPageChange={(p) => { setPage(p); loadEmployees(p, search); }}
-        search={search}
-        onSearch={handleSearch}
-      />
+      <Tabs value={tab} onValueChange={setTab} className="w-full">
+        <TabsList variant="line" className="mb-4">
+          <TabsTrigger value="users">Người dùng</TabsTrigger>
+          <TabsTrigger value="branch-assignments">
+            Thông tin phụ trách Chi nhánh
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users">
+          <EmployeeTable
+            employees={employees}
+            loading={loading}
+            onEdit={handleEdit}
+            onRefresh={() => loadEmployees(page, search)}
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            onPageChange={(p) => { setPage(p); loadEmployees(p, search); }}
+            search={search}
+            onSearch={handleSearch}
+          />
+        </TabsContent>
+
+        <TabsContent value="branch-assignments">
+          <ProvinceAssignmentTab />
+        </TabsContent>
+      </Tabs>
 
       <EmployeeDialog
         open={dialogOpen}

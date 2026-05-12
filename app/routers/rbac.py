@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.database.models import Department, Employee, Role
+from app.database.models import Department, Employee, Province, Role
 from app.services.audit_service import log_audit
 from app.services.auth_service import (
     get_current_user,
@@ -106,6 +106,47 @@ class TokenResponse(BaseModel):
     instructions: str
 
 
+class EmployeeContactOut(BaseModel):
+    """Compact employee contact card.
+
+    Used by both the Menu Tổ chức assignment tab and the CMD advisory result
+    HQ contact section. `effective_zalo_phone` falls back to `phone` so callers
+    don't have to re-implement the rule.
+    """
+
+    id: str
+    name: str
+    email: str
+    department_name: str = ""
+    phone: Optional[str] = None
+    zalo_phone: Optional[str] = None
+    effective_zalo_phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    slogan: Optional[str] = None
+    is_active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class ProvinceAssignmentOut(BaseModel):
+    province_id: str
+    province_code: str
+    province_name: str
+    province_short_name: str
+    province_type: str
+    region: str
+    assigned_employee_id: Optional[str] = None
+    assigned_employee: Optional[EmployeeContactOut] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ProvinceAssignmentUpdate(BaseModel):
+    employee_id: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -119,6 +160,40 @@ def _avatar_url_for(emp: Employee) -> Optional[str]:
     except Exception as exc:  # noqa: BLE001 — never break the user list over a broken avatar
         logger.warning(f"Failed to presign avatar for employee {emp.id}: {exc}")
         return None
+
+
+def _employee_to_contact(emp: Optional[Employee]) -> Optional[EmployeeContactOut]:
+    """Shape an Employee into the compact contact card used by the advisory
+    HQ section and the admin province-assignment tab."""
+    if emp is None:
+        return None
+    return EmployeeContactOut(
+        id=str(emp.id),
+        name=emp.name,
+        email=emp.email,
+        department_name=emp.department.name if emp.department else "",
+        phone=emp.phone,
+        zalo_phone=emp.zalo_phone,
+        effective_zalo_phone=emp.zalo_phone or emp.phone,
+        avatar_url=_avatar_url_for(emp),
+        slogan=emp.slogan,
+        is_active=emp.is_active,
+    )
+
+
+def _province_to_assignment(prov: Province) -> ProvinceAssignmentOut:
+    return ProvinceAssignmentOut(
+        province_id=str(prov.id),
+        province_code=prov.code,
+        province_name=prov.name,
+        province_short_name=prov.short_name,
+        province_type=prov.type,
+        region=prov.region,
+        assigned_employee_id=(
+            str(prov.assigned_employee_id) if prov.assigned_employee_id else None
+        ),
+        assigned_employee=_employee_to_contact(prov.assigned_employee),
+    )
 
 
 def _employee_to_out(emp: Employee) -> EmployeeOut:
@@ -563,3 +638,84 @@ async def get_my_mcp_token_status(
 ):
     """Check if the current employee has an active MCP token (without revealing it)."""
     return {"has_token": bool(current_user.mcp_token)}
+
+
+# ---------------------------------------------------------------------------
+# Province ↔ Employee Assignment (Menu Tổ chức → Thông tin phụ trách Chi nhánh)
+# ---------------------------------------------------------------------------
+
+@router.get("/province-assignments")
+async def list_province_assignments(
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:employees:read"),
+):
+    """List every province/city with the assigned HQ contact officer (if any)."""
+    stmt = (
+        select(Province)
+        .options(
+            selectinload(Province.assigned_employee).selectinload(Employee.department),
+        )
+        .order_by(Province.sort_order)
+    )
+    result = await db.execute(stmt)
+    provinces = result.scalars().all()
+    return [_province_to_assignment(p) for p in provinces]
+
+
+@router.patch("/province-assignments/{province_id}")
+async def update_province_assignment(
+    province_id: str,
+    body: ProvinceAssignmentUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:employees:manage"),
+):
+    """Assign (or clear) the HQ contact officer for a province/city."""
+    try:
+        prov_uuid = uuid.UUID(province_id)
+    except ValueError as exc:
+        raise HTTPException(400, "province_id không hợp lệ") from exc
+
+    prov = await db.get(Province, prov_uuid)
+    if prov is None:
+        raise HTTPException(404, "Tỉnh/Thành phố không tồn tại")
+
+    new_assignee_id: Optional[uuid.UUID] = None
+    if body.employee_id:
+        try:
+            new_assignee_id = uuid.UUID(body.employee_id)
+        except ValueError as exc:
+            raise HTTPException(400, "employee_id không hợp lệ") from exc
+        emp = await db.get(Employee, new_assignee_id)
+        if emp is None:
+            raise HTTPException(404, "Người dùng không tồn tại")
+        if not emp.is_active:
+            raise HTTPException(
+                400,
+                "Không thể gán cán bộ đã ngưng hoạt động làm đầu mối phụ trách.",
+            )
+
+    prov.assigned_employee_id = new_assignee_id
+    await log_audit(
+        db,
+        _user,
+        "update",
+        "province_assignment",
+        str(prov.id),
+        reason=(
+            f"{prov.code} -> {new_assignee_id}" if new_assignee_id else f"{prov.code} -> cleared"
+        ),
+    )
+    await db.flush()
+    await db.commit()
+
+    # Re-fetch with relationships so the response matches GET /province-assignments.
+    refreshed = (
+        await db.execute(
+            select(Province)
+            .options(
+                selectinload(Province.assigned_employee).selectinload(Employee.department),
+            )
+            .where(Province.id == prov.id)
+        )
+    ).scalar_one()
+    return _province_to_assignment(refreshed)

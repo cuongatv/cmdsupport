@@ -473,6 +473,10 @@ class Employee(Base):
     # Relationships
     department: Mapped["Department"] = relationship(back_populates="employees")
     custom_role: Mapped[Optional["Role"]] = relationship(back_populates="employees")
+    assigned_provinces: Mapped[list["Province"]] = relationship(
+        back_populates="assigned_employee",
+        foreign_keys="Province.assigned_employee_id",
+    )
 
     __table_args__ = (
         Index("ix_employees_mcp_token", "mcp_token"),
@@ -747,7 +751,12 @@ class AuditLog(Base):
 # ---------------------------------------------------------------------------
 
 class Province(Base):
-    """Vietnamese province/city (34 units after 2025 merger)."""
+    """Vietnamese province/city (34 units after 2025 merger).
+
+    `assigned_employee_id` points at the HQ contact officer responsible for
+    this province; surfaced both in the admin Menu Tổ chức tab and at the
+    bottom of every CMD advisory result for the same province.
+    """
     __tablename__ = "provinces"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -759,11 +768,25 @@ class Province(Base):
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     region: Mapped[str] = mapped_column(String(10), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    assigned_employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    assigned_employee: Mapped[Optional["Employee"]] = relationship(
+        back_populates="assigned_provinces",
+        foreign_keys=[assigned_employee_id],
+    )
+
+    __table_args__ = (
+        Index("ix_provinces_assigned_employee_id", "assigned_employee_id"),
     )
 
 
