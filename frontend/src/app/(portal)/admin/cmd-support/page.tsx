@@ -139,32 +139,6 @@ export default function CmdSupportPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label>Ngôn ngữ tư vấn</Label>
-              <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-1">
-                {([
-                  ["vi", "Tiếng Việt"],
-                  ["en", "English"],
-                ] as const).map(([value, label]) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={submitting}
-                    onClick={() => setAdviceLanguage(value)}
-                    className={cn(
-                      "h-9 justify-center text-sm",
-                      adviceLanguage === value && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-                    )}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">Kết quả tư vấn sẽ hiển thị theo ngôn ngữ đã chọn.</p>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
               <Label>
                 Mô tả nhu cầu khách hàng <span className="text-destructive">*</span>
               </Label>
@@ -195,6 +169,32 @@ export default function CmdSupportPage() {
                 className="bg-background text-base"
                 disabled={submitting}
               />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Ngôn ngữ tư vấn</Label>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-1">
+                {([
+                  ["vi", "Tiếng Việt"],
+                  ["en", "English"],
+                ] as const).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={submitting}
+                    onClick={() => setAdviceLanguage(value)}
+                    className={cn(
+                      "h-9 justify-center text-sm",
+                      adviceLanguage === value && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
+                    )}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Kết quả tư vấn sẽ hiển thị theo ngôn ngữ đã chọn.</p>
             </div>
 
             <Button
