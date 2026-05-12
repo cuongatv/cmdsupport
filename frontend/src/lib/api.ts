@@ -103,6 +103,28 @@ export async function api<T = unknown>(
 }
 
 /**
+ * Upload size limit (bytes). Must match nginx `client_max_body_size`
+ * in cmdsupport.com.conf. Currently 50 MB.
+ */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+function formatMb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Sum total payload size from a FormData (best-effort: only counts File parts).
+ * Used to show the user the actual size that was rejected.
+ */
+function totalUploadBytes(formData: FormData): number {
+  let total = 0;
+  for (const value of formData.values()) {
+    if (value instanceof File) total += value.size;
+  }
+  return total;
+}
+
+/**
  * Upload a file via multipart/form-data.
  */
 export async function apiUpload<T = unknown>(
@@ -113,6 +135,17 @@ export async function apiUpload<T = unknown>(
   const token = getToken();
   const controller = new AbortController();
   const timerId = setTimeout(() => controller.abort(), timeoutMs);
+
+  // Pre-flight size check so the user gets a friendly error instantly
+  // instead of waiting for nginx to reject the upload mid-stream.
+  const uploadBytes = totalUploadBytes(formData);
+  if (uploadBytes > MAX_UPLOAD_BYTES) {
+    clearTimeout(timerId);
+    throw new ApiError(
+      413,
+      `Tệp quá lớn (${formatMb(uploadBytes)}). Tối đa cho phép: ${formatMb(MAX_UPLOAD_BYTES)}.`,
+    );
+  }
 
   let res: Response;
   try {
@@ -126,7 +159,7 @@ export async function apiUpload<T = unknown>(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiError(0, "Upload timed out");
+      throw new ApiError(0, "Tải lên quá thời gian chờ. Vui lòng thử lại.");
     }
     throw err;
   } finally {
@@ -134,6 +167,16 @@ export async function apiUpload<T = unknown>(
   }
 
   if (!res.ok) {
+    // 413 from nginx returns HTML, not JSON, so res.json() throws.
+    // Build a Vietnamese, size-aware message regardless of body shape.
+    if (res.status === 413) {
+      const sizeNote = uploadBytes > 0 ? ` (${formatMb(uploadBytes)})` : "";
+      throw new ApiError(
+        413,
+        `Tệp quá lớn${sizeNote}. Máy chủ chỉ cho phép tối đa ${formatMb(MAX_UPLOAD_BYTES)}.`,
+      );
+    }
+
     let data;
     try {
       data = await res.json();
@@ -141,7 +184,7 @@ export async function apiUpload<T = unknown>(
       data = null;
     }
     const message =
-      (data as { detail?: string })?.detail || `Upload Error ${res.status}`;
+      (data as { detail?: string })?.detail || `Tải lên thất bại (mã lỗi ${res.status})`;
     throw new ApiError(res.status, message, data);
   }
 
