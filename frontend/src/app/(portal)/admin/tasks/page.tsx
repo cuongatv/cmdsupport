@@ -582,11 +582,17 @@ export default function TaskListPage() {
         title="Quản lý công việc"
         description="Tra cứu và lọc công việc trong các dự án bạn có quyền truy cập. Lọc theo dự án, trạng thái, người nhận và mức ưu tiên."
         action={
-          canCreate && currentProject ? (
+          canCreate ? (
             <Button
               onClick={() => setCreateDialogOpen(true)}
               data-testid="task-create-btn"
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!currentProject}
+              title={
+                currentProject
+                  ? undefined
+                  : "Chọn một dự án ở bộ lọc để tạo công việc"
+              }
             >
               <span className="material-symbols-outlined text-sm">add</span>
               Tạo công việc
