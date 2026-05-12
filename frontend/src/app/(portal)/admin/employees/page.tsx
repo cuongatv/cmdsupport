@@ -29,6 +29,11 @@ export type Employee = {
   last_connected?: string;
   custom_role_id?: string;
   custom_role_name?: string;
+  phone?: string | null;
+  zalo_phone?: string | null;
+  effective_zalo_phone?: string | null;
+  slogan?: string | null;
+  avatar_url?: string | null;
 };
 
 type PaginatedResponse = {

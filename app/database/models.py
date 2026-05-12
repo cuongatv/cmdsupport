@@ -445,6 +445,22 @@ class Employee(Base):
         String(500), unique=True,
         comment="Bearer token for MCP authentication",
     )
+    phone: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True,
+        comment="Primary phone number",
+    )
+    zalo_phone: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True,
+        comment="Zalo phone number; if empty, fall back to `phone` for Zalo tasks",
+    )
+    avatar_key: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True,
+        comment="Object storage key for avatar image (jpg/jpeg/png/webp)",
+    )
+    slogan: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True,
+        comment="User-supplied slogan / motto",
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_connected: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

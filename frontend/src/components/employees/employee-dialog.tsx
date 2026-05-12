@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { api, apiUpload } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +19,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// jpg/jpeg/png/webp only — server enforces the same list.
+const AVATAR_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp";
+const AVATAR_ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"];
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+
 type Department = { id: string; name: string };
 type Role = { id: string; name: string; is_system?: boolean };
 type Employee = {
@@ -28,6 +33,10 @@ type Employee = {
   role: string;
   department_id: string;
   custom_role_id?: string;
+  phone?: string | null;
+  zalo_phone?: string | null;
+  slogan?: string | null;
+  avatar_url?: string | null;
 };
 
 type Props = {
@@ -54,6 +63,13 @@ export function EmployeeDialog({
   const [role, setRole] = useState("employee");
   const [deptId, setDeptId] = useState("");
   const [customRoleId, setCustomRoleId] = useState("");
+  const [phone, setPhone] = useState("");
+  const [zaloPhone, setZaloPhone] = useState("");
+  const [slogan, setSlogan] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [localRoles, setLocalRoles] = useState<Role[]>([]);
@@ -134,6 +150,10 @@ export function EmployeeDialog({
       setDeptId(employee.department_id);
       setCustomRoleId(employee.custom_role_id || "");
       setPassword("");
+      setPhone(employee.phone ?? "");
+      setZaloPhone(employee.zalo_phone ?? "");
+      setSlogan(employee.slogan ?? "");
+      setAvatarPreview(employee.avatar_url ?? null);
     } else {
       setName("");
       setEmail("");
@@ -141,9 +161,49 @@ export function EmployeeDialog({
       setRole("employee");
       setDeptId(departments[0]?.id || "");
       setCustomRoleId("");
+      setPhone("");
+      setZaloPhone("");
+      setSlogan("");
+      setAvatarPreview(null);
     }
+    setAvatarFile(null);
+    setRemoveAvatar(false);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
     setError("");
   }, [employee, open, departments]);
+
+  const handleAvatarChange = (file: File | null) => {
+    if (!file) {
+      setAvatarFile(null);
+      return;
+    }
+    const nameLower = file.name.toLowerCase();
+    const extOk = AVATAR_ALLOWED_EXTENSIONS.some((ext) => nameLower.endsWith(ext));
+    if (!extOk) {
+      setError("Định dạng ảnh không hợp lệ. Chỉ chấp nhận jpg, jpeg, png, webp.");
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setError(`Ảnh quá lớn (tối đa ${AVATAR_MAX_BYTES / 1024 / 1024} MB).`);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+      return;
+    }
+    setError("");
+    setAvatarFile(file);
+    setRemoveAvatar(false);
+    // Local preview without a network round-trip.
+    const reader = new FileReader();
+    reader.onload = () => setAvatarPreview(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveAvatar = () => {
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setRemoveAvatar(true);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,18 +217,34 @@ export function EmployeeDialog({
         role,
         department_id: deptId,
         custom_role_id: customRoleId || null,
+        phone: phone.trim() || null,
+        zalo_phone: zaloPhone.trim() || null,
+        slogan: slogan.trim() || null,
       };
       if (password) body.password = password;
 
+      let targetId: string;
       if (isEdit) {
         await api(`/api/employees/${employee.id}`, { method: "PUT", body });
+        targetId = employee.id;
       } else {
         if (!password) {
           setError("Mật khẩu là bắt buộc");
           setSaving(false);
           return;
         }
-        await api("/api/employees", { method: "POST", body });
+        const created = await api<{ id: string }>("/api/employees", { method: "POST", body });
+        targetId = created.id;
+      }
+
+      // Avatar is uploaded in a second request — keeps the create payload as
+      // plain JSON and mirrors how sources.py handles files.
+      if (avatarFile) {
+        const fd = new FormData();
+        fd.append("file", avatarFile);
+        await apiUpload(`/api/employees/${targetId}/avatar`, fd);
+      } else if (isEdit && removeAvatar) {
+        await api(`/api/employees/${targetId}/avatar`, { method: "DELETE" });
       }
 
       onSaved();
@@ -183,7 +259,7 @@ export function EmployeeDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl">
             {isEdit ? "Sửa người dùng" : "Thêm người dùng"}
@@ -309,6 +385,105 @@ export function EmployeeDialog({
               </Select>
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="emp-phone">Số điện thoại</Label>
+              <Input
+                id="emp-phone"
+                type="tel"
+                inputMode="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="VD: 0901234567"
+                className="bg-background"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="emp-zalo">Số điện thoại dùng Zalo</Label>
+              <Input
+                id="emp-zalo"
+                type="tel"
+                inputMode="tel"
+                value={zaloPhone}
+                onChange={(e) => setZaloPhone(e.target.value)}
+                placeholder="Để trống sẽ dùng SĐT phía trên"
+                className="bg-background"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Bỏ trống: hệ thống tự dùng Số điện thoại cho tác vụ Zalo.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label>Ảnh đại diện</Label>
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full overflow-hidden bg-secondary flex items-center justify-center shrink-0 border border-border">
+                {avatarPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarPreview}
+                    alt="Avatar preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="material-symbols-outlined text-2xl text-muted-foreground">
+                    account_circle
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 min-w-0">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    <span className="material-symbols-outlined text-base mr-1" style={{ fontSize: 16 }}>
+                      upload
+                    </span>
+                    {avatarPreview ? "Đổi ảnh" : "Tải ảnh lên"}
+                  </Button>
+                  {avatarPreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveAvatar}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      Xoá ảnh
+                    </Button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Định dạng: jpg, jpeg, png, webp. Tối đa 5 MB.
+                </p>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept={AVATAR_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => handleAvatarChange(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="emp-slogan">Slogan</Label>
+            <textarea
+              id="emp-slogan"
+              value={slogan}
+              onChange={(e) => setSlogan(e.target.value)}
+              rows={2}
+              placeholder="Câu nói/khẩu hiệu cá nhân"
+              className="bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 resize-none"
+            />
+          </div>
 
           {error && (
             <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg">

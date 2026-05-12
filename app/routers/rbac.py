@@ -3,10 +3,12 @@ Department & Employee router — RBAC management for admin portal.
 Permission model v2: uses scoped permission format.
 """
 
+import os
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,18 @@ from app.services.auth_service import (
 )
 from app.services.mcp_auth_service import MCPAuthService
 from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
+from app.services.storage_service import storage_service
+
+# Allowed avatar formats (jpg/jpeg/png/webp) — extension is the source of truth,
+# content-type is best-effort because browsers/clients are inconsistent.
+AVATAR_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+AVATAR_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+}
+AVATAR_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
 router = APIRouter()
 
@@ -52,6 +66,9 @@ class EmployeeCreate(BaseModel):
     role: str = "employee"  # "admin" or "employee"
     department_id: str
     custom_role_id: Optional[str] = None
+    phone: Optional[str] = None
+    zalo_phone: Optional[str] = None
+    slogan: Optional[str] = None
 
 
 class EmployeeOut(BaseModel):
@@ -66,15 +83,63 @@ class EmployeeOut(BaseModel):
     last_connected: Optional[str] = None
     custom_role_id: Optional[str] = None
     custom_role_name: Optional[str] = None
+    phone: Optional[str] = None
+    zalo_phone: Optional[str] = None
+    # effective_zalo_phone = zalo_phone if set, else phone. Computed on read so
+    # downstream Zalo tasks can use a single field without re-implementing the
+    # fallback rule everywhere.
+    effective_zalo_phone: Optional[str] = None
+    slogan: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class AvatarResponse(BaseModel):
+    avatar_url: str
 
 
 class TokenResponse(BaseModel):
     token: str
     employee_name: str
     instructions: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _avatar_url_for(emp: Employee) -> Optional[str]:
+    """Return a presigned URL for the employee's avatar, or None."""
+    if not emp.avatar_key:
+        return None
+    try:
+        return storage_service.get_download_url(emp.avatar_key, expires_seconds=3600)
+    except Exception as exc:  # noqa: BLE001 — never break the user list over a broken avatar
+        logger.warning(f"Failed to presign avatar for employee {emp.id}: {exc}")
+        return None
+
+
+def _employee_to_out(emp: Employee) -> EmployeeOut:
+    return EmployeeOut(
+        id=str(emp.id),
+        name=emp.name,
+        email=emp.email,
+        role=emp.role,
+        department_id=str(emp.department_id),
+        department_name=emp.department.name if emp.department else "",
+        is_active=emp.is_active,
+        has_token=bool(emp.mcp_token),
+        last_connected=emp.last_connected.isoformat() if emp.last_connected else None,
+        custom_role_id=str(emp.custom_role_id) if emp.custom_role_id else None,
+        custom_role_name=emp.custom_role.name if emp.custom_role else None,
+        phone=emp.phone,
+        zalo_phone=emp.zalo_phone,
+        effective_zalo_phone=emp.zalo_phone or emp.phone,
+        slogan=emp.slogan,
+        avatar_url=_avatar_url_for(emp),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -186,22 +251,7 @@ async def list_employees(
     employees = result.scalars().all()
 
     return {
-        "items": [
-            EmployeeOut(
-                id=str(e.id),
-                name=e.name,
-                email=e.email,
-                role=e.role,
-                department_id=str(e.department_id),
-                department_name=e.department.name if e.department else "",
-                is_active=e.is_active,
-                has_token=bool(e.mcp_token),
-                last_connected=e.last_connected.isoformat() if e.last_connected else None,
-                custom_role_id=str(e.custom_role_id) if e.custom_role_id else None,
-                custom_role_name=e.custom_role.name if e.custom_role else None,
-            )
-            for e in employees
-        ],
+        "items": [_employee_to_out(e) for e in employees],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -250,6 +300,9 @@ async def create_employee(
         role=body.role,
         department_id=uuid.UUID(body.department_id),
         custom_role_id=custom_role_id,
+        phone=(body.phone or None),
+        zalo_phone=(body.zalo_phone or None),
+        slogan=(body.slogan or None),
     )
     db.add(emp)
     await log_audit(db, _user, "create", "employee", str(emp.id), reason=emp.email)
@@ -261,6 +314,9 @@ async def create_employee(
         "name": emp.name,
         "email": emp.email,
         "custom_role_id": str(emp.custom_role_id) if emp.custom_role_id else None,
+        "phone": emp.phone,
+        "zalo_phone": emp.zalo_phone,
+        "slogan": emp.slogan,
     }
 
 
@@ -279,6 +335,12 @@ async def update_employee(
     emp.role = body.role
     emp.department_id = uuid.UUID(body.department_id)
     emp.custom_role_id = uuid.UUID(body.custom_role_id) if body.custom_role_id else None
+    # Treat empty strings as "clear the field" so the user can intentionally
+    # blank phone/zalo/slogan from the edit form. The zalo fallback to phone
+    # only happens at read time via effective_zalo_phone.
+    emp.phone = body.phone or None
+    emp.zalo_phone = body.zalo_phone or None
+    emp.slogan = body.slogan or None
     if body.password:
         emp.password_hash = hash_password(body.password)
     await log_audit(db, _user, "update", "employee", str(emp.id), reason=emp.email)
@@ -316,6 +378,98 @@ async def toggle_employee(
     await log_audit(db, _user, "update", "employee", str(emp.id), reason=f"toggle active={emp.is_active}")
     await db.flush()
     return {"id": str(emp.id), "is_active": emp.is_active}
+
+
+# ---------------------------------------------------------------------------
+# Avatar Upload
+# ---------------------------------------------------------------------------
+
+@router.post("/employees/{emp_id}/avatar", response_model=AvatarResponse)
+async def upload_employee_avatar(
+    emp_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:employees:manage"),
+):
+    """Upload (or replace) an employee's avatar. Accepts jpg/jpeg/png/webp."""
+    emp = await db.get(Employee, uuid.UUID(emp_id))
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    file_name = file.filename or ""
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext not in AVATAR_ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            400,
+            "Định dạng ảnh không hợp lệ. Chỉ chấp nhận jpg, jpeg, png, webp.",
+        )
+    if file.content_type and file.content_type.lower() not in AVATAR_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            400,
+            f"Content-Type không hợp lệ: {file.content_type}.",
+        )
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Tệp ảnh trống.")
+    if len(data) > AVATAR_MAX_BYTES:
+        raise HTTPException(
+            413,
+            f"Ảnh quá lớn. Tối đa {AVATAR_MAX_BYTES // (1024 * 1024)} MB.",
+        )
+
+    # Map extension → canonical content-type so the stored object serves with
+    # the right header even if the client lied about content_type.
+    content_type_by_ext = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }
+    storage_content_type = content_type_by_ext[ext]
+
+    # Delete previous avatar (best-effort) so we don't leak orphaned objects.
+    if emp.avatar_key:
+        try:
+            storage_service.delete_object(emp.avatar_key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to delete previous avatar {emp.avatar_key}: {exc}")
+
+    object_name = f"employees/{emp.id}/avatar/avatar{ext}"
+    storage_service.upload_file(
+        object_name=object_name,
+        data=data,
+        content_type=storage_content_type,
+    )
+
+    emp.avatar_key = object_name
+    await log_audit(db, _user, "update", "employee", str(emp.id), reason="upload avatar")
+    await db.flush()
+    await db.commit()
+
+    presigned = storage_service.get_download_url(object_name, expires_seconds=3600)
+    return AvatarResponse(avatar_url=presigned)
+
+
+@router.delete("/employees/{emp_id}/avatar")
+async def delete_employee_avatar(
+    emp_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:employees:manage"),
+):
+    """Remove an employee's avatar."""
+    emp = await db.get(Employee, uuid.UUID(emp_id))
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if emp.avatar_key:
+        try:
+            storage_service.delete_object(emp.avatar_key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to delete avatar {emp.avatar_key}: {exc}")
+        emp.avatar_key = None
+        await log_audit(db, _user, "update", "employee", str(emp.id), reason="delete avatar")
+        await db.flush()
+    return {"deleted": True}
 
 
 # ---------------------------------------------------------------------------
