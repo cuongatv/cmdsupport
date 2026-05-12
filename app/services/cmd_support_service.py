@@ -724,6 +724,37 @@ async def get_advice(
     raise HTTPException(status_code=403, detail="Không có quyền xem phiên tư vấn này")
 
 
+async def get_hq_contact_for_province(
+    db: AsyncSession,
+    province_code: Optional[str],
+) -> Optional[Employee]:
+    """Resolve the HQ contact officer for a province code, eager-loaded.
+
+    Returned object has `department` populated so callers can build a
+    contact card without further queries. None when:
+      - province_code is missing
+      - province row not found
+      - province has no assignee
+      - assignee is inactive (we hide inactive officers from advisory output)
+    """
+    if not province_code:
+        return None
+    stmt = (
+        select(Province)
+        .options(
+            selectinload(Province.assigned_employee).selectinload(Employee.department)
+        )
+        .where(Province.code == province_code)
+    )
+    province = (await db.execute(stmt)).scalar_one_or_none()
+    if province is None:
+        return None
+    emp = province.assigned_employee
+    if emp is None or not emp.is_active:
+        return None
+    return emp
+
+
 async def list_advices(
     db: AsyncSession,
     user: Employee,

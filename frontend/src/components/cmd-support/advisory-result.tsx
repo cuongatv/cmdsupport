@@ -77,6 +77,19 @@ export const isV2 = (r: ResultJson | ResultJsonV2): r is ResultJsonV2 =>
 // data-testid="advisory-disclaimer"
 // data-testid="advisory-reuse-badge"
 
+export type HqContact = {
+  id: string;
+  name: string;
+  email: string;
+  department_name: string;
+  phone: string | null;
+  zalo_phone: string | null;
+  effective_zalo_phone: string | null;
+  avatar_url: string | null;
+  slogan: string | null;
+  is_active: boolean;
+};
+
 export type AdviceDetail = {
   id: string;
   customer_name: string;
@@ -97,6 +110,7 @@ export type AdviceDetail = {
   created_by_name: string;
   schema_version?: string;
   reuse_status?: string;
+  hq_contact?: HqContact | null;
 };
 
 type Props = {
@@ -211,6 +225,231 @@ const RESULT_LABELS = {
     reuseStatusNew: "New",
   },
 } as const;
+
+/* ═══════════════════════════════════════════════════════════
+   HQ contact (CÁN BỘ ĐẦU MỐI TẠI TRỤ SỞ CHÍNH)
+   ═══════════════════════════════════════════════════════════ */
+
+const HQ_LABELS = {
+  vi: {
+    sectionTitle: "CÁN BỘ ĐẦU MỐI TẠI TRỤ SỞ CHÍNH",
+    callLabel: "Gọi điện",
+    zaloLabel: "Chat Zalo",
+    phoneFallback: "Chưa khai báo",
+    fallbackSlogan: "Đồng hành cùng Chi nhánh trong tư vấn KHDN.",
+  },
+  en: {
+    sectionTitle: "HQ Contact Officer",
+    callLabel: "Call",
+    zaloLabel: "Chat on Zalo",
+    phoneFallback: "Not provided",
+    fallbackSlogan: "Working alongside the branch for corporate advisory.",
+  },
+} as const;
+
+/** Normalize a Vietnamese phone number to the digits-only `84xxxxxxxxx` form
+ *  used by `https://zalo.me/<phone>` deep-links. Returns null when there is no
+ *  meaningful number to link to. */
+function normalizeVnPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("84")) return digits;
+  if (digits.startsWith("0")) return `84${digits.slice(1)}`;
+  return digits;
+}
+
+function HqContactCard({
+  contact,
+  language,
+}: {
+  contact: HqContact;
+  language: AdviceLanguage;
+}) {
+  const labels = HQ_LABELS[language];
+  const phone = contact.phone?.trim() || null;
+  const zaloPhone = contact.effective_zalo_phone?.trim() || phone;
+  const telHref = phone ? `tel:${phone.replace(/\s+/g, "")}` : null;
+  const zaloDigits = normalizeVnPhone(zaloPhone);
+  const zaloHref = zaloDigits ? `https://zalo.me/${zaloDigits}` : null;
+  const initial = contact.name.trim().charAt(0).toUpperCase() || "?";
+  const slogan = contact.slogan?.trim() || labels.fallbackSlogan;
+
+  return (
+    <section
+      data-testid="advisory-hq-contact"
+      className="overflow-hidden rounded-2xl border border-primary/20 shadow-sm"
+      style={{
+        backgroundImage:
+          "linear-gradient(135deg, rgba(45,131,128,0.08) 0%, rgba(45,131,128,0.02) 60%, rgba(255,255,255,0) 100%)",
+      }}
+    >
+      <div className="px-5 pt-4 pb-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+          {labels.sectionTitle}
+        </p>
+      </div>
+
+      <div className="px-5 pb-5 space-y-4">
+        {/* Identity row: avatar on the left; on the right, name + slogan. On
+            mobile the slogan can wrap to multiple lines (so nothing is hidden);
+            on >= sm the whole stack snaps back to avatar-height so it reads as
+            a calling card. */}
+        <div className="flex items-start gap-4 min-w-0 sm:items-center">
+          {/* Avatar with teal→gold double ring for premium feel */}
+          <div
+            className="relative shrink-0 rounded-full p-[2px]"
+            style={{
+              background:
+                "conic-gradient(from 210deg at 50% 50%, #2D8380 0%, #6AB7B3 35%, #FFC62F 65%, #2D8380 100%)",
+            }}
+          >
+            <div className="h-20 w-20 overflow-hidden rounded-full bg-card border-2 border-white flex items-center justify-center">
+              {contact.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={contact.avatar_url}
+                  alt={contact.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl font-semibold text-primary">
+                  {initial}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Two-line stack: name + slogan. On >= sm the stack matches the
+              avatar's 80px height; on mobile it grows naturally so a long
+              slogan can wrap to multiple lines without being clipped. */}
+          <div className="min-w-0 flex-1 flex flex-col justify-center gap-1.5 sm:h-20">
+            {/* Line 1: name + department */}
+            <div className="min-w-0">
+              <h3 className="font-heading text-lg font-semibold text-foreground leading-tight truncate">
+                {contact.name}
+              </h3>
+              {contact.department_name && (
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {contact.department_name}
+                </p>
+              )}
+            </div>
+
+            {/* Line 2: slogan — editorial pull-quote, BIDV teal × gold accent,
+                clamped to one line so the whole identity stack stays at
+                avatar height. The decorative quote glyph in gold and the
+                left gold rule are what carries the "premium" feel. */}
+            <blockquote
+              className="relative min-w-0 rounded-md pl-3 pr-2 py-1"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg, rgba(255,198,47,0.14) 0%, rgba(45,131,128,0.05) 60%, rgba(255,255,255,0) 100%)",
+              }}
+            >
+              {/* Gold rule on the left edge */}
+              <span
+                aria-hidden
+                className="absolute inset-y-1 left-0 w-[3px] rounded-full"
+                style={{
+                  background:
+                    "linear-gradient(180deg, #FFC62F 0%, #2D8380 100%)",
+                }}
+              />
+              <p
+                className="text-[13px] font-medium leading-snug text-foreground break-words sm:truncate"
+                style={{
+                  fontFamily: "var(--font-heading, serif)",
+                  fontStyle: "italic",
+                  letterSpacing: "0.005em",
+                }}
+                title={slogan}
+              >
+                <span
+                  aria-hidden
+                  className="mr-1 align-[-0.15em] text-base font-bold not-italic"
+                  style={{ color: "#FFC62F", fontFamily: "var(--font-heading, serif)" }}
+                >
+                  “
+                </span>
+                {slogan}
+                <span
+                  aria-hidden
+                  className="ml-0.5 align-[-0.15em] text-base font-bold not-italic"
+                  style={{ color: "#FFC62F", fontFamily: "var(--font-heading, serif)" }}
+                >
+                  ”
+                </span>
+              </p>
+            </blockquote>
+          </div>
+        </div>
+
+        {/* CTAs: stacked on mobile, side-by-side on >= sm so they never overlap
+            the identity column on desktop the way the old 2-col grid did. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <a
+            href={telHref ?? undefined}
+            aria-disabled={!telHref}
+            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors ${
+              telHref
+                ? "border-primary/30 bg-white/80 hover:bg-primary hover:text-primary-foreground"
+                : "border-border bg-muted/40 cursor-not-allowed pointer-events-none"
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="material-symbols-outlined text-base">call</span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] uppercase tracking-wider opacity-80">
+                  {labels.callLabel}
+                </span>
+                <span className="text-sm font-medium truncate">
+                  {phone ?? labels.phoneFallback}
+                </span>
+              </div>
+            </div>
+            {telHref && (
+              <span className="material-symbols-outlined text-base opacity-80">
+                arrow_forward
+              </span>
+            )}
+          </a>
+
+          <a
+            href={zaloHref ?? undefined}
+            target={zaloHref ? "_blank" : undefined}
+            rel={zaloHref ? "noopener noreferrer" : undefined}
+            aria-disabled={!zaloHref}
+            className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 transition-colors ${
+              zaloHref
+                ? "border-primary/30 bg-white/80 hover:bg-primary hover:text-primary-foreground"
+                : "border-border bg-muted/40 cursor-not-allowed pointer-events-none"
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="material-symbols-outlined text-base">
+                chat_bubble
+              </span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] uppercase tracking-wider opacity-80">
+                  {labels.zaloLabel}
+                </span>
+                <span className="text-sm font-medium truncate">
+                  {zaloPhone ?? labels.phoneFallback}
+                </span>
+              </div>
+            </div>
+            {zaloHref && (
+              <span className="material-symbols-outlined text-base opacity-80">
+                arrow_forward
+              </span>
+            )}
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function SkeletonCard() {
   return (
@@ -579,6 +818,14 @@ export function AdvisoryResult({ result, loading, error }: Props) {
           </section>
         )}
 
+        {/* HQ contact officer — sits ABOVE coverage gaps so the actionable
+            human contact is the first thing the RM sees after the memo body,
+            before the "missing information" warnings push them to dig for
+            more context. */}
+        {result.hq_contact && (
+          <HqContactCard contact={result.hq_contact} language={language} />
+        )}
+
         {/* Coverage gaps */}
         {r.coverage_gaps && r.coverage_gaps.length > 0 && (
           <section data-testid="advisory-gaps" className="space-y-3">
@@ -766,6 +1013,10 @@ export function AdvisoryResult({ result, loading, error }: Props) {
           <span className="material-symbols-outlined text-amber-600 text-lg mt-0.5">gavel</span>
           <p className="text-xs text-amber-800">{r.rm_disclaimer}</p>
         </div>
+      )}
+
+      {result.hq_contact && (
+        <HqContactCard contact={result.hq_contact} language={language} />
       )}
 
       <ResultFooter result={result} labels={labels} />

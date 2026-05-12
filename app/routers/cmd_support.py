@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee
+from app.routers.rbac import EmployeeContactOut, _employee_to_contact
 from app.services import cmd_support_service
 from app.services.auth_service import (
     get_current_user,
@@ -73,6 +74,10 @@ class AdviceDetail(AdviceSummary):
     schema_version: Optional[str] = None
     duration_ms: Optional[int] = None
     error_message: Optional[str] = None
+    # HQ contact officer assigned to `province_code` at READ time.
+    # Resolved dynamically from `provinces.assigned_employee_id` so admins
+    # can re-assign without touching cached advisory rows.
+    hq_contact: Optional[EmployeeContactOut] = None
 
     model_config = {"from_attributes": True}
 
@@ -101,7 +106,7 @@ def _to_summary(obj) -> AdviceSummary:
     )
 
 
-def _to_detail(obj) -> AdviceDetail:
+def _to_detail(obj, hq_contact: Optional[EmployeeContactOut] = None) -> AdviceDetail:
     return AdviceDetail(
         id=obj.id,
         customer_name=obj.customer_name,
@@ -121,6 +126,7 @@ def _to_detail(obj) -> AdviceDetail:
         schema_version=obj.schema_version,
         duration_ms=obj.duration_ms,
         error_message=obj.error_message,
+        hq_contact=hq_contact,
     )
 
 
@@ -158,7 +164,10 @@ async def create_advice(
         advice_language=advice_language,
         force_refresh=body.force_refresh,
     )
-    return _to_detail(session_obj)
+    hq_emp = await cmd_support_service.get_hq_contact_for_province(
+        db, session_obj.province_code
+    )
+    return _to_detail(session_obj, hq_contact=_employee_to_contact(hq_emp))
 
 
 @router.get("/cmd-support/advice/{advisory_id}", response_model=AdviceDetail)
@@ -168,7 +177,10 @@ async def get_advice(
     db: AsyncSession = Depends(get_db),
 ):
     session_obj = await cmd_support_service.get_advice(db, user, advisory_id)
-    return _to_detail(session_obj)
+    hq_emp = await cmd_support_service.get_hq_contact_for_province(
+        db, session_obj.province_code
+    )
+    return _to_detail(session_obj, hq_contact=_employee_to_contact(hq_emp))
 
 
 @router.get("/cmd-support/advice", response_model=AdviceListResponse)
