@@ -52,8 +52,35 @@ async def filter_tasks(
     if not await can_access_task_project(db, employee, task_project):
         return [], 0
 
-    stmt = _base_task_select(task_project.id, filters.include_deleted)
-    count_stmt = _base_count_select(task_project.id, filters.include_deleted)
+    return await _filter_tasks_in_projects(
+        db, [task_project.id], filters
+    )
+
+
+async def filter_tasks_in_projects(
+    db: AsyncSession,
+    project_ids: list[uuid.UUID],
+    filters: TaskFilters,
+) -> tuple[list[Task], int]:
+    """Return tasks/total across a set of already-authorized project ids.
+
+    Used by scope-based listing (Phòng ban / Không gian làm việc) so the caller
+    can resolve scope → list of TaskProject ids upstream, then defer all
+    additive filter / pagination logic here. The caller is responsible for
+    permission checks; this function does NOT re-validate access.
+    """
+    if not project_ids:
+        return [], 0
+    return await _filter_tasks_in_projects(db, project_ids, filters)
+
+
+async def _filter_tasks_in_projects(
+    db: AsyncSession,
+    project_ids: list[uuid.UUID],
+    filters: TaskFilters,
+) -> tuple[list[Task], int]:
+    stmt = _base_task_select(project_ids, filters.include_deleted)
+    count_stmt = _base_count_select(project_ids, filters.include_deleted)
 
     stmt, count_stmt = _apply_filters(stmt, count_stmt, filters)
 
@@ -66,7 +93,9 @@ async def filter_tasks(
     return list(result.scalars().unique().all()), total
 
 
-def _base_task_select(project_id: uuid.UUID, include_deleted: bool) -> Select[tuple[Task]]:
+def _base_task_select(
+    project_ids: list[uuid.UUID], include_deleted: bool
+) -> Select[tuple[Task]]:
     stmt = (
         select(Task)
         .options(
@@ -74,15 +103,17 @@ def _base_task_select(project_id: uuid.UUID, include_deleted: bool) -> Select[tu
             selectinload(Task.label_links),
             selectinload(Task.subtasks),
         )
-        .where(Task.task_project_id == project_id)
+        .where(Task.task_project_id.in_(project_ids))
     )
     if not include_deleted:
         stmt = stmt.where(Task.deleted_at.is_(None))
     return stmt
 
 
-def _base_count_select(project_id: uuid.UUID, include_deleted: bool) -> Select[tuple[int]]:
-    stmt = select(func.count(Task.id)).where(Task.task_project_id == project_id)
+def _base_count_select(
+    project_ids: list[uuid.UUID], include_deleted: bool
+) -> Select[tuple[int]]:
+    stmt = select(func.count(Task.id)).where(Task.task_project_id.in_(project_ids))
     if not include_deleted:
         stmt = stmt.where(Task.deleted_at.is_(None))
     return stmt

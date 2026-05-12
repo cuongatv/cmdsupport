@@ -80,7 +80,10 @@ from app.services.task_comment_service import (
 )
 from app.services.task_constants import PRIORITY_LEVELS
 from app.services.task_dashboard_service import get_dashboard
-from app.services.task_filter_service import TaskFilters, filter_tasks
+from app.services.task_filter_service import (
+    TaskFilters,
+    filter_tasks_in_projects,
+)
 from app.services.task_notification_service import (
     notify_commented,
     notify_mentioned,
@@ -89,6 +92,7 @@ from app.services.task_notification_service import (
 from app.services.task_project_service import (
     archive_task_project,
     list_task_projects,
+    resolve_default_task_project,
     update_task_project,
 )
 from app.services.task_project_service import (
@@ -191,6 +195,48 @@ async def list_task_projects_endpoint(
         for project in projects
         if await can_access_task_project(db, user, project)
     ]
+
+
+@router.get("/projects/resolve", response_model=TaskProjectOut)
+async def resolve_task_project_endpoint(
+    workspace_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:create"),
+) -> TaskProject:
+    """Resolve (or lazy-create) the default TaskProject for a given scope.
+
+    Used by the task management screen to enable scope-based creation: the user
+    picks a Phòng ban or Không gian làm việc, the UI calls this endpoint to get
+    the hidden default project, then loads states/eligible assignees/labels
+    just like the explicit-project flow. Idempotent.
+    """
+    if (workspace_id is None) == (department_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide exactly one of workspace_id or department_id",
+        )
+    project = await _call_service(
+        resolve_default_task_project(
+            db,
+            workspace_id=workspace_id,
+            department_id=department_id,
+            actor=user,
+        )
+    )
+    if not await can_access_task_project(db, user, project):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="project access denied",
+        )
+    if project.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="project archived",
+        )
+    await db.commit()
+    await db.refresh(project)
+    return project
 
 
 @router.get("/projects/{project_id}", response_model=TaskProjectOut)
@@ -365,12 +411,25 @@ async def delete_label_endpoint(
 @router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 async def create_task_endpoint(
     body: TaskCreate,
-    task_project_id: uuid.UUID = Query(...),
+    task_project_id: uuid.UUID | None = Query(default=None),
+    workspace_id: uuid.UUID | None = Query(default=None),
+    department_id: uuid.UUID | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task:create"),
 ) -> Task:
-    await _ensure_project_access(db, task_project_id, user)
-    task = await _call_service(create_task_record(db, task_project_id, body, user))
+    project = await _resolve_target_project(
+        db,
+        user,
+        task_project_id=task_project_id,
+        workspace_id=workspace_id,
+        department_id=department_id,
+    )
+    # If the dialog did not pick a state_id (scope-based create flow has no
+    # project context up-front), default to the project's first state.
+    if body.state_id is None:
+        default_state = await _default_state_for_project(db, project.id)
+        body = body.model_copy(update={"state_id": default_state.id})
+    task = await _call_service(create_task_record(db, project.id, body, user))
     await _enqueue_assignment_notifications(task.id, body.assignee_ids)
     await db.commit()
     await db.refresh(task)
@@ -379,7 +438,9 @@ async def create_task_endpoint(
 
 @router.get("", response_model=PaginatedResponse[TaskOut])
 async def list_tasks_endpoint(
-    task_project_id: uuid.UUID = Query(...),
+    task_project_id: uuid.UUID | None = Query(default=None),
+    workspace_id: uuid.UUID | None = Query(default=None),
+    department_id: uuid.UUID | None = Query(default=None),
     search: str | None = None,
     state_id: uuid.UUID | None = None,
     assignee_id: uuid.UUID | None = None,
@@ -397,11 +458,46 @@ async def list_tasks_endpoint(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task:read"),
 ) -> PaginatedResponse[TaskOut]:
-    task_project = await _get_accessible_project(db, task_project_id, user)
     if include_deleted and user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin access required")
     if priority is not None and priority not in PRIORITY_LEVELS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid priority")
+
+    # Caller picks ONE addressing mode: explicit project id, or scope (workspace
+    # xor department). Mixing is a client bug — fail loudly instead of guessing.
+    scope_provided = workspace_id is not None or department_id is not None
+    if task_project_id is not None and scope_provided:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide either task_project_id or a scope, not both",
+        )
+    if task_project_id is None and not scope_provided:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="task_project_id or workspace_id/department_id is required",
+        )
+    if workspace_id is not None and department_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide exactly one of workspace_id or department_id",
+        )
+
+    if task_project_id is not None:
+        task_project = await _get_accessible_project(db, task_project_id, user)
+        project_ids = [task_project.id]
+    else:
+        # Scope mode: resolve all task_projects in the scope the caller can
+        # access, then filter across all of them in one paginated query. This
+        # is what makes "không cần chọn dự án" work — the user picks a phòng
+        # ban or không gian làm việc and immediately sees its tasks.
+        scope_projects = await list_task_projects(
+            db, workspace_id, department_id, include_archived=False
+        )
+        accessible: list[TaskProject] = []
+        for project in scope_projects:
+            if await can_access_task_project(db, user, project):
+                accessible.append(project)
+        project_ids = [project.id for project in accessible]
 
     filters = TaskFilters(
         search=search,
@@ -419,7 +515,7 @@ async def list_tasks_endpoint(
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
-    tasks, total = await filter_tasks(db, user, task_project, filters)
+    tasks, total = await filter_tasks_in_projects(db, project_ids, filters)
     return PaginatedResponse[TaskOut](
         items=tasks,
         total=total,
@@ -849,6 +945,88 @@ async def _ensure_project_writable(db: AsyncSession, project_id: uuid.UUID) -> N
             status_code=status.HTTP_403_FORBIDDEN,
             detail="project archived",
         )
+
+
+async def _resolve_target_project(
+    db: AsyncSession,
+    user: Employee,
+    *,
+    task_project_id: uuid.UUID | None,
+    workspace_id: uuid.UUID | None,
+    department_id: uuid.UUID | None,
+) -> TaskProject:
+    """Pick the target TaskProject for a scope-based or explicit create request.
+
+    Accepts either an explicit `task_project_id` (legacy/explicit flow) or
+    exactly one scope identifier (`workspace_id` xor `department_id`). For the
+    scope-based path, an existing non-archived project in the scope is reused;
+    otherwise a hidden default project is created on demand so users never have
+    to pre-create a project just to file a task.
+    """
+    explicit = task_project_id is not None
+    scoped = workspace_id is not None or department_id is not None
+    if explicit and scoped:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide either task_project_id or a scope, not both",
+        )
+    if not explicit and not scoped:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="task_project_id or workspace_id/department_id is required",
+        )
+
+    if explicit:
+        assert task_project_id is not None
+        return await _get_accessible_project(db, task_project_id, user)
+
+    if workspace_id is not None and department_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="provide exactly one of workspace_id or department_id",
+        )
+
+    # Scope-based path. Authorize the scope BEFORE creating any hidden
+    # default project so a user cannot lazy-spawn a project they cannot read.
+    project = await _call_service(
+        resolve_default_task_project(
+            db,
+            workspace_id=workspace_id,
+            department_id=department_id,
+            actor=user,
+        )
+    )
+    if not await can_access_task_project(db, user, project):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="project access denied",
+        )
+    if project.is_archived:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="project archived",
+        )
+    return project
+
+
+async def _default_state_for_project(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+) -> TaskState:
+    """Return the project's default state, falling back to the first ordered state."""
+    result = await db.execute(
+        select(TaskState)
+        .where(TaskState.task_project_id == project_id)
+        .order_by(TaskState.is_default.desc(), TaskState.position, TaskState.created_at)
+        .limit(1)
+    )
+    state = result.scalar_one_or_none()
+    if state is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="project has no states",
+        )
+    return state
 
 
 async def _call_service(coro: Any) -> Any:

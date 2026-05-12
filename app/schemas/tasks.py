@@ -98,7 +98,10 @@ class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     description: Optional[str] = None
     priority: str = "none"
-    state_id: uuid.UUID
+    # Optional: if omitted, the router fills it with the project's first
+    # (default) state. This is what makes scope-based task creation work — the
+    # user does not need to know the project's states in advance.
+    state_id: Optional[uuid.UUID] = None
     parent_task_id: Optional[uuid.UUID] = None
     reporter_id: Optional[uuid.UUID] = None
     due_date: Optional[datetime] = None

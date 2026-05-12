@@ -143,6 +143,83 @@ async def list_task_projects(
     return list(result.scalars().all())
 
 
+# Internal default-project identifier prefix. The user never sees this — the
+# project acts as a hidden container so tasks can be created directly by scope
+# (workspace / department) without forcing the user to pick a project.
+_DEFAULT_PROJECT_IDENTIFIER_PREFIX = "GEN"
+_DEFAULT_PROJECT_NAME = "Công việc chung"
+
+
+def _default_project_identifier(scope_id: uuid.UUID) -> str:
+    """Build a stable, schema-valid identifier for a scope's default project."""
+    return f"{_DEFAULT_PROJECT_IDENTIFIER_PREFIX}{scope_id.hex[:6].upper()}"
+
+
+async def resolve_default_task_project(
+    db: AsyncSession,
+    *,
+    workspace_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
+    actor: Employee,
+) -> TaskProject:
+    """Return the active default TaskProject for the given scope, creating one if needed.
+
+    Exactly one of workspace_id or department_id must be set. The default project is
+    a hidden container so users can create tasks directly by scope without picking a
+    project. Existing non-archived projects in the scope are reused (oldest first) to
+    avoid fragmenting tasks across multiple silent containers.
+    """
+    if (workspace_id is None) == (department_id is None):
+        raise ValueError("exactly one of workspace_id or department_id must be set")
+
+    if workspace_id is not None:
+        parent = await db.get(Project, workspace_id)
+    else:
+        parent = await db.get(Department, department_id)
+    if parent is None:
+        raise ValueError("parent not found")
+
+    stmt = select(TaskProject).where(TaskProject.is_archived.is_(False))
+    if workspace_id is not None:
+        stmt = stmt.where(TaskProject.workspace_id == workspace_id)
+    else:
+        stmt = stmt.where(TaskProject.department_id == department_id)
+    stmt = stmt.order_by(TaskProject.created_at, TaskProject.id).limit(1)
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    scope_id = workspace_id if workspace_id is not None else department_id
+    assert scope_id is not None  # narrowed by XOR check above
+    project = TaskProject(
+        name=_DEFAULT_PROJECT_NAME,
+        description=None,
+        identifier=_default_project_identifier(scope_id),
+        workspace_id=workspace_id,
+        department_id=department_id,
+        created_by_id=actor.id,
+        allow_any_employee=False,
+    )
+    db.add(project)
+    await db.flush()
+
+    for index, (name, group) in enumerate(zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)):
+        db.add(
+            TaskState(
+                task_project_id=project.id,
+                name=name,
+                group=group,
+                position=index * POSITION_GAP,
+                is_default=index == 0,
+            )
+        )
+    await log_audit(db, actor, "create", "task_project", str(project.id))
+    await db.flush()
+    await db.refresh(project, ["states"])
+    project.states.sort(key=lambda state: state.position)
+    return project
+
+
 async def get_task_project(db: AsyncSession, project_id: uuid.UUID) -> TaskProject | None:
     """Return a non-deleted task project by id, or None."""
     return await db.get(TaskProject, project_id)

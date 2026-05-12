@@ -38,6 +38,12 @@ async def create_task(
     if project is None or project.is_archived:
         raise ValueError("project not found")
 
+    if data.state_id is None:
+        # The router resolves the default state before calling the service; if
+        # we still got here without one, treat it as a programmer error rather
+        # than silently picking a state, which could land tasks in the wrong
+        # column.
+        raise ValueError("state_id is required")
     await _ensure_state_in_project(db, data.state_id, project_id)
 
     for employee_id in data.assignee_ids:
