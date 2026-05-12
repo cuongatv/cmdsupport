@@ -77,7 +77,8 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from typing import Iterable, Optional
+from collections.abc import Iterable
+from datetime import datetime
 
 # ---------------------------------------------------------------------------
 # Canonical contract — these tuples ARE the contract. Adding a field here is a
@@ -118,15 +119,15 @@ reuse_status values:
 
 def compute_advisory_fingerprint(
     *,
-    customer_segment: Optional[str],
-    province_code: Optional[str],
-    industry_code: Optional[str],
+    customer_segment: str | None,
+    province_code: str | None,
+    industry_code: str | None,
     needs: str,
-    additional_context: Optional[str],
+    additional_context: str | None,
     advice_language: str,
     prompt_version: str,
-    model_provider: Optional[str],
-    model_id: Optional[str],
+    model_provider: str | None,
+    model_id: str | None,
 ) -> str:
     """Compute the canonical advisory fingerprint (SHA-256 hex).
 
@@ -168,21 +169,31 @@ def compute_advisory_fingerprint(
 
 
 def compute_source_snapshot_hash(
-    retrieved_wiki_page_ids: Iterable[uuid.UUID],
+    retrieved_pages: Iterable[tuple[uuid.UUID, int, datetime | None]],
 ) -> str:
     """Compute the canonical source-snapshot hash (SHA-256 hex).
 
     The returned string is a deterministic SHA-256 hex digest over the
-    *sorted* list of retrieved wiki page UUIDs (rendered as their canonical
-    string form). Order of the input iterable is irrelevant — equal sets
-    yield equal hashes.
+    *sorted* list of retrieved wiki page identity tuples
+    ``(page_id, version, updated_at)``. Order of the input iterable is
+    irrelevant — equal sets yield equal hashes.
+
+    Including ``version`` (and ``updated_at`` as a tiebreaker for legacy rows
+    where the version counter may not advance on every edit) ensures that an
+    edit to a wiki page's content invalidates the cached advisory even when
+    the set of retrieved page UUIDs is unchanged. Without this, the
+    ``"reused"`` path would serve stale advice indefinitely after editors
+    update product policies.
 
     Used together with ``compute_advisory_fingerprint`` to decide between
     ``"reused"`` and ``"refreshed"`` reuse statuses (see ``REFRESH_SEMANTICS``).
     """
-    sorted_ids = sorted(str(uid) for uid in retrieved_wiki_page_ids)
+    sorted_tuples = sorted(
+        (str(pid), int(ver), updated.isoformat() if updated is not None else None)
+        for (pid, ver, updated) in retrieved_pages
+    )
     serialized = json.dumps(
-        sorted_ids,
+        sorted_tuples,
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),

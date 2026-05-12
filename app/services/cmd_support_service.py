@@ -2,6 +2,7 @@
 CMD Support Service — advisory session creation, retrieval, and listing.
 """
 
+import copy
 import json
 import re
 import time
@@ -11,8 +12,9 @@ from typing import Optional
 from fastapi import HTTPException
 from loguru import logger
 from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import object_session, selectinload
 
 from app.ai.cmd_support_prompts import (
     PROMPT_VERSION,
@@ -52,6 +54,112 @@ async def _log_anonymous_audit(
         reason=reason,
     )
     db.add(entry)
+
+
+# ---------------------------------------------------------------------------
+# Advisory reuse helpers (Fix #1, #5)
+# ---------------------------------------------------------------------------
+
+# Fix #4: every v2 product array carries a citations[] list; items missing
+# citations are dropped into coverage_gaps to prevent prompt-injection cache
+# poisoning of unauthenticated advisory submissions.
+_V2_CITED_ARRAYS: tuple[str, ...] = (
+    "primary_products",
+    "cross_sell_products",
+    "upsell_products",
+    "operations_products",
+    "digital_channels",
+    "policies_incentives",
+)
+
+
+async def _find_reusable_session(
+    db: AsyncSession,
+    input_fingerprint: str,
+    source_snapshot_hash: str,
+) -> Optional[CmdAdvisorySession]:
+    """Find a ready, non-NULL-result session whose snapshot matches exactly.
+
+    Fix #5: ``result_json IS NOT NULL`` guard prevents the reuse path from
+    returning a session that would crash the frontend on render.
+    """
+    return (
+        await db.execute(
+            select(CmdAdvisorySession)
+            .where(
+                CmdAdvisorySession.input_fingerprint == input_fingerprint,
+                CmdAdvisorySession.status == "ready",
+                CmdAdvisorySession.result_json.isnot(None),
+                CmdAdvisorySession.source_snapshot_hash == source_snapshot_hash,
+            )
+            .order_by(desc(CmdAdvisorySession.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def _find_stale_snapshot_session(
+    db: AsyncSession,
+    input_fingerprint: str,
+    source_snapshot_hash: str,
+) -> Optional[CmdAdvisorySession]:
+    """Find a fingerprint match whose snapshot is stale (drives reuse_status='refreshed')."""
+    return (
+        await db.execute(
+            select(CmdAdvisorySession)
+            .where(
+                CmdAdvisorySession.input_fingerprint == input_fingerprint,
+                CmdAdvisorySession.status == "ready",
+                CmdAdvisorySession.source_snapshot_hash != source_snapshot_hash,
+            )
+            .order_by(desc(CmdAdvisorySession.created_at))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+def _build_reused_response(
+    existing: CmdAdvisorySession,
+    *,
+    customer_name: str,
+    province_name: Optional[str],
+    industry_name: Optional[str],
+    needs: str,
+    language: str,
+) -> CmdAdvisorySession:
+    """Build a transient response object for a cache hit.
+
+    Fix #1: ``customer_name`` is intentionally NOT part of the fingerprint
+    (per cmd_advisory_fingerprint contract). Returning ``existing`` verbatim
+    would leak the *original* requester's customer name and context to the
+    current requester. We expunge the row from the session so SQLAlchemy
+    won't UPDATE the persisted row, then deep-copy ``result_json`` and
+    overwrite the customer-bound fields with the current request's values.
+    """
+    # Detach so subsequent attribute writes don't flush back to the original row
+    db_session = object_session(existing)
+    if db_session is not None:
+        db_session.expunge(existing)
+
+    if isinstance(existing.result_json, dict):
+        cloned = copy.deepcopy(existing.result_json)
+        cloned["advice_language"] = language
+        ctx = cloned.get("customer_context")
+        if not isinstance(ctx, dict):
+            ctx = {}
+        ctx["name"] = customer_name
+        ctx["province"] = province_name
+        ctx["industry"] = industry_name
+        ctx["detected_needs"] = [needs]
+        cloned["customer_context"] = ctx
+        existing.result_json = cloned
+
+    existing.customer_name = customer_name
+    existing.province_name = province_name
+    existing.industry_name = industry_name
+    existing.needs = needs
+    existing.reuse_status = "reused"
+    return existing
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +340,11 @@ async def create_advice(
 
     retrieved_page_ids = [page.id for page, _ in results]
     retrieved_source_ids = list(all_source_ids)
+    # Fix #2: include WikiPage.version + updated_at so an editor's content edit
+    # invalidates the cache even when the set of retrieved page UUIDs is unchanged.
+    retrieved_page_identity = [
+        (page.id, page.version, page.updated_at) for page, _ in results
+    ]
     input_fingerprint = compute_advisory_fingerprint(
         customer_segment=segment,
         province_code=province_code,
@@ -243,27 +356,28 @@ async def create_advice(
         model_provider=llm_config.provider.value,
         model_id=llm_config.model_id,
     )
-    source_snapshot_hash = compute_source_snapshot_hash(retrieved_page_ids)
+    source_snapshot_hash = compute_source_snapshot_hash(retrieved_page_identity)
     reuse_status = "new"
     refresh_reason = None
 
     if not force_refresh:
-        existing_session = (
-            await db.execute(
-                select(CmdAdvisorySession)
-                .where(
-                    CmdAdvisorySession.input_fingerprint == input_fingerprint,
-                    CmdAdvisorySession.status == "ready",
-                )
-                .order_by(desc(CmdAdvisorySession.created_at))
-                .limit(1)
+        existing_session = await _find_reusable_session(
+            db, input_fingerprint, source_snapshot_hash
+        )
+        if existing_session is not None:
+            return _build_reused_response(
+                existing_session,
+                customer_name=customer_name,
+                province_name=province_name,
+                industry_name=industry_name,
+                needs=needs,
+                language=language,
             )
-        ).scalar_one_or_none()
-        if existing_session:
-            if existing_session.source_snapshot_hash == source_snapshot_hash:
-                await db.refresh(existing_session)
-                existing_session.reuse_status = "reused"
-                return existing_session
+        # No exact match: was there a stale-snapshot row for this fingerprint?
+        stale_session = await _find_stale_snapshot_session(
+            db, input_fingerprint, source_snapshot_hash
+        )
+        if stale_session is not None:
             reuse_status = "refreshed"
             refresh_reason = "source_snapshot_hash_changed"
 
@@ -446,6 +560,41 @@ async def create_advice(
                     gaps.append(f"Đã loại {dropped} gợi ý vì thiếu trích dẫn")
                 result_json["coverage_gaps"] = gaps
 
+        # Fix #4: drop items in v2 product arrays that lack citations.
+        # Without this, prompt-injected v2 arrays (e.g. fake "primary_products"
+        # with empty citations) would poison the cache for downstream RMs.
+        for array_name in _V2_CITED_ARRAYS:
+            items = result_json.get(array_name)
+            if not isinstance(items, list):
+                continue
+            valid_items = []
+            v2_dropped = 0
+            for item in items:
+                if not isinstance(item, dict):
+                    v2_dropped += 1
+                    continue
+                v2_cits = item.get("citations")
+                if isinstance(v2_cits, list) and len(v2_cits) > 0:
+                    valid_items.append(item)
+                else:
+                    v2_dropped += 1
+            result_json[array_name] = valid_items
+            if v2_dropped > 0:
+                logger.warning(
+                    f"CMD advice v2: dropped {v2_dropped} item(s) from {array_name} (missing citations)"
+                )
+                existing_gaps = result_json.get("coverage_gaps", [])
+                gaps = existing_gaps if isinstance(existing_gaps, list) else []
+                if language == "en":
+                    gaps.append(
+                        f"Removed {v2_dropped} item(s) from {array_name} because citations were missing"
+                    )
+                else:
+                    gaps.append(
+                        f"Đã loại {v2_dropped} mục khỏi {array_name} vì thiếu trích dẫn"
+                    )
+                result_json["coverage_gaps"] = gaps
+
         # Ensure rm_disclaimer has default value
         if not result_json.get("rm_disclaimer"):
             result_json["rm_disclaimer"] = _default_disclaimer
@@ -504,7 +653,39 @@ async def create_advice(
             reason=f"anonymous public advisory; customer={customer_name}; segment={segment}; province={province_code}; industry={industry_code}; top_k={len(results)}; status={status}",
         )
 
-    await db.flush()
+    # Fix #3: partial UNIQUE on (input_fingerprint) WHERE status='ready' may
+    # reject this insert if a parallel request committed first. In that case
+    # roll back our row and reuse theirs (we already paid the LLM cost; logging
+    # it as a near-miss is acceptable noise compared to a 500 to the client).
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        # Only the partial unique fingerprint index is expected here.
+        if status != "ready" or input_fingerprint is None:
+            raise
+        await db.rollback()
+        logger.warning(
+            "CMD advice: lost reuse race for fingerprint=%s — reusing winner's session",
+            input_fingerprint,
+        )
+        winner = await _find_reusable_session(
+            db, input_fingerprint, source_snapshot_hash
+        )
+        if winner is not None:
+            return _build_reused_response(
+                winner,
+                customer_name=customer_name,
+                province_name=province_name,
+                industry_name=industry_name,
+                needs=needs,
+                language=language,
+            )
+        # Winner row vanished between IntegrityError and re-query. Surface the
+        # original conflict rather than silently inventing data.
+        raise HTTPException(
+            status_code=409,
+            detail="Advisory generation conflict; please retry",
+        ) from exc
     await db.refresh(session_obj)
     return session_obj
 

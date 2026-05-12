@@ -25,6 +25,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.dialects.postgresql import ENUM as PgEnum
@@ -833,7 +834,15 @@ class CmdAdvisorySession(Base):
     __table_args__ = (
         Index("cmd_advisory_created_by_idx", "created_by_id"),
         Index("cmd_advisory_created_at_idx", "created_at"),
-        Index("cmd_advisory_fingerprint_idx", "input_fingerprint"),
+        # Fix #3: partial unique index serializes concurrent identical requests
+        # so two parallel cache-miss inserts can't create duplicate sessions.
+        # See alembic/versions/020_cmd_advisory_unique_fingerprint.py.
+        Index(
+            "cmd_advisory_fingerprint_ready_uniq_idx",
+            "input_fingerprint",
+            unique=True,
+            postgresql_where=text("status = 'ready' AND input_fingerprint IS NOT NULL"),
+        ),
     )
 
 

@@ -173,19 +173,24 @@ _UUID_B = uuid.UUID("22222222-2222-2222-2222-222222222222")
 _UUID_C = uuid.UUID("33333333-3333-3333-3333-333333333333")
 
 
+def _t(uid: uuid.UUID, version: int = 1):
+    """Helper: build a (page_id, version, updated_at) tuple for snapshot tests."""
+    return (uid, version, None)
+
+
 def test_source_snapshot_is_order_insensitive() -> None:
-    """Same UUID set in different orders → same digest."""
-    a = compute_source_snapshot_hash([_UUID_A, _UUID_B, _UUID_C])
-    b = compute_source_snapshot_hash([_UUID_C, _UUID_A, _UUID_B])
-    c = compute_source_snapshot_hash([_UUID_B, _UUID_C, _UUID_A])
+    """Same set in different orders → same digest."""
+    a = compute_source_snapshot_hash([_t(_UUID_A), _t(_UUID_B), _t(_UUID_C)])
+    b = compute_source_snapshot_hash([_t(_UUID_C), _t(_UUID_A), _t(_UUID_B)])
+    c = compute_source_snapshot_hash([_t(_UUID_B), _t(_UUID_C), _t(_UUID_A)])
     assert a == b == c
 
 
 def test_source_snapshot_accepts_any_iterable() -> None:
     """Tuples, lists, generators — all yield the same digest for equal sets."""
-    from_list = compute_source_snapshot_hash([_UUID_A, _UUID_B])
-    from_tuple = compute_source_snapshot_hash((_UUID_A, _UUID_B))
-    from_gen = compute_source_snapshot_hash(uid for uid in [_UUID_A, _UUID_B])
+    from_list = compute_source_snapshot_hash([_t(_UUID_A), _t(_UUID_B)])
+    from_tuple = compute_source_snapshot_hash((_t(_UUID_A), _t(_UUID_B)))
+    from_gen = compute_source_snapshot_hash(_t(uid) for uid in [_UUID_A, _UUID_B])
     assert from_list == from_tuple == from_gen
 
 
@@ -198,10 +203,10 @@ def test_source_snapshot_empty_is_stable() -> None:
 
 
 def test_source_snapshot_distinguishes_different_sets() -> None:
-    """Different UUID sets → different digests."""
-    one = compute_source_snapshot_hash([_UUID_A, _UUID_B])
-    two = compute_source_snapshot_hash([_UUID_A, _UUID_C])
-    three = compute_source_snapshot_hash([_UUID_A, _UUID_B, _UUID_C])
+    """Different page sets → different digests."""
+    one = compute_source_snapshot_hash([_t(_UUID_A), _t(_UUID_B)])
+    two = compute_source_snapshot_hash([_t(_UUID_A), _t(_UUID_C)])
+    three = compute_source_snapshot_hash([_t(_UUID_A), _t(_UUID_B), _t(_UUID_C)])
     assert one != two
     assert one != three
     assert two != three
@@ -209,7 +214,30 @@ def test_source_snapshot_distinguishes_different_sets() -> None:
 
 def test_source_snapshot_is_sha256_hex() -> None:
     """Returned value is a 64-char lowercase hex string."""
-    digest = compute_source_snapshot_hash([_UUID_A])
+    digest = compute_source_snapshot_hash([_t(_UUID_A)])
     assert isinstance(digest, str)
     assert len(digest) == 64
     _ = int(digest, 16)
+
+
+def test_source_snapshot_invalidates_when_version_changes() -> None:
+    """Same UUID with different version → different digest (Fix #2: content-blind hash)."""
+    v1 = compute_source_snapshot_hash([_t(_UUID_A, version=1)])
+    v2 = compute_source_snapshot_hash([_t(_UUID_A, version=2)])
+    assert v1 != v2
+
+
+def test_source_snapshot_invalidates_when_updated_at_changes() -> None:
+    """Same UUID + version with different updated_at → different digest."""
+    from datetime import datetime, timezone
+    t0 = (
+        _UUID_A,
+        1,
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    t1 = (
+        _UUID_A,
+        1,
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+    )
+    assert compute_source_snapshot_hash([t0]) != compute_source_snapshot_hash([t1])

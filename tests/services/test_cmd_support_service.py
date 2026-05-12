@@ -49,6 +49,8 @@ def _make_wiki_page(
     title: str = "Test Page",
     content: str = "Some context content about lending products.",
     source_ids: Optional[list[uuid.UUID]] = None,
+    version: int = 1,
+    updated_at: Optional[Any] = None,
 ) -> MagicMock:
     """Mock a WikiPage row with the attributes the service reads."""
     page = MagicMock()
@@ -58,6 +60,9 @@ def _make_wiki_page(
     page.summary = "Test summary"
     page.content_md = content
     page.source_ids = source_ids or []
+    # Fix #2: source_snapshot_hash is now (id, version, updated_at) per page.
+    page.version = version
+    page.updated_at = updated_at
     return page
 
 
@@ -99,13 +104,24 @@ def _v2_llm_payload(language: str = "vi") -> dict[str, Any]:
     }
 
 
-def _build_mock_db(existing_session: Any = None) -> AsyncMock:
-    """Build an AsyncMock DB session whose ``execute`` returns a result whose
-    ``scalar_one_or_none()`` yields ``existing_session``.
+def _build_mock_db(
+    existing_session: Any = None,
+    *,
+    reuse_match: Any = ...,
+    stale_match: Any = ...,
+) -> AsyncMock:
+    """Build an AsyncMock DB session.
 
-    ``db.add`` records every object added so tests can inspect what would have
-    been persisted.
+    Backward-compat shim: if only ``existing_session`` is passed, the mock
+    serves it for *both* the reuse-match and stale-match queries (legacy
+    single-query behavior). For tests that need to distinguish reuse vs
+    stale, pass ``reuse_match`` and ``stale_match`` explicitly.
     """
+    if reuse_match is ...:
+        reuse_match = existing_session
+    if stale_match is ...:
+        stale_match = existing_session
+
     db = AsyncMock()
     added: list[Any] = []
     db.added = added
@@ -113,9 +129,19 @@ def _build_mock_db(existing_session: Any = None) -> AsyncMock:
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
 
-    mock_result = MagicMock()
-    mock_result.scalar_one_or_none = MagicMock(return_value=existing_session)
-    db.execute = AsyncMock(return_value=mock_result)
+    # Two reuse queries fire in order: _find_reusable_session, then
+    # _find_stale_snapshot_session. Hand each the right answer.
+    call_idx = {"n": 0}
+    answers = [reuse_match, stale_match]
+
+    def _next_result(*_args: Any, **_kwargs: Any) -> Any:
+        idx = min(call_idx["n"], len(answers) - 1)
+        call_idx["n"] += 1
+        result = MagicMock()
+        result.scalar_one_or_none = MagicMock(return_value=answers[idx])
+        return result
+
+    db.execute = AsyncMock(side_effect=_next_result)
     return db
 
 
@@ -294,7 +320,7 @@ async def test_create_advice_new_call_no_cache() -> None:
     assert session_obj.status == "ready"
     assert session_obj.input_fingerprint is not None
     assert session_obj.source_snapshot_hash == compute_source_snapshot_hash(
-        [wiki_page.id]
+        [(wiki_page.id, wiki_page.version, wiki_page.updated_at)]
     )
     # Citation survived the post-LLM validation
     recs = session_obj.result_json["recommendations"]
@@ -311,13 +337,18 @@ async def test_create_advice_reuse_on_same_fingerprint() -> None:
     llm = _MockLLMProvider(payload)
     registry = _make_mock_registry(llm)
     wiki_page = _make_wiki_page()
-    matching_hash = compute_source_snapshot_hash([wiki_page.id])
+    matching_hash = compute_source_snapshot_hash(
+        [(wiki_page.id, wiki_page.version, wiki_page.updated_at)]
+    )
 
     existing = MagicMock()
     existing.source_snapshot_hash = matching_hash
     existing.reuse_status = "new"
     existing.status = "ready"
-    db = _build_mock_db(existing_session=existing)
+    # Reuse helpers also write back via _build_reused_response → expunge call.
+    # Stub result_json so the deep-copy branch runs.
+    existing.result_json = {"customer_context": {}}
+    db = _build_mock_db(reuse_match=existing, stale_match=None)
 
     patches = _patch_service(registry, [(wiki_page, 0.9)])
     for p in patches:
@@ -341,7 +372,14 @@ async def test_create_advice_reuse_on_same_fingerprint() -> None:
     assert llm.calls == 0, "LLM must NOT be called on a cache hit"
     assert session_obj is existing
     assert session_obj.reuse_status == "reused"
-    db.refresh.assert_awaited_once_with(existing)
+    # Fix #1: even on reuse, current request's customer-bound fields must be
+    # overwritten so cached advisory bound to a different customer is not
+    # returned verbatim. result_json should reflect the CURRENT requester.
+    assert session_obj.customer_name == "ACME"
+    assert session_obj.result_json["customer_context"]["name"] == "ACME"
+    assert session_obj.result_json["customer_context"]["detected_needs"] == [
+        "Cần vay vốn lưu động mở rộng kho"
+    ]
 
 
 async def test_create_advice_refresh_on_source_change() -> None:
@@ -356,7 +394,9 @@ async def test_create_advice_refresh_on_source_change() -> None:
     existing.source_snapshot_hash = "deadbeef" * 8  # 64 chars, but mismatched
     existing.reuse_status = "new"
     existing.status = "ready"
-    db = _build_mock_db(existing_session=existing)
+    # Reuse query (filtered by exact hash match) finds nothing; stale query
+    # (filtered by hash mismatch) returns the legacy session.
+    db = _build_mock_db(reuse_match=None, stale_match=existing)
 
     patches = _patch_service(registry, [(wiki_page, 0.9)])
     for p in patches:
@@ -393,9 +433,13 @@ async def test_create_advice_force_refresh_bypasses_cache() -> None:
 
     # Even if a cached session existed, force_refresh must skip the lookup.
     poisoned = MagicMock()
-    poisoned.source_snapshot_hash = compute_source_snapshot_hash([wiki_page.id])
+    poisoned.source_snapshot_hash = compute_source_snapshot_hash(
+        [(wiki_page.id, wiki_page.version, wiki_page.updated_at)]
+    )
     poisoned.reuse_status = "new"
-    db = _build_mock_db(existing_session=poisoned)
+    # force_refresh=True must short-circuit BEFORE either reuse query fires;
+    # provide values anyway in case future code asks.
+    db = _build_mock_db(reuse_match=poisoned, stale_match=None)
 
     patches = _patch_service(registry, [(wiki_page, 0.9)])
     for p in patches:
