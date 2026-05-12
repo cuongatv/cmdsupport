@@ -27,6 +27,7 @@ import type {
   TaskProject,
   TaskProjectCreate,
   TaskProjectUpdate,
+  TaskScope,
   TaskState,
   TaskStateCreate,
   TaskStateUpdate,
@@ -62,6 +63,19 @@ export function listTaskProjects(options: {
 
 export function createTaskProject(body: TaskProjectCreate): Promise<TaskProject> {
   return api<TaskProject>("/api/tasks/projects", { method: "POST", body });
+}
+
+// Resolve (lazy-create) the hidden default project for a scope. Used by the
+// scope-based create flow so we can preload states/eligible-assignees just
+// like the explicit-project flow.
+export function resolveTaskProject(scope: TaskScope): Promise<TaskProject> {
+  const params = new URLSearchParams();
+  if ("workspace_id" in scope) {
+    params.set("workspace_id", scope.workspace_id);
+  } else {
+    params.set("department_id", scope.department_id);
+  }
+  return api<TaskProject>(`/api/tasks/projects/resolve?${params.toString()}`);
 }
 
 export function getTaskProject(projectId: string): Promise<TaskProject> {
@@ -115,6 +129,8 @@ export function deleteTaskLabel(projectId: string, labelId: string): Promise<voi
 export function listTasks(filters: TaskFilters): Promise<PaginatedResponse<Task>> {
   const params = new URLSearchParams();
   appendQuery(params, "task_project_id", filters.task_project_id);
+  appendQuery(params, "workspace_id", filters.workspace_id);
+  appendQuery(params, "department_id", filters.department_id);
   appendQuery(params, "search", filters.search);
   appendQuery(params, "state_id", filters.state_id);
   appendQuery(params, "assignee_id", filters.assignee_id);
@@ -134,6 +150,23 @@ export function listTasks(filters: TaskFilters): Promise<PaginatedResponse<Task>
 
 export function createTask(taskProjectId: string, body: TaskCreate): Promise<Task> {
   return api<Task>(`/api/tasks?task_project_id=${encodeURIComponent(taskProjectId)}`, {
+    method: "POST",
+    body,
+  });
+}
+
+// Scope-based create: the user only picks a scope (Không gian làm việc / Phòng
+// ban) and the backend resolves or creates the hidden default project. Body's
+// state_id may be omitted; the backend fills it with the project's default
+// state so the UI does not need to know the project's workflow upfront.
+export function createTaskInScope(scope: TaskScope, body: TaskCreate): Promise<Task> {
+  const params = new URLSearchParams();
+  if ("workspace_id" in scope) {
+    params.set("workspace_id", scope.workspace_id);
+  } else {
+    params.set("department_id", scope.department_id);
+  }
+  return api<Task>(`/api/tasks?${params.toString()}`, {
     method: "POST",
     body,
   });

@@ -21,12 +21,6 @@ import { Label } from "@/components/ui/label";
 export const TASK_FILTER_ALL_VALUE = "__all__";
 export type TaskScopeFilter = "" | "all" | "workspace" | "department";
 
-const SCOPE_OPTIONS: Array<{ value: TaskScopeFilter; label: string }> = [
-  { value: "", label: "Tất cả phạm vi" },
-  { value: "workspace", label: "Theo workspace" },
-  { value: "department", label: "Theo phòng ban" },
-];
-
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
   none: "Không có",
   low: "Thấp",
@@ -45,6 +39,10 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
 
 export type TaskListFilterValues = {
   task_project_id: string;
+  // Concrete scope target (workspace UUID xor department UUID). When set
+  // without a `task_project_id`, the create flow uses scope-based create.
+  workspace_id: string;
+  department_id: string;
   state_id: string;
   priority: string;
   assignee_id: string;
@@ -57,24 +55,35 @@ export type TaskListFilterValues = {
   search: string;
 };
 
+export type ScopeOption = { id: string; name: string };
+
 type TaskListFiltersProps = {
   projects: TaskProject[];
+  workspaces: ScopeOption[];
+  departments: ScopeOption[];
   states: TaskState[];
   assignees: EligibleAssignee[];
   labels: TaskLabel[];
   values: TaskListFilterValues;
   scopedFiltersDisabled: boolean;
-  showScopeFilter: boolean;
+  // Legacy: the radio "Phạm vi" group was removed in favor of the explicit
+  // Phòng ban + Không gian làm việc dropdowns. Props kept optional to avoid
+  // breaking any external caller still wiring them.
+  showScopeFilter?: boolean;
   onProjectChange: (projectId: string) => void;
+  onWorkspaceChange: (workspaceId: string) => void;
+  onDepartmentChange: (departmentId: string) => void;
   onStateChange: (stateId: string) => void;
   onPriorityChange: (priority: string) => void;
   onAssigneeChange: (assigneeId: string) => void;
-  onReporterChange: (reporterId: string) => void;
+  // Reporter filter was removed from the UI. Prop kept optional so any caller
+  // still passing it does not need to be updated immediately.
+  onReporterChange?: (reporterId: string) => void;
   onLabelChange: (labelId: string) => void;
   onDueAfterChange: (date: string) => void;
   onDueBeforeChange: (date: string) => void;
   onOverdueChange: (overdue: boolean) => void;
-  onScopeChange: (scope: TaskScopeFilter) => void;
+  onScopeChange?: (scope: TaskScopeFilter) => void;
   onSearchSubmit: (query: string) => void;
 };
 
@@ -93,24 +102,29 @@ const FILTER_LABEL_CLASS =
 
 export function TaskListFilters({
   projects,
+  workspaces,
+  departments,
   states,
   assignees,
   labels,
   values,
   scopedFiltersDisabled,
-  showScopeFilter,
   onProjectChange,
+  onWorkspaceChange,
+  onDepartmentChange,
   onStateChange,
   onPriorityChange,
   onAssigneeChange,
-  onReporterChange,
   onLabelChange,
   onDueAfterChange,
   onDueBeforeChange,
   onOverdueChange,
-  onScopeChange,
   onSearchSubmit,
 }: TaskListFiltersProps) {
+  const selectedWorkspaceName =
+    workspaces.find((w) => w.id === values.workspace_id)?.name ?? "";
+  const selectedDepartmentName =
+    departments.find((d) => d.id === values.department_id)?.name ?? "";
   const [searchInput, setSearchInput] = React.useState(values.search);
 
   // Resolve the display name for the currently-selected option in each
@@ -118,11 +132,6 @@ export function TaskListFilters({
   // these lookups are O(n) over very small arrays. The string is also used as
   // the `title` attribute so the full text is reachable on hover when the
   // trigger truncates.
-  const selectedProject = projects.find(
-    (p) => p.id === values.task_project_id
-  );
-  const selectedProjectName = selectedProject?.name ?? "";
-
   const selectedState = states.find((s) => s.id === values.state_id);
   const selectedStateLabel = selectedState
     ? translateStateName(selectedState.name)
@@ -135,9 +144,6 @@ export function TaskListFilters({
 
   const selectedAssignee = assignees.find((a) => a.id === values.assignee_id);
   const selectedAssigneeName = selectedAssignee?.name ?? "";
-
-  const selectedReporter = assignees.find((a) => a.id === values.reporter_id);
-  const selectedReporterName = selectedReporter?.name ?? "";
 
   const selectedLabel = labels.find((l) => l.id === values.label_id);
   const selectedLabelName = selectedLabel?.name ?? "";
@@ -154,43 +160,118 @@ export function TaskListFilters({
 
   return (
     <div className="flex flex-col gap-3">
-      {showScopeFilter && (
-        <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
-          <span
-            id="task-filter-scope-label"
+      {/* Scope pickers (Phòng ban + Không gian làm việc) sit on their own row
+          at the top of the filter bar. Picking either one is enough to enable
+          task creation in that scope — no need to also pick a project. */}
+      <div
+        className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end"
+        data-testid="task-filter-scope-pickers"
+      >
+        <div className="flex flex-col gap-1">
+          <Label
+            htmlFor="task-filter-department"
             className={FILTER_LABEL_CLASS}
           >
-            Phạm vi
-          </span>
-          <div
-            className="inline-flex h-9 w-fit items-center rounded-lg border border-border bg-background p-0.5"
-            role="radiogroup"
-            aria-labelledby="task-filter-scope-label"
-            data-testid="task-filter-scope"
+            Phòng ban
+          </Label>
+          <Select
+            value={toSelectValue(values.department_id)}
+            onValueChange={(next) =>
+              onDepartmentChange(
+                fromSelectValue(next ?? TASK_FILTER_ALL_VALUE)
+              )
+            }
           >
-            {SCOPE_OPTIONS.map((option) => {
-              const isActive = values.scope === option.value;
-              return (
-                <button
-                  key={option.value || "all"}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  onClick={() => onScopeChange(option.value)}
-                  data-testid={`task-filter-scope-${option.value || "all"}`}
-                  className={`inline-flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
+            <SelectTrigger
+              id="task-filter-department"
+              className="w-full md:w-[220px] bg-background"
+              data-testid="task-filter-department"
+            >
+              {selectedDepartmentName ? (
+                <span
+                  className="truncate max-w-[180px]"
+                  title={selectedDepartmentName}
                 >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
+                  {selectedDepartmentName}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Tất cả phòng ban
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TASK_FILTER_ALL_VALUE}>
+                Tất cả phòng ban
+              </SelectItem>
+              {departments.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Chưa có phòng ban nào
+                </div>
+              ) : (
+                departments.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    <span className="truncate">{d.name}</span>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
         </div>
-      )}
+
+        <div className="flex flex-col gap-1">
+          <Label
+            htmlFor="task-filter-workspace"
+            className={FILTER_LABEL_CLASS}
+          >
+            Không gian làm việc
+          </Label>
+          <Select
+            value={toSelectValue(values.workspace_id)}
+            onValueChange={(next) =>
+              onWorkspaceChange(
+                fromSelectValue(next ?? TASK_FILTER_ALL_VALUE)
+              )
+            }
+          >
+            <SelectTrigger
+              id="task-filter-workspace"
+              className="w-full md:w-[220px] bg-background"
+              data-testid="task-filter-workspace"
+            >
+              {selectedWorkspaceName ? (
+                <span
+                  className="truncate max-w-[180px]"
+                  title={selectedWorkspaceName}
+                >
+                  {selectedWorkspaceName}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Tất cả không gian
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TASK_FILTER_ALL_VALUE}>
+                Tất cả không gian
+              </SelectItem>
+              {workspaces.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Chưa có không gian nào
+                </div>
+              ) : (
+                workspaces.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    <span className="truncate">{w.name}</span>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <form
           onSubmit={handleSearchSubmit}
@@ -227,54 +308,6 @@ export function TaskListFilters({
 
         <div className="flex flex-col gap-2 md:order-2 md:flex-row md:flex-wrap md:items-end">
           <div className="flex flex-col gap-1">
-            <Label
-              htmlFor="task-filter-project"
-              className={FILTER_LABEL_CLASS}
-            >
-              Dự án
-            </Label>
-            <Select
-              value={toSelectValue(values.task_project_id)}
-              onValueChange={(next) =>
-                onProjectChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
-              }
-            >
-              <SelectTrigger
-                id="task-filter-project"
-                className="w-full md:w-[200px] bg-background"
-                data-testid="task-filter-project"
-              >
-                {selectedProjectName ? (
-                  <span
-                    className="truncate max-w-[160px]"
-                    title={selectedProjectName}
-                  >
-                    {selectedProjectName}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">Tất cả dự án</span>
-                )}
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TASK_FILTER_ALL_VALUE}>
-                  Tất cả dự án
-                </SelectItem>
-                {projects.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Chưa có dự án nào
-                  </div>
-                ) : (
-                  projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      <span className="truncate">{project.name}</span>
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
             <Label htmlFor="task-filter-state" className={FILTER_LABEL_CLASS}>
               Trạng thái xử lý
             </Label>
@@ -283,7 +316,6 @@ export function TaskListFilters({
               onValueChange={(next) =>
                 onStateChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
               }
-              disabled={scopedFiltersDisabled}
             >
               <SelectTrigger
                 id="task-filter-state"
@@ -376,7 +408,6 @@ export function TaskListFilters({
               onValueChange={(next) =>
                 onAssigneeChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
               }
-              disabled={scopedFiltersDisabled}
             >
               <SelectTrigger
                 id="task-filter-assignee"
@@ -422,57 +453,6 @@ export function TaskListFilters({
 
       <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end">
         <div className="flex flex-col gap-1">
-          <Label htmlFor="task-filter-reporter" className={FILTER_LABEL_CLASS}>
-            Người báo cáo
-          </Label>
-          <Select
-            value={toSelectValue(values.reporter_id)}
-            onValueChange={(next) =>
-              onReporterChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
-            }
-            disabled={scopedFiltersDisabled}
-          >
-            <SelectTrigger
-              id="task-filter-reporter"
-              className="w-full md:w-[200px] bg-background"
-              data-testid="task-filter-reporter"
-            >
-              {selectedReporterName ? (
-                <span
-                  className="truncate max-w-[160px]"
-                  title={selectedReporterName}
-                >
-                  {selectedReporterName}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">Tất cả người báo cáo</span>
-              )}
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TASK_FILTER_ALL_VALUE}>
-                Tất cả người báo cáo
-              </SelectItem>
-              {assignees.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  Chọn dự án để xem người báo cáo
-                </div>
-              ) : (
-                assignees.map((assignee) => (
-                  <SelectItem key={assignee.id} value={assignee.id}>
-                    <div className="flex flex-col">
-                      <span className="truncate">{assignee.name}</span>
-                      <span className="text-[11px] text-muted-foreground truncate">
-                        {assignee.email}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1">
           <Label htmlFor="task-filter-label" className={FILTER_LABEL_CLASS}>
             Nhãn
           </Label>
@@ -481,7 +461,6 @@ export function TaskListFilters({
             onValueChange={(next) =>
               onLabelChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
             }
-            disabled={scopedFiltersDisabled}
           >
             <SelectTrigger
               id="task-filter-label"

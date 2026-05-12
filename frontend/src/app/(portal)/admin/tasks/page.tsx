@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   getTask,
+  getTaskProject,
   listEligibleAssignees,
   listTaskLabels,
   listTaskProjects,
   listTaskStates,
   listTasks,
+  resolveTaskProject,
 } from "@/lib/task-api";
 import type {
   EligibleAssignee,
@@ -20,6 +22,7 @@ import type {
   TaskLabel,
   TaskPriority,
   TaskProject,
+  TaskScope,
   TaskState,
 } from "@/lib/task-types";
 import { Button } from "@/components/ui/button";
@@ -27,6 +30,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
   TaskListFilters,
+  type ScopeOption,
   type TaskListFilterValues,
   type TaskScopeFilter,
 } from "@/components/tasks/task-list-filters";
@@ -120,9 +124,10 @@ export default function TaskListPage() {
   const canDelete =
     hasPermission("task:delete:own_dept") ||
     hasPermission("task:delete:all");
-  const canCrossScope = hasPermission("task:read:all");
 
   const taskProjectId = searchParams.get("task_project_id") ?? "";
+  const workspaceParam = searchParams.get("workspace_id") ?? "";
+  const departmentParam = searchParams.get("department_id") ?? "";
   const stateId = searchParams.get("state_id") ?? "";
   const priorityParam = searchParams.get("priority") ?? "";
   const assigneeId = searchParams.get("assignee_id") ?? "";
@@ -145,6 +150,8 @@ export default function TaskListPage() {
 
   const filterValues: TaskListFilterValues = {
     task_project_id: taskProjectId,
+    workspace_id: workspaceParam,
+    department_id: departmentParam,
     state_id: stateId,
     priority: PRIORITY_VALUES.has(priorityParam) ? priorityParam : "",
     assignee_id: assigneeId,
@@ -160,6 +167,8 @@ export default function TaskListPage() {
   const [projects, setProjects] = useState<TaskProject[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectError, setProjectError] = useState("");
+  const [workspaces, setWorkspaces] = useState<ScopeOption[]>([]);
+  const [departments, setDepartments] = useState<ScopeOption[]>([]);
 
   const [states, setStates] = useState<TaskState[]>([]);
   const [assignees, setAssignees] = useState<EligibleAssignee[]>([]);
@@ -173,16 +182,62 @@ export default function TaskListPage() {
   const [taskError, setTaskError] = useState("");
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  // The resolved hidden default project for the currently selected scope. Used
+  // by the scope-create flow so the dialog can load real states/labels/eligible
+  // assignees instead of showing empty pickers.
+  const [scopeResolvedProject, setScopeResolvedProject] =
+    useState<TaskProject | null>(null);
+  const [scopeResolveError, setScopeResolveError] = useState("");
+  const [scopeResolving, setScopeResolving] = useState(false);
+  const [scopeStates, setScopeStates] = useState<TaskState[]>([]);
+  const [scopeLabels, setScopeLabels] = useState<TaskLabel[]>([]);
+  const [scopeAssignees, setScopeAssignees] = useState<EligibleAssignee[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  // Per-project context for the detail panel. When viewing tasks by scope
+  // (Phòng ban / Không gian làm việc), tasks can span multiple TaskProjects,
+  // so we lazy-load each task's project + states/labels/eligible assignees on
+  // demand instead of relying on the single-project effect.
+  const [detailProject, setDetailProject] = useState<TaskProject | null>(null);
+  const [detailStates, setDetailStates] = useState<TaskState[]>([]);
+  const [detailLabels, setDetailLabels] = useState<TaskLabel[]>([]);
+  const [detailAssignees, setDetailAssignees] = useState<EligibleAssignee[]>(
+    []
+  );
+  const [detailParentCandidates, setDetailParentCandidates] = useState<Task[]>(
+    []
+  );
+
+  // Kanban states for scope mode: union of states across every project_id that
+  // shows up in the current task list. Without this, Kanban has no columns to
+  // render and tasks look "missing".
+  const [kanbanStates, setKanbanStates] = useState<TaskState[]>([]);
+  // Scope-aware filter options: assignees + labels unioned across every
+  // project_id that appears in `tasks`. Drives the "Người phụ trách" and
+  // "Nhãn" dropdowns when the user is filtering by scope (Phòng ban / Không
+  // gian làm việc) instead of a single project.
+  const [filterAssignees, setFilterAssignees] = useState<EligibleAssignee[]>(
+    []
+  );
+  const [filterLabels, setFilterLabels] = useState<TaskLabel[]>([]);
 
   const projectMap = useMemo(
     () => Object.fromEntries(projects.map((p) => [p.id, p])),
     [projects]
   );
-  const stateMap = useMemo(
-    () => Object.fromEntries(states.map((s) => [s.id, s])),
-    [states]
-  );
+  // Merge project-scoped states (single-project mode) with kanbanStates
+  // (scope mode union). Without the union, scope mode leaves stateMap empty
+  // and the "Trạng thái" column renders "—" even though every task has a
+  // valid state_id in the DB. kanbanStates is populated lazily after tasks
+  // arrive — fall back to `states` until it loads.
+  const stateMap = useMemo(() => {
+    const merged: Record<string, TaskState> = {};
+    for (const s of states) merged[s.id] = s;
+    for (const s of kanbanStates) {
+      if (!merged[s.id]) merged[s.id] = s;
+    }
+    return merged;
+  }, [states, kanbanStates]);
   const visibleProjects = useMemo(
     () =>
       filterValues.scope === "" || filterValues.scope === "all"
@@ -259,18 +314,57 @@ export default function TaskListPage() {
     return () => window.clearTimeout(timerId);
   }, [loadProjects]);
 
+  // Load workspace and department options so the filter bar can offer
+  // concrete scope pickers (Không gian làm việc / Phòng ban) — these drive
+  // scope-based task creation when the user does not pick a specific project.
+  const loadScopes = useCallback(async () => {
+    if (!canRead) {
+      setWorkspaces([]);
+      setDepartments([]);
+      return;
+    }
+    try {
+      const [workspacesData, departmentsData] = await Promise.all([
+        api<Array<{ id: string; name: string }>>("/api/projects").catch(
+          () => [] as Array<{ id: string; name: string }>
+        ),
+        api<Array<{ id: string; name: string }>>("/api/departments").catch(
+          () => [] as Array<{ id: string; name: string }>
+        ),
+      ]);
+      setWorkspaces(
+        workspacesData.map((w) => ({ id: w.id, name: w.name }))
+      );
+      setDepartments(
+        departmentsData.map((d) => ({ id: d.id, name: d.name }))
+      );
+    } catch {
+      setWorkspaces([]);
+      setDepartments([]);
+    }
+  }, [canRead]);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadScopes();
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [loadScopes]);
+
   // Default project selection is "Tất cả dự án" (empty task_project_id).
   // User explicitly opts into a specific project by picking from the dropdown.
 
-  // If the selected project disappears (archived) or no longer matches scope,
-  // clear scoped filters so the picker re-selects a valid project.
+  // Stale-project cleanup: only relevant for the legacy deep-link path where a
+  // task_project_id may be in the URL but the project has been archived or
+  // become invisible. Skip when the URL is using scope mode (workspace_id /
+  // department_id) — those scopes don't depend on the projects cache.
   useEffect(() => {
     if (!projectsLoaded) return;
     if (filterValues.task_project_id === "") return;
+    if (filterValues.workspace_id !== "" || filterValues.department_id !== "")
+      return;
     const current = projectMap[filterValues.task_project_id];
-    const stillVisible =
-      current && projectMatchesScope(current, filterValues.scope);
-    if (stillVisible) return;
+    if (current && projectMatchesScope(current, filterValues.scope)) return;
     const timerId = window.setTimeout(() => {
       updateUrl({
         task_project_id: "",
@@ -286,6 +380,8 @@ export default function TaskListPage() {
     projectsLoaded,
     projectMap,
     filterValues.task_project_id,
+    filterValues.workspace_id,
+    filterValues.department_id,
     filterValues.scope,
     updateUrl,
   ]);
@@ -352,6 +448,152 @@ export default function TaskListPage() {
     return () => window.clearTimeout(timerId);
   }, [filterValues.task_project_id, loadParentCandidates]);
 
+  // Load full project context for the task currently selected in the detail
+  // panel. Works in both addressing modes:
+  //   - project-mode (legacy): just reuses the existing states/labels caches.
+  //   - scope-mode: tasks can belong to any project under the scope, so we
+  //     fetch this task's owning project on demand.
+  const loadDetailContext = useCallback(
+    async (task: Task | null) => {
+      if (task === null) {
+        setDetailProject(null);
+        setDetailStates([]);
+        setDetailLabels([]);
+        setDetailAssignees([]);
+        setDetailParentCandidates([]);
+        return;
+      }
+      const projectId = task.task_project_id;
+      try {
+        const cached = projects.find((p) => p.id === projectId) ?? null;
+        const project = cached ?? (await getTaskProject(projectId));
+        const [statesData, assigneesData, labelsData, parentRes] =
+          await Promise.all([
+            listTaskStates(projectId).catch(() => [] as TaskState[]),
+            listEligibleAssignees(projectId).catch(
+              () => [] as EligibleAssignee[]
+            ),
+            listTaskLabels(projectId).catch(() => [] as TaskLabel[]),
+            listTasks({
+              task_project_id: projectId,
+              page: 1,
+              page_size: 100,
+            }).catch(() => ({
+              items: [] as Task[],
+              total: 0,
+              page: 1,
+              page_size: 100,
+              total_pages: 0,
+            })),
+          ]);
+        setDetailProject(project);
+        setDetailStates(statesData);
+        setDetailAssignees(assigneesData);
+        setDetailLabels(labelsData);
+        setDetailParentCandidates(
+          parentRes.items.filter((t) => t.parent_task_id === null)
+        );
+      } catch {
+        setDetailProject(null);
+        setDetailStates([]);
+        setDetailLabels([]);
+        setDetailAssignees([]);
+        setDetailParentCandidates([]);
+      }
+    },
+    [projects]
+  );
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadDetailContext(selectedTask);
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [selectedTask, loadDetailContext]);
+
+  // Kanban + filter dropdowns need data even when the list spans multiple
+  // projects. Union states/labels/eligible-assignees over every project_id
+  // that appears in `tasks`. One fetch per distinct project, deduped by id.
+  const loadScopeOptions = useCallback(
+    async (currentTasks: Task[]) => {
+      const ids = Array.from(
+        new Set(currentTasks.map((t) => t.task_project_id))
+      );
+      if (ids.length === 0) {
+        setKanbanStates([]);
+        setFilterAssignees([]);
+        setFilterLabels([]);
+        return;
+      }
+      // Project-mode shortcut: if the URL pins one project and we already
+      // have its caches, reuse them — saves three network calls.
+      if (
+        ids.length === 1 &&
+        filterValues.task_project_id === ids[0] &&
+        states.length > 0
+      ) {
+        setKanbanStates(states);
+        setFilterAssignees(assignees);
+        setFilterLabels(labels);
+        return;
+      }
+      const triples = await Promise.all(
+        ids.map(async (id) => {
+          const [s, a, l] = await Promise.all([
+            listTaskStates(id).catch(() => [] as TaskState[]),
+            listEligibleAssignees(id).catch(
+              () => [] as EligibleAssignee[]
+            ),
+            listTaskLabels(id).catch(() => [] as TaskLabel[]),
+          ]);
+          return { s, a, l };
+        })
+      );
+      const seenS = new Set<string>();
+      const mergedS: TaskState[] = [];
+      const seenA = new Set<string>();
+      const mergedA: EligibleAssignee[] = [];
+      const seenL = new Set<string>();
+      const mergedL: TaskLabel[] = [];
+      for (const { s, a, l } of triples) {
+        for (const item of s) {
+          if (seenS.has(item.id)) continue;
+          seenS.add(item.id);
+          mergedS.push(item);
+        }
+        for (const item of a) {
+          if (seenA.has(item.id)) continue;
+          seenA.add(item.id);
+          mergedA.push(item);
+        }
+        for (const item of l) {
+          if (seenL.has(item.id)) continue;
+          seenL.add(item.id);
+          mergedL.push(item);
+        }
+      }
+      // Stable order: states by group/position, others alphabetical.
+      mergedS.sort((a, b) => {
+        if (a.group !== b.group) return a.group.localeCompare(b.group);
+        if (a.position !== b.position) return a.position - b.position;
+        return a.name.localeCompare(b.name);
+      });
+      mergedA.sort((a, b) => a.name.localeCompare(b.name));
+      mergedL.sort((a, b) => a.name.localeCompare(b.name));
+      setKanbanStates(mergedS);
+      setFilterAssignees(mergedA);
+      setFilterLabels(mergedL);
+    },
+    [filterValues.task_project_id, states, assignees, labels]
+  );
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      void loadScopeOptions(tasks);
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [tasks, loadScopeOptions]);
+
   // Load tasks whenever any filter (or page) changes.
   const loadTasks = useCallback(async () => {
     if (!canRead) {
@@ -361,7 +603,13 @@ export default function TaskListPage() {
       setTasksLoading(false);
       return;
     }
-    if (!filterValues.task_project_id) {
+    // List view supports two addressing modes: explicit project (legacy /
+    // deep-link), or scope (Phòng ban / Không gian làm việc). Both come from
+    // URL filters so reload/back-button keeps the same view.
+    const hasProject = filterValues.task_project_id !== "";
+    const hasScope =
+      filterValues.workspace_id !== "" || filterValues.department_id !== "";
+    if (!hasProject && !hasScope) {
       setTasks([]);
       setTaskTotal(0);
       setTaskTotalPages(0);
@@ -372,7 +620,15 @@ export default function TaskListPage() {
     setTaskError("");
     try {
       const data: PaginatedResponse<Task> = await listTasks({
-        task_project_id: filterValues.task_project_id,
+        task_project_id: hasProject ? filterValues.task_project_id : undefined,
+        workspace_id:
+          !hasProject && filterValues.workspace_id
+            ? filterValues.workspace_id
+            : undefined,
+        department_id:
+          !hasProject && filterValues.department_id
+            ? filterValues.department_id
+            : undefined,
         state_id: filterValues.state_id || undefined,
         priority: (filterValues.priority || undefined) as TaskPriority | undefined,
         assignee_id: filterValues.assignee_id || undefined,
@@ -399,6 +655,8 @@ export default function TaskListPage() {
   }, [
     canRead,
     filterValues.task_project_id,
+    filterValues.workspace_id,
+    filterValues.department_id,
     filterValues.state_id,
     filterValues.priority,
     filterValues.assignee_id,
@@ -449,7 +707,38 @@ export default function TaskListPage() {
   const handleProjectChange = (nextProjectId: string) => {
     updateFilter({
       task_project_id: nextProjectId,
+      // Selecting a specific project takes precedence over scope-only mode;
+      // clear the scope pickers so create resolves to this project.
+      workspace_id: nextProjectId ? "" : workspaceParam,
+      department_id: nextProjectId ? "" : departmentParam,
       // Clear scoped filters when switching project.
+      state_id: "",
+      assignee_id: "",
+      reporter_id: "",
+      label_id: "",
+    });
+  };
+
+  const handleWorkspaceChange = (nextWorkspaceId: string) => {
+    updateFilter({
+      workspace_id: nextWorkspaceId,
+      // Workspace and department are mutually exclusive concrete scopes.
+      department_id: nextWorkspaceId ? "" : departmentParam,
+      // Drop project-scoped filters so the user is not stuck viewing stale
+      // states/labels from a previously-selected project in a different scope.
+      task_project_id: nextWorkspaceId ? "" : taskProjectId,
+      state_id: "",
+      assignee_id: "",
+      reporter_id: "",
+      label_id: "",
+    });
+  };
+
+  const handleDepartmentChange = (nextDepartmentId: string) => {
+    updateFilter({
+      department_id: nextDepartmentId,
+      workspace_id: nextDepartmentId ? "" : workspaceParam,
+      task_project_id: nextDepartmentId ? "" : taskProjectId,
       state_id: "",
       assignee_id: "",
       reporter_id: "",
@@ -469,10 +758,6 @@ export default function TaskListPage() {
     updateFilter({ assignee_id: nextAssigneeId });
   };
 
-  const handleReporterChange = (nextReporterId: string) => {
-    updateFilter({ reporter_id: nextReporterId });
-  };
-
   const handleLabelChange = (nextLabelId: string) => {
     updateFilter({ label_id: nextLabelId });
   };
@@ -487,10 +772,6 @@ export default function TaskListPage() {
 
   const handleOverdueChange = (nextOverdue: boolean) => {
     updateFilter({ overdue: nextOverdue ? "true" : "" });
-  };
-
-  const handleScopeChange = (nextScope: TaskScopeFilter) => {
-    updateFilter({ scope: nextScope });
   };
 
   const handleSearchSubmit = (query: string) => {
@@ -528,6 +809,93 @@ export default function TaskListPage() {
   const currentProject =
     projectMap[filterValues.task_project_id] ?? null;
 
+  // Scope-based create eligibility: when the user has picked a concrete
+  // workspace OR department (but no specific project), we can still create a
+  // task — the backend resolves a hidden default project for that scope.
+  const createScope: TaskScope | null = filterValues.workspace_id
+    ? { workspace_id: filterValues.workspace_id }
+    : filterValues.department_id
+      ? { department_id: filterValues.department_id }
+      : null;
+  const createScopeLabel = filterValues.workspace_id
+    ? workspaces.find((w) => w.id === filterValues.workspace_id)?.name ??
+      "Không gian làm việc"
+    : filterValues.department_id
+      ? departments.find((d) => d.id === filterValues.department_id)?.name ??
+        "Phòng ban"
+      : undefined;
+  const canCreateTask = currentProject !== null || createScope !== null;
+
+  // Open the create dialog. When the user has a concrete project, we already
+  // have everything in state. When they only have a scope, resolve the hidden
+  // default project first so we can load its real states/labels/eligible
+  // assignees — otherwise the "Người báo cáo" picker would be empty.
+  const handleOpenCreateDialog = async () => {
+    setScopeResolveError("");
+    if (currentProject) {
+      setCreateDialogOpen(true);
+      return;
+    }
+    if (!createScope) return;
+    setScopeResolving(true);
+    try {
+      const resolved = await resolveTaskProject(createScope);
+      const [statesData, assigneesData, labelsData] = await Promise.all([
+        listTaskStates(resolved.id).catch(() => [] as TaskState[]),
+        listEligibleAssignees(resolved.id).catch(
+          () => [] as EligibleAssignee[]
+        ),
+        listTaskLabels(resolved.id).catch(() => [] as TaskLabel[]),
+      ]);
+      // Merge the resolved project into the cached projects list. Without
+      // this, a later updateFilter({ task_project_id: resolved.id }) would
+      // race the stale-cleanup effect (sees projectMap[id] === undefined,
+      // assumes the project disappeared, and clears task_project_id back to
+      // empty — which is exactly why the newly-created task appeared lost).
+      setProjects((prev) =>
+        prev.some((p) => p.id === resolved.id) ? prev : [...prev, resolved]
+      );
+      setScopeResolvedProject(resolved);
+      setScopeStates(statesData);
+      setScopeAssignees(assigneesData);
+      setScopeLabels(labelsData);
+      setCreateDialogOpen(true);
+    } catch (err) {
+      setScopeResolveError(
+        getErrorMessage(err, "Không khởi tạo được phạm vi để tạo công việc")
+      );
+    } finally {
+      setScopeResolving(false);
+    }
+  };
+
+  // When the dialog closes after a scope-create, drop the resolved-project
+  // cache so the next open re-fetches (the resolved project, assignees, or
+  // states may change between sessions).
+  const handleCreateDialogOpenChange = (open: boolean) => {
+    setCreateDialogOpen(open);
+    if (!open) {
+      setScopeResolvedProject(null);
+      setScopeStates([]);
+      setScopeAssignees([]);
+      setScopeLabels([]);
+    }
+  };
+
+  // After a scope-create succeeds, the list view already filters by the same
+  // workspace_id/department_id, so the freshly-created task shows up the next
+  // time loadTasks runs. Just close the dialog and trigger a reload. No need
+  // to pin a project_id — that addressing mode is no longer required to list.
+  const handleScopeTaskCreated = (_saved: Task) => {
+    setCreateDialogOpen(false);
+    setScopeResolvedProject(null);
+    setScopeStates([]);
+    setScopeAssignees([]);
+    setScopeLabels([]);
+    void loadTasks();
+    void loadProjects();
+  };
+
   // --- Render ---
   if (authLoading) {
     return (
@@ -543,15 +911,16 @@ export default function TaskListPage() {
     );
   }
 
-  const showNoProjectsState =
-    projectsLoaded && projects.length === 0 && !projectError;
-  const showSelectProjectState =
-    projectsLoaded && visibleProjects.length > 0 && !hasProjectSelected;
-  const showScopeEmptyState =
-    projectsLoaded &&
-    projects.length > 0 &&
-    visibleProjects.length === 0 &&
-    !projectError;
+  // List view drives off scope now, not project. "No selection" means user
+  // hasn't picked Phòng ban or Không gian làm việc yet AND there's no legacy
+  // project filter pinned via deep-link.
+  const noSelection =
+    !hasProjectSelected &&
+    filterValues.workspace_id === "" &&
+    filterValues.department_id === "";
+  const showSelectProjectState = projectsLoaded && noSelection;
+  const showNoProjectsState = false;
+  const showScopeEmptyState = false;
 
   let emptyTitle = "Chưa có công việc nào";
   let emptyDescription =
@@ -580,22 +949,24 @@ export default function TaskListPage() {
     <>
       <PageHeader
         title="Quản lý công việc"
-        description="Tra cứu và lọc công việc trong các dự án bạn có quyền truy cập. Lọc theo dự án, trạng thái, người nhận và mức ưu tiên."
+        description="Tra cứu và tạo công việc theo phòng ban hoặc không gian làm việc. Lọc thêm theo trạng thái, người nhận và mức ưu tiên khi cần."
         action={
           canCreate ? (
             <Button
-              onClick={() => setCreateDialogOpen(true)}
+              onClick={() => {
+                void handleOpenCreateDialog();
+              }}
               data-testid="task-create-btn"
               className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!currentProject}
+              disabled={!canCreateTask || scopeResolving}
               title={
-                currentProject
+                canCreateTask
                   ? undefined
-                  : "Chọn một dự án ở bộ lọc để tạo công việc"
+                  : "Chọn một phòng ban hoặc không gian làm việc để tạo công việc"
               }
             >
               <span className="material-symbols-outlined text-sm">add</span>
-              Tạo công việc
+              {scopeResolving ? "Đang chuẩn bị…" : "Tạo công việc"}
             </Button>
           ) : null
         }
@@ -624,24 +995,39 @@ export default function TaskListPage() {
           </div>
         )}
 
+        {scopeResolveError && (
+          <div
+            className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center gap-2"
+            role="alert"
+            data-testid="task-list-scope-error"
+          >
+            <span className="material-symbols-outlined text-base">error</span>
+            {scopeResolveError}
+          </div>
+        )}
+
         <TaskListFilters
           projects={visibleProjects}
-          states={states}
-          assignees={assignees}
-          labels={labels}
+          workspaces={workspaces}
+          departments={departments}
+          states={kanbanStates}
+          assignees={filterAssignees}
+          labels={filterLabels}
           values={filterValues}
-          scopedFiltersDisabled={!hasProjectSelected}
-          showScopeFilter={canCrossScope}
+          // Filter dropdowns now have a populated option set regardless of
+          // whether the user picked a single project — they're driven by the
+          // scope (Phòng ban / Không gian làm việc) state cache.
+          scopedFiltersDisabled={false}
           onProjectChange={handleProjectChange}
+          onWorkspaceChange={handleWorkspaceChange}
+          onDepartmentChange={handleDepartmentChange}
           onStateChange={handleStateChange}
           onPriorityChange={handlePriorityChange}
           onAssigneeChange={handleAssigneeChange}
-          onReporterChange={handleReporterChange}
           onLabelChange={handleLabelChange}
           onDueAfterChange={handleDueAfterChange}
           onDueBeforeChange={handleDueBeforeChange}
           onOverdueChange={handleOverdueChange}
-          onScopeChange={handleScopeChange}
           onSearchSubmit={handleSearchSubmit}
         />
 
@@ -689,28 +1075,12 @@ export default function TaskListPage() {
           </div>
         </div>
 
-        {showNoProjectsState ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
-            <EmptyState
-              icon="folder_off"
-              title="Chưa có dự án công việc nào"
-              description="Tạo dự án công việc trước để bắt đầu quản lý và giao việc cho các thành viên."
-            />
-          </div>
-        ) : showScopeEmptyState ? (
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
-            <EmptyState
-              icon="filter_list_off"
-              title="Không có dự án phù hợp với phạm vi đã chọn"
-              description="Thử đổi sang phạm vi khác hoặc bỏ lọc phạm vi để xem tất cả dự án."
-            />
-          </div>
-        ) : showSelectProjectState ? (
+        {showSelectProjectState ? (
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
             <EmptyState
               icon="folder_open"
-              title="Chọn một dự án để xem công việc"
-              description="Vui lòng chọn dự án ở bộ lọc phía trên để hiển thị danh sách công việc tương ứng."
+              title="Chọn phạm vi để xem công việc"
+              description="Chọn một phòng ban hoặc không gian làm việc ở bộ lọc phía trên để hiển thị danh sách công việc tương ứng."
             />
           </div>
         ) : isKanbanView ? (
@@ -730,11 +1100,24 @@ export default function TaskListPage() {
                   description={emptyDescription}
                 />
               </div>
+            ) : kanbanStates.length === 0 ? (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
+                <EmptyState
+                  icon="view_kanban"
+                  title="Đang chuẩn bị các cột Kanban…"
+                  description="Hệ thống đang tải trạng thái công việc cho phạm vi đã chọn."
+                />
+              </div>
             ) : (
               <TaskKanban
-                key={filterValues.task_project_id}
+                key={
+                  filterValues.task_project_id ||
+                  filterValues.department_id ||
+                  filterValues.workspace_id ||
+                  "scope"
+                }
                 initialTasks={tasks}
-                states={states}
+                states={kanbanStates}
                 onTaskClick={handleRowClick}
               />
             )}
@@ -763,7 +1146,7 @@ export default function TaskListPage() {
         <TaskDialog
           key="new"
           open={createDialogOpen}
-          onOpenChange={setCreateDialogOpen}
+          onOpenChange={handleCreateDialogOpenChange}
           task={null}
           project={currentProject}
           states={states}
@@ -777,20 +1160,45 @@ export default function TaskListPage() {
         />
       )}
 
-      {selectedTask && currentProject && (
+      {/* Scope-create flow: we resolved the hidden default project before
+          opening the dialog, so it behaves identically to the project flow
+          — same pickers, same eligibility rules (Phòng ban members for a
+          department, ProjectMember roster for a workspace) — but the saved
+          handler also pins the list filter to the resolved project so the
+          new task is visible immediately. */}
+      {createDialogOpen && !currentProject && scopeResolvedProject && (
+        <TaskDialog
+          key={`new-scope-${scopeResolvedProject.id}`}
+          open={createDialogOpen}
+          onOpenChange={handleCreateDialogOpenChange}
+          task={null}
+          project={scopeResolvedProject}
+          scopeLabel={createScopeLabel}
+          states={scopeStates}
+          labels={scopeLabels}
+          eligibleAssignees={scopeAssignees}
+          parentCandidates={[]}
+          onSaved={handleScopeTaskCreated}
+        />
+      )}
+
+      {selectedTask && detailProject && (
         <TaskDetailPanel
           key={selectedTask.id}
           open={selectedTask !== null}
           onOpenChange={handleDetailPanelOpenChange}
           task={selectedTask}
-          project={currentProject}
-          states={states}
-          labels={labels}
-          eligibleAssignees={assignees}
-          parentCandidates={parentCandidates}
+          project={detailProject}
+          states={detailStates}
+          labels={detailLabels}
+          eligibleAssignees={detailAssignees}
+          parentCandidates={detailParentCandidates}
           canEdit={canEdit}
           canDelete={canDelete}
-          onChanged={reloadAfterMutation}
+          onChanged={() => {
+            reloadAfterMutation();
+            void loadDetailContext(selectedTask);
+          }}
         />
       )}
     </>

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { ApiError } from "@/lib/api";
-import { createTask, updateTask } from "@/lib/task-api";
+import { createTask, createTaskInScope, updateTask } from "@/lib/task-api";
 import type {
   EligibleAssignee,
   Task,
@@ -10,6 +10,7 @@ import type {
   TaskLabel,
   TaskPriority,
   TaskProject,
+  TaskScope,
   TaskState,
   TaskUpdate,
 } from "@/lib/task-types";
@@ -47,7 +48,13 @@ export type TaskDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: Task | null;
-  project: TaskProject;
+  // `project` is required for edit and for project-context create flows
+  // (Kanban, project dashboard). When the user is creating from the scope
+  // filter only (Không gian làm việc / Phòng ban), pass `scope` instead and
+  // leave `project` null — the backend resolves the hidden default project.
+  project: TaskProject | null;
+  scope?: TaskScope | null;
+  scopeLabel?: string;
   states: TaskState[];
   labels: TaskLabel[];
   eligibleAssignees: EligibleAssignee[];
@@ -86,6 +93,8 @@ export function TaskDialog({
   onOpenChange,
   task,
   project,
+  scope = null,
+  scopeLabel,
   states,
   labels,
   eligibleAssignees,
@@ -94,6 +103,11 @@ export function TaskDialog({
   onSaved,
 }: TaskDialogProps) {
   const isEdit = task !== null;
+  // Scope-only create: user picked a Không gian làm việc / Phòng ban but no
+  // project. We hide state/label/assignee/parent pickers because those are
+  // project-scoped and we don't have a project yet — the backend will resolve
+  // the hidden default project and apply its default state.
+  const isScopeCreate = !isEdit && project === null && scope !== null;
 
   // Lazy initial state derived from props. Parent re-mounts the dialog via
   // `key` whenever the task switches, so no setState-in-effect reset needed.
@@ -107,9 +121,10 @@ export function TaskDialog({
   const [stateId, setStateId] = React.useState(
     () => task?.state_id ?? states[0]?.id ?? ""
   );
-  const [reporterId, setReporterId] = React.useState(
-    () => task?.reporter_id ?? ""
-  );
+  // Reporter (Người báo cáo) was removed from the task UI per product decision —
+  // the create/edit dialog no longer surfaces it. We still send the field on
+  // update so existing values are preserved (null clears it, undefined leaves
+  // it untouched by Pydantic exclude_unset on the server).
   const [parentTaskId, setParentTaskId] = React.useState(
     () => task?.parent_task_id ?? defaultParentTaskId ?? ""
   );
@@ -140,7 +155,9 @@ export function TaskDialog({
       setError("Tên công việc là bắt buộc");
       return;
     }
-    if (!stateId) {
+    // State picker is only shown for project-context flows. Scope-create lets
+    // the backend pick the default state of the resolved project.
+    if (!isScopeCreate && !stateId) {
       setError("Chọn trạng thái cho công việc");
       return;
     }
@@ -157,24 +174,37 @@ export function TaskDialog({
           description: description.trim() || null,
           priority,
           state_id: stateId,
-          reporter_id: reporterId || null,
+          // reporter_id intentionally omitted — left untouched server-side.
           parent_task_id: parentTaskId || null,
           due_date: inputValueToDueDate(dueDateInput),
         };
         saved = await updateTask(task.id, updateBody);
-      } else {
+      } else if (isScopeCreate && scope) {
+        // Minimal payload: scope-based create skips project-scoped pickers
+        // (state/labels/assignees/parent). Those can be filled later from the
+        // task detail panel once the task lands in the resolved project.
+        const createBody: TaskCreate = {
+          title: trimmedTitle,
+          description: description.trim() || null,
+          priority,
+          due_date: inputValueToDueDate(dueDateInput),
+        };
+        saved = await createTaskInScope(scope, createBody);
+      } else if (project) {
         const createBody: TaskCreate = {
           title: trimmedTitle,
           description: description.trim() || null,
           priority,
           state_id: stateId,
-          reporter_id: reporterId || null,
           parent_task_id: parentTaskId || null,
           due_date: inputValueToDueDate(dueDateInput),
           assignee_ids: assigneeIds,
           label_ids: labelIds,
         };
         saved = await createTask(project.id, createBody);
+      } else {
+        setError("Thiếu phạm vi để tạo công việc");
+        return;
       }
       onSaved(saved);
       onOpenChange(false);
@@ -185,7 +215,7 @@ export function TaskDialog({
     }
   };
 
-  const reporterCandidates = eligibleAssignees;
+
   const parentOptions = parentCandidates.filter((p) => p.id !== task?.id);
 
   return (
@@ -195,6 +225,14 @@ export function TaskDialog({
           <DialogTitle className="text-xl">
             {isEdit ? "Chỉnh sửa công việc" : "Tạo công việc"}
           </DialogTitle>
+          {!isEdit && scopeLabel ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="task-dialog-scope-hint"
+            >
+              Phạm vi: <span className="font-medium">{scopeLabel}</span>
+            </p>
+          ) : null}
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-2">
@@ -228,7 +266,14 @@ export function TaskDialog({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div
+            className={
+              isScopeCreate
+                ? "flex flex-col gap-3"
+                : "grid grid-cols-1 sm:grid-cols-2 gap-3"
+            }
+          >
+            {!isScopeCreate && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="task-dialog-state">Trạng thái xử lý</Label>
               <Select
@@ -273,6 +318,7 @@ export function TaskDialog({
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="task-dialog-priority">Mức độ ưu tiên</Label>
@@ -312,63 +358,20 @@ export function TaskDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="task-dialog-due-date">Ngày hết hạn</Label>
-              <Input
-                id="task-dialog-due-date"
-                name="target_date"
-                data-testid="task-dialog-due-date-input"
-                type="date"
-                value={dueDateInput}
-                onChange={(e) => setDueDateInput(e.target.value)}
-                className="bg-background"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="task-dialog-reporter">Người báo cáo</Label>
-              <Select
-                value={reporterId || NONE_VALUE}
-                onValueChange={(v) =>
-                  setReporterId(v === NONE_VALUE ? "" : v ?? "")
-                }
-              >
-                <SelectTrigger
-                  id="task-dialog-reporter"
-                  data-testid="task-dialog-reporter-select"
-                  className="w-full bg-background"
-                >
-                  {reporterId ? (
-                    (() => {
-                      const display =
-                        reporterCandidates.find((c) => c.id === reporterId)
-                          ?.name ?? reporterId;
-                      return (
-                        <span
-                          className="truncate max-w-[220px]"
-                          title={display}
-                        >
-                          {display}
-                        </span>
-                      );
-                    })()
-                  ) : (
-                    <SelectValue placeholder="Không chỉ định" />
-                  )}
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE_VALUE}>Không chỉ định</SelectItem>
-                  {reporterCandidates.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      <span className="truncate">{c.name}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="task-dialog-due-date">Ngày hết hạn</Label>
+            <Input
+              id="task-dialog-due-date"
+              name="target_date"
+              data-testid="task-dialog-due-date-input"
+              type="date"
+              value={dueDateInput}
+              onChange={(e) => setDueDateInput(e.target.value)}
+              className="bg-background"
+            />
           </div>
 
+          {!isScopeCreate && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="task-dialog-parent">Công việc cha</Label>
             <Select
@@ -422,8 +425,9 @@ export function TaskDialog({
               nhiệm vụ con.
             </p>
           </div>
+          )}
 
-          {!isEdit && (
+          {!isEdit && !isScopeCreate && project && (
             <div className="flex flex-col gap-1.5">
               <Label>Người được giao</Label>
               <p className="text-xs text-muted-foreground">
@@ -470,7 +474,7 @@ export function TaskDialog({
             </div>
           )}
 
-          {!isEdit && labels.length > 0 && (
+          {!isEdit && !isScopeCreate && labels.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <Label>Nhãn</Label>
               <div
@@ -502,6 +506,14 @@ export function TaskDialog({
           {isEdit && (
             <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
               Quản lý người được giao và nhãn ở chế độ chi tiết.
+            </div>
+          )}
+
+          {isScopeCreate && (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              Công việc sẽ được tạo trong phạm vi đã chọn với trạng thái mặc
+              định. Bạn có thể giao việc, gán nhãn hoặc đổi trạng thái sau khi
+              mở chi tiết công việc.
             </div>
           )}
 

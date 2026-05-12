@@ -203,13 +203,19 @@ export type TaskCreate = {
   title: string;
   description?: string | null;
   priority?: TaskPriority;
-  state_id: string;
+  // Optional: when omitted (scope-based create flow) the backend fills it with
+  // the resolved project's default state.
+  state_id?: string | null;
   parent_task_id?: string | null;
   reporter_id?: string | null;
   due_date?: string | null;
   assignee_ids?: string[];
   label_ids?: string[];
 };
+
+export type TaskScope =
+  | { workspace_id: string }
+  | { department_id: string };
 
 export type TaskUpdate = {
   title?: string | null;
@@ -241,7 +247,12 @@ export type TaskAssigneeRequest = {
 };
 
 export type TaskFilters = {
-  task_project_id: string;
+  // Exactly one of task_project_id OR (workspace_id xor department_id) is
+  // required. Scope mode lets the caller list tasks across every accessible
+  // project in a Phòng ban / Không gian làm việc without picking a project.
+  task_project_id?: string;
+  workspace_id?: string;
+  department_id?: string;
   search?: string;
   state_id?: string;
   assignee_id?: string;
