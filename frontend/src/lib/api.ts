@@ -74,7 +74,10 @@ export async function api<T = unknown>(
     res = await fetch(fullUrl, config);
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiError(0, "Request timed out");
+      throw new ApiError(
+        0,
+        `Yêu cầu vượt quá ${Math.round(timeoutMs / 1000)}s. Máy chủ AI có thể đang quá tải — vui lòng thử lại.`,
+      );
     }
     throw err;
   } finally {

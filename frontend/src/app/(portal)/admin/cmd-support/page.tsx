@@ -55,7 +55,9 @@ export default function CmdSupportPage() {
           additional_context: additionalContext.trim() || undefined,
           advice_language: adviceLanguage,
         },
-        timeoutMs: 120_000,
+        // 5 phút: cover LLM ~60s + backoff retry chain 15+45+120s khi gateway 504
+        // (xem app/ai/providers/openai_provider.py:_create_chat backoffs).
+        timeoutMs: 300_000,
       });
       setResult(data);
     } catch (err) {

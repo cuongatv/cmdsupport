@@ -54,7 +54,9 @@ export default function PublicHomePage() {
           // W1-T5: anonymous parity — same advice_language default as portal
           advice_language: "vi",
         },
-        timeoutMs: 120_000,
+        // 5 phút: cover LLM ~60s + backoff retry chain 15+45+120s khi gateway 504
+        // (xem app/ai/providers/openai_provider.py:_create_chat backoffs).
+        timeoutMs: 300_000,
       });
       setResult(data);
     } catch (err) {
