@@ -9,6 +9,15 @@ const nextConfig: NextConfig = {
   // timeout. Lint quality is enforced upstream in CI. (Next.js 16 no longer
   // runs ESLint during build, so no `eslint` field is needed here.)
   typescript: { ignoreBuildErrors: true },
+  // Next.js rewrites() upstream proxy defaults to 30s timeout (see
+  // node_modules/next/dist/server/lib/router-utils/proxy-request.js line 33).
+  // The CMD advisory LLM call regularly takes 45-90s (and up to 5 min when
+  // gateway 504 retries trigger the 15+45+120s backoff in
+  // app/ai/providers/openai_provider.py:_create_chat). At the default 30s,
+  // the proxy ECONNRESETs and the browser sees "API Error 500" even though
+  // the backend succeeds. Bump to 5 minutes to match the frontend api()
+  // timeoutMs in src/lib/api.ts.
+  experimental: { proxyTimeout: 300_000 },
   async redirects() {
     return [
       { source: '/cmd-support', destination: '/', permanent: false },
