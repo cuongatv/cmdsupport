@@ -14,7 +14,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -155,6 +154,43 @@ export function TaskListFilters({
 
   return (
     <div className="flex flex-col gap-3">
+      {showScopeFilter && (
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
+          <span
+            id="task-filter-scope-label"
+            className={FILTER_LABEL_CLASS}
+          >
+            Phạm vi
+          </span>
+          <div
+            className="inline-flex h-9 w-fit items-center rounded-lg border border-border bg-background p-0.5"
+            role="radiogroup"
+            aria-labelledby="task-filter-scope-label"
+            data-testid="task-filter-scope"
+          >
+            {SCOPE_OPTIONS.map((option) => {
+              const isActive = values.scope === option.value;
+              return (
+                <button
+                  key={option.value || "all"}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  onClick={() => onScopeChange(option.value)}
+                  data-testid={`task-filter-scope-${option.value || "all"}`}
+                  className={`inline-flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
         <form
           onSubmit={handleSearchSubmit}
@@ -216,7 +252,7 @@ export function TaskListFilters({
                     {selectedProjectName}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Tất cả dự án" />
+                  <span className="text-muted-foreground">Tất cả dự án</span>
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -262,7 +298,7 @@ export function TaskListFilters({
                     {selectedStateLabel}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Tất cả trạng thái" />
+                  <span className="text-muted-foreground">Tất cả trạng thái</span>
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -312,7 +348,7 @@ export function TaskListFilters({
                     {selectedPriorityLabel}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Tất cả ưu tiên" />
+                  <span className="text-muted-foreground">Tất cả ưu tiên</span>
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -355,7 +391,7 @@ export function TaskListFilters({
                     {selectedAssigneeName}
                   </span>
                 ) : (
-                  <SelectValue placeholder="Tất cả người nhận" />
+                  <span className="text-muted-foreground">Tất cả người nhận</span>
                 )}
               </SelectTrigger>
               <SelectContent>
@@ -409,7 +445,7 @@ export function TaskListFilters({
                   {selectedReporterName}
                 </span>
               ) : (
-                <SelectValue placeholder="Tất cả người báo cáo" />
+                <span className="text-muted-foreground">Tất cả người báo cáo</span>
               )}
             </SelectTrigger>
             <SelectContent>
@@ -460,7 +496,7 @@ export function TaskListFilters({
                   {selectedLabelName}
                 </span>
               ) : (
-                <SelectValue placeholder="Tất cả nhãn" />
+                <span className="text-muted-foreground">Tất cả nhãn</span>
               )}
             </SelectTrigger>
             <SelectContent>
@@ -524,43 +560,6 @@ export function TaskListFilters({
           <span className="text-xs">Chỉ hiển thị quá hạn</span>
         </label>
 
-        {showScopeFilter && (
-          <div className="flex flex-col gap-1">
-            <span
-              id="task-filter-scope-label"
-              className={FILTER_LABEL_CLASS}
-            >
-              Phạm vi
-            </span>
-            <div
-              className="inline-flex h-9 items-center rounded-lg border border-border bg-background p-0.5"
-              role="radiogroup"
-              aria-labelledby="task-filter-scope-label"
-              data-testid="task-filter-scope"
-            >
-              {SCOPE_OPTIONS.map((option) => {
-                const isActive = values.scope === option.value;
-                return (
-                  <button
-                    key={option.value || "all"}
-                    type="button"
-                    role="radio"
-                    aria-checked={isActive}
-                    onClick={() => onScopeChange(option.value)}
-                    data-testid={`task-filter-scope-${option.value || "all"}`}
-                    className={`inline-flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors ${
-                      isActive
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

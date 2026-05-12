@@ -196,7 +196,17 @@ export default function TaskListPage() {
 
   const updateUrl = useCallback(
     (updates: Record<string, string>) => {
-      const next = new URLSearchParams(searchParams.toString());
+      // Filter changes are URL-only — no need for server round-trip. Using
+      // window.history.replaceState + searchParams refresh avoids a bug
+      // where Next 16 + React Compiler memoizes router.replace into a no-op
+      // after rapid filter changes (observed when scope=department is set
+      // and the user then picks a state). The `next/navigation` router still
+      // re-renders the tree because useSearchParams subscribes to popstate
+      // and Next's internal history patches.
+      const currentSearch = typeof window !== "undefined"
+        ? window.location.search.replace(/^\?/, "")
+        : searchParams.toString();
+      const next = new URLSearchParams(currentSearch);
       for (const [key, value] of Object.entries(updates)) {
         if (value === "") {
           next.delete(key);
@@ -205,7 +215,12 @@ export default function TaskListPage() {
         }
       }
       const query = next.toString();
-      router.replace(query ? `${pathname}?${query}` : pathname);
+      const target = query ? `${pathname}?${query}` : pathname;
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", target);
+      } else {
+        router.replace(target);
+      }
     },
     [pathname, router, searchParams]
   );
@@ -244,16 +259,8 @@ export default function TaskListPage() {
     return () => window.clearTimeout(timerId);
   }, [loadProjects]);
 
-  // Auto-select first scope-matching project once projects load if URL has none.
-  useEffect(() => {
-    if (!projectsLoaded || visibleProjects.length === 0) return;
-    if (filterValues.task_project_id !== "") return;
-    const firstProjectId = visibleProjects[0].id;
-    const timerId = window.setTimeout(() => {
-      updateUrl({ task_project_id: firstProjectId, page: "" });
-    }, 0);
-    return () => window.clearTimeout(timerId);
-  }, [projectsLoaded, visibleProjects, filterValues.task_project_id, updateUrl]);
+  // Default project selection is "Tất cả dự án" (empty task_project_id).
+  // User explicitly opts into a specific project by picking from the dropdown.
 
   // If the selected project disappears (archived) or no longer matches scope,
   // clear scoped filters so the picker re-selects a valid project.

@@ -7,7 +7,7 @@ from math import ceil
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,7 +146,10 @@ class EligibleAssigneeOut(BaseModel):
 
     id: uuid.UUID
     name: str
-    email: EmailStr
+    # Use plain str (not EmailStr) for response: pydantic's EmailStr rejects
+    # RFC reserved TLDs like *.test which appear in seeded/test data.
+    # Inbound validation still happens at user creation endpoints.
+    email: str
     department_id: uuid.UUID | None
 
 
