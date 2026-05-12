@@ -82,10 +82,15 @@ async def _find_reusable_session(
 
     Fix #5: ``result_json IS NOT NULL`` guard prevents the reuse path from
     returning a session that would crash the frontend on render.
+
+    Eager-load ``created_by`` so ``_build_reused_response`` can ``expunge``
+    the row without breaking the router's later access to ``obj.created_by.name``
+    (which would otherwise lazy-load and raise ``DetachedInstanceError``).
     """
     return (
         await db.execute(
             select(CmdAdvisorySession)
+            .options(selectinload(CmdAdvisorySession.created_by))
             .where(
                 CmdAdvisorySession.input_fingerprint == input_fingerprint,
                 CmdAdvisorySession.status == "ready",
