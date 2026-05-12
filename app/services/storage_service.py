@@ -56,22 +56,60 @@ class StorageBackend(ABC):
 # ---------------------------------------------------------------------------
 
 class MinioBackend(StorageBackend):
-    """MinIO local storage backend."""
+    """MinIO local storage backend.
+
+    Uses two clients on purpose:
+      * `client`        — talks to the internal SDK endpoint (`minio:9000` in
+                          docker-compose). Used for all data-plane ops.
+      * `_public_client` — same credentials, but configured with the host the
+                          BROWSER will reach (`localhost:9000` in dev). Presigned
+                          URLs are built from this client so the SigV4 signature
+                          matches the host actually used by the browser. If
+                          `MINIO_PUBLIC_ENDPOINT` is unset we reuse `client`.
+    """
 
     def __init__(self):
         self._client = None
+        self._public_client = None
+
+    def _build_client(self, endpoint: str, secure: bool, *, region: Optional[str] = None):
+        # Hard-code `region` on the presign client. Otherwise the SDK probes
+        # `GetBucketLocation` against the endpoint to discover the region, and
+        # the presign client's endpoint (`localhost:9000`) is unreachable from
+        # the API container. MinIO's default region is `us-east-1`.
+        from minio import Minio
+        return Minio(
+            endpoint=endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=secure,
+            region=region,
+        )
 
     @property
     def client(self):
         if self._client is None:
-            from minio import Minio
-            self._client = Minio(
-                endpoint=settings.minio_endpoint,
-                access_key=settings.minio_access_key,
-                secret_key=settings.minio_secret_key,
-                secure=settings.minio_secure,
+            self._client = self._build_client(
+                settings.minio_endpoint, settings.minio_secure
             )
         return self._client
+
+    @property
+    def _presign_client(self):
+        """Client whose endpoint matches the host browsers will hit. Falls back
+        to `client` so signatures stay valid when no public override is set."""
+        if not settings.minio_public_endpoint:
+            return self.client
+        if self._public_client is None:
+            secure = (
+                settings.minio_public_secure
+                if settings.minio_public_secure is not None
+                else settings.minio_secure
+            )
+            self._public_client = self._build_client(
+                settings.minio_public_endpoint, secure, region="us-east-1"
+            )
+        return self._public_client
 
     @property
     def _bucket(self) -> str:
@@ -132,14 +170,14 @@ class MinioBackend(StorageBackend):
 
     def get_presigned_url(self, object_name: str, expiry_hours: Optional[int] = None) -> str:
         hours = expiry_hours or settings.minio_presign_expiry_hours
-        return self.client.presigned_get_object(
+        return self._presign_client.presigned_get_object(
             bucket_name=self._bucket,
             object_name=object_name,
             expires=timedelta(hours=hours),
         )
 
     def get_download_url(self, object_name: str, expires_seconds: int = 3600) -> str:
-        return self.client.presigned_get_object(
+        return self._presign_client.presigned_get_object(
             bucket_name=self._bucket,
             object_name=object_name,
             expires=timedelta(seconds=expires_seconds),

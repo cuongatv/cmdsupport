@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     minio_bucket: str = Field(default="cmd-support-files")
     minio_secure: bool = Field(default=False)
     minio_presign_expiry_hours: int = Field(default=24)
+    # Public host the BROWSER will use to fetch presigned URLs. In docker-compose
+    # API talks to `minio:9000` (internal hostname), but the signed URL embeds
+    # the SDK endpoint, which browsers on the host machine cannot resolve. Set
+    # this to the host:port the browser can reach (e.g. `localhost:9000` in dev,
+    # `minio.cmdsupport.com` in prod). Leave empty to reuse `minio_endpoint`.
+    minio_public_endpoint: Optional[str] = Field(default=None)
+    minio_public_secure: Optional[bool] = Field(
+        default=None,
+        description="HTTPS for public URLs; defaults to `minio_secure` if None",
+    )
 
     # --- S3 (when storage_backend='s3') ---
     s3_region: str = Field(default="ap-southeast-1")
