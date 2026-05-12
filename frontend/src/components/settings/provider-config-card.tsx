@@ -20,7 +20,7 @@ const BASE_PROVIDERS = [
   { value: "wtboss", label: "WTBoss AI Gateway" },
 ];
 
-type Capability = "embedding" | "llm" | "vision";
+type Capability = "embedding" | "llm" | "advisor-llm" | "vision";
 
 type TestResult = { success: boolean; message: string };
 

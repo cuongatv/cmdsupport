@@ -15,6 +15,9 @@ type ProviderConfig = {
   llm_provider: string;
   llm_model_id: string;
   llm_api_key: string;
+  advisor_llm_provider: string;
+  advisor_llm_model_id: string;
+  advisor_llm_api_key: string;
   vision_provider: string;
   vision_model_id: string;
   vision_api_key: string;
@@ -27,6 +30,9 @@ const defaultConfig: ProviderConfig = {
   llm_provider: "",
   llm_model_id: "",
   llm_api_key: "",
+  advisor_llm_provider: "",
+  advisor_llm_model_id: "",
+  advisor_llm_api_key: "",
   vision_provider: "",
   vision_model_id: "",
   vision_api_key: "",
@@ -134,6 +140,19 @@ export default function SettingsPage() {
           onProviderChange={(v) => updateField("llm_provider", v)}
           onModelChange={(v) => updateField("llm_model_id", v)}
           onApiKeyChange={(v) => updateField("llm_api_key", v)}
+        />
+
+        <ProviderConfigCard
+          title="Nhà cung cấp LLM (Tư vấn)"
+          description="Dành riêng cho luồng tư vấn KHDN. Để trống = dùng LLM mặc định ở trên."
+          icon="support_agent"
+          capability="advisor-llm"
+          provider={config.advisor_llm_provider}
+          model={config.advisor_llm_model_id}
+          apiKey={config.advisor_llm_api_key}
+          onProviderChange={(v) => updateField("advisor_llm_provider", v)}
+          onModelChange={(v) => updateField("advisor_llm_model_id", v)}
+          onApiKeyChange={(v) => updateField("advisor_llm_api_key", v)}
         />
 
         <ProviderConfigCard

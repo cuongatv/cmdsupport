@@ -129,6 +129,17 @@ class ProviderRegistry:
         cls = _get_llm_class(config.provider)
         return cls(config)
 
+    async def get_advisor_llm(self) -> LLMProvider:
+        """Get the LLM provider for KHDN advisory.
+
+        Falls back to the default ``llm_*`` config when ``advisor_llm_*`` is
+        not configured, so existing deployments keep working without forcing
+        admins to fill in a second provider.
+        """
+        config = await self._load_advisor_llm_config()
+        cls = _get_llm_class(config.provider)
+        return cls(config)
+
     async def get_vision(self) -> Optional[VisionProvider]:
         """Get the configured vision provider. Returns None if not configured."""
         try:
@@ -146,9 +157,12 @@ class ProviderRegistry:
         """
         results = {}
 
-        for capability in ("embedding", "llm", "vision"):
+        for capability in ("embedding", "llm", "advisor_llm", "vision"):
             try:
-                config = await self._load_config(capability)
+                if capability == "advisor_llm":
+                    config = await self._load_advisor_llm_config()
+                else:
+                    config = await self._load_config(capability)
             except ValueError as e:
                 results[capability] = (False, f"Not configured: {e}")
                 continue
@@ -156,7 +170,7 @@ class ProviderRegistry:
             try:
                 if capability == "embedding":
                     provider = _get_embedding_class(config.provider)(config)
-                elif capability == "llm":
+                elif capability in ("llm", "advisor_llm"):
                     provider = _get_llm_class(config.provider)(config)
                 else:
                     provider = _get_vision_class(config.provider)(config)
@@ -191,6 +205,47 @@ class ProviderRegistry:
             model_id=model_id,
             base_url=base_url,
             dimensions=int(dimensions_str) if dimensions_str else None,
+            extra={},
+        )
+
+    async def _load_advisor_llm_config(self) -> ProviderConfig:
+        """Load advisor LLM config with field-level fallback to ``llm_*``.
+
+        Each field (provider, model_id, api_key, base_url) is read from
+        ``advisor_llm_*`` first; if empty, the corresponding ``llm_*`` value
+        is used. This means admins can override just the model while sharing
+        provider + key with the default LLM, or override everything.
+
+        Raises ``ValueError`` only when BOTH advisor and default LLM are
+        unconfigured. Callers should let that propagate so the failure is
+        visible in Settings → Kiểm tra and in API responses.
+        """
+        from app.services.config_service import ConfigService
+        svc = ConfigService(self.db)
+
+        async def _resolve(field: str) -> Optional[str]:
+            advisor = await svc.get(f"advisor_llm_{field}")
+            if advisor:
+                return advisor
+            return await svc.get(f"llm_{field}")
+
+        provider_str = await _resolve("provider")
+        model_id = await _resolve("model_id")
+        api_key = await _resolve("api_key")
+        base_url = await _resolve("base_url")
+
+        if not provider_str or not model_id:
+            raise ValueError(
+                "No advisor LLM configured. Set advisor_llm_* (or fall back "
+                "to llm_*) in Settings."
+            )
+
+        return ProviderConfig(
+            provider=ProviderType(provider_str),
+            api_key=api_key or "",
+            model_id=model_id,
+            base_url=base_url,
+            dimensions=None,
             extra={},
         )
 

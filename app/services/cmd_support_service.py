@@ -302,13 +302,19 @@ async def create_advice(
             detail="Chưa cấu hình AI provider trong Cài đặt",
         )
     try:
-        llm = await registry.get_llm()
+        # KHDN advisory uses a dedicated LLM provider when configured
+        # ("Nhà cung cấp LLM (Tư vấn)" in Settings). When advisor_llm_* is
+        # empty, ProviderRegistry transparently falls back to the default
+        # llm_* config, so this single call covers both cases.
+        llm = await registry.get_advisor_llm()
     except ValueError:
         raise HTTPException(
             status_code=503,
             detail="Chưa cấu hình AI provider trong Cài đặt",
         )
-    llm_config = await registry._load_config("llm")
+    # Use the same resolution as get_advisor_llm() so the fingerprint reflects
+    # the model that actually ran (advisor override OR default LLM).
+    llm_config = await registry._load_advisor_llm_config()
 
     # Build search query
     query_parts = [segment_label]

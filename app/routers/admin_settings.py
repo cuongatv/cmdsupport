@@ -127,27 +127,43 @@ async def _build_adhoc_config(
 
     A masked api_key sent from the UI (starts with "•") is treated as
     "use the saved key" — we never echo the masked placeholder to providers.
+
+    Special case: ``capability == "advisor_llm"`` mirrors
+    ``ProviderRegistry._load_advisor_llm_config`` — each field falls back
+    to ``llm_*`` when the advisor_llm_* row is empty, so the Settings
+    "Kiểm tra" button reflects what KHDN advisory would actually receive
+    at runtime.
     """
     from app.ai.providers.base import ProviderConfig, ProviderType
     from app.services.config_service import ConfigService
 
     svc = ConfigService(db)
 
-    provider_str = (body.provider if body else None) or await svc.get(f"{capability}_provider")
-    model_id = (body.model_id if body else None) or await svc.get(f"{capability}_model_id")
+    async def _saved(field: str) -> Optional[str]:
+        # For advisor_llm: prefer advisor_llm_<field>, then llm_<field>.
+        # For all other capabilities: just <capability>_<field>.
+        if capability == "advisor_llm":
+            advisor = await svc.get(f"advisor_llm_{field}")
+            if advisor:
+                return advisor
+            return await svc.get(f"llm_{field}")
+        return await svc.get(f"{capability}_{field}")
+
+    provider_str = (body.provider if body else None) or await _saved("provider")
+    model_id = (body.model_id if body else None) or await _saved("model_id")
 
     api_key_in = body.api_key if body else None
     if api_key_in and not api_key_in.startswith("•"):
         api_key = api_key_in
     else:
-        api_key = await svc.get(f"{capability}_api_key") or ""
+        api_key = await _saved("api_key") or ""
 
-    base_url = (body.base_url if body else None) or await svc.get(f"{capability}_base_url")
+    base_url = (body.base_url if body else None) or await _saved("base_url")
 
     if body and body.dimensions is not None:
         dimensions = body.dimensions
     else:
-        dim_str = await svc.get(f"{capability}_dimensions")
+        dim_str = await _saved("dimensions")
         dimensions = int(dim_str) if dim_str else None
 
     if not provider_str or not model_id:
@@ -203,6 +219,31 @@ async def test_llm(
 
     try:
         config = await _build_adhoc_config(db, "llm", body)
+        provider = _get_llm_class(config.provider)(config)
+        ok, msg = await provider.test_connection()
+        return TestConnectionResult(success=ok, message=msg)
+    except Exception as e:
+        return TestConnectionResult(success=False, message=str(e))
+
+
+@router.post("/settings/test-advisor-llm", response_model=TestConnectionResult)
+async def test_advisor_llm(
+    body: Optional[TestProviderRequest] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Test the KHDN advisor LLM provider.
+
+    Field-level fallback to the default LLM saved config when an
+    ``advisor_llm_*`` field is empty, mirroring the runtime resolution in
+    ``ProviderRegistry.get_advisor_llm()``. So "Kiểm tra" on the advisor
+    card with everything blank still tests *something* — it tests whatever
+    KHDN advisory would actually use.
+    """
+    from app.ai.registry import _get_llm_class
+
+    try:
+        config = await _build_adhoc_config(db, "advisor_llm", body)
         provider = _get_llm_class(config.provider)(config)
         ok, msg = await provider.test_connection()
         return TestConnectionResult(success=ok, message=msg)

@@ -29,6 +29,7 @@ def _derive_fernet_key(secret: str) -> bytes:
 SENSITIVE_KEYS = frozenset({
     "embedding_api_key",
     "llm_api_key",
+    "advisor_llm_api_key",
     "vision_api_key",
 })
 
@@ -46,6 +47,13 @@ ALL_CONFIG_KEYS = [
     "llm_model_id",             # e.g. "gpt-4o-mini", "claude-sonnet-4-20250514"
     "llm_api_key",              # Provider API key
     "llm_base_url",             # Custom endpoint
+
+    # --- Advisor LLM provider (KHDN advisory only; optional override of llm_*) ---
+    # Empty values fall back to llm_* so existing deployments keep working.
+    "advisor_llm_provider",
+    "advisor_llm_model_id",
+    "advisor_llm_api_key",
+    "advisor_llm_base_url",
 
     # --- Vision provider (for image analysis during ingestion) ---
     "vision_provider",          # "google" | "openai" | None
