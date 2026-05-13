@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     worker_max_jobs: int = Field(default=3, description="Max concurrent ingestion jobs")
     worker_job_timeout: int = Field(default=600, description="Job timeout in seconds")
 
+    # --- Optional MRP ingestion ---
+    mrp_auto_approve_plan: bool = Field(
+        default=False,
+        description="Auto-approve MRP ingestion plans; default keeps human review required",
+    )
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property

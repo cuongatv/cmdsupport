@@ -85,14 +85,39 @@ export async function api<T = unknown>(
   }
 
   if (!res.ok) {
-    let data;
+    let data: unknown;
     try {
       data = await res.json();
     } catch {
       data = null;
     }
-    const message =
-      (data as { detail?: string })?.detail || `API Error ${res.status}`;
+    // FastAPI returns `detail` as either:
+    //   - string (HTTPException)        e.g. {"detail": "Access denied"}
+    //   - list of ValidationError dicts e.g. {"detail": [{"loc": ..., "msg": ...}]}
+    // Previously this code only handled the string case, so 422 errors
+    // surfaced as the literal "[object Object]" because an array message
+    // gets stringified by Error().
+    const detail = (data as { detail?: unknown })?.detail;
+    let message = `API Error ${res.status}`;
+    if (typeof detail === "string" && detail.trim()) {
+      message = detail;
+    } else if (Array.isArray(detail) && detail.length > 0) {
+      const parts = detail
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const msg = (entry as { msg?: unknown }).msg;
+          const loc = (entry as { loc?: unknown }).loc;
+          const locText = Array.isArray(loc)
+            ? loc.filter((part) => part !== "body").join(".")
+            : "";
+          if (typeof msg !== "string" || !msg.trim()) return null;
+          return locText ? `${locText}: ${msg}` : msg;
+        })
+        .filter((entry): entry is string => Boolean(entry));
+      if (parts.length > 0) {
+        message = parts.join("; ");
+      }
+    }
     throw new ApiError(res.status, message, data);
   }
 

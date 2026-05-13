@@ -104,12 +104,30 @@ class Source(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     progress_message: Mapped[Optional[str]] = mapped_column(String(500))
     job_id: Mapped[Optional[str]] = mapped_column(String(200))
+    pipeline_strategy: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="MRP triage strategy for opt-in ingestion, e.g. map_reduce or refine",
+    )
+    pipeline_phase: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Current MRP pipeline phase for opt-in ingestion",
+    )
     # Heading-based TOC tree (PageIndex-style) built at ingest time from extracted markdown.
     # Schema: [{"title": str, "level": int, "page": int, "char_start": int, "char_end": int, "children": [...]}]
     outline_json: Mapped[Optional[list]] = mapped_column(JSONB)
     # Char offset (in full_text) where each extracted page begins.
     # Used by MCP `get_source_pages` to slice raw text by page range.
     page_offsets: Mapped[Optional[list[int]]] = mapped_column(JSONB)
+    pipeline_strategy: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        comment="MRP strategy: single_pass | standard | hierarchical",
+    )
+    pipeline_phase: Mapped[Optional[str]] = mapped_column(
+        String(30),
+        comment="Current MRP phase: map | reduce | plan_review | refine | verify | commit",
+    )
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -125,6 +143,85 @@ class Source(Base):
     knowledge_type: Mapped[Optional["KnowledgeType"]] = relationship()
     contributor: Mapped[Optional["Employee"]] = relationship(
         foreign_keys=[contributed_by_employee_id]
+    )
+    mrp_plan: Mapped[Optional["MRPPlan"]] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    mrp_artifacts: Mapped[list["MRPArtifact"]] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan",
+    )
+
+
+class MRPPlan(Base):
+    """Human-reviewable plan produced by the opt-in map/reduce pipeline."""
+    __tablename__ = "mrp_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False,
+        unique=True,
+    )
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
+    strategy: Mapped[str] = mapped_column(String(50), nullable=False, default="map_reduce")
+    plan_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True,
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    rejected_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True,
+    )
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    source: Mapped["Source"] = relationship(back_populates="mrp_plan")
+    approved_by: Mapped[Optional["Employee"]] = relationship(
+        "Employee", foreign_keys=[approved_by_id]
+    )
+    rejected_by: Mapped[Optional["Employee"]] = relationship(
+        "Employee", foreign_keys=[rejected_by_id]
+    )
+
+    __table_args__ = (
+        Index("ix_mrp_plans_source_id", "source_id"),
+        Index("ix_mrp_plans_status", "status"),
+    )
+
+
+class MRPArtifact(Base):
+    """Intermediate artifact from MRP map/reduce/refine/commit phases."""
+    __tablename__ = "mrp_artifacts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False,
+    )
+    phase: Mapped[str] = mapped_column(String(50), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    source: Mapped["Source"] = relationship(back_populates="mrp_artifacts")
+
+    __table_args__ = (
+        Index("ix_mrp_artifacts_source_phase", "source_id", "phase"),
+        Index("ix_mrp_artifacts_source_type", "source_id", "artifact_type"),
     )
 
 
@@ -146,6 +243,129 @@ class SourceDepartment(Base):
     # Relationships
     source: Mapped["Source"] = relationship(back_populates="departments")
     department: Mapped["Department"] = relationship(back_populates="source_departments")
+
+
+class SourceChunkExtract(Base):
+    """Persisted Phase 1 MAP output for one source chunk."""
+
+    __tablename__ = "source_chunk_extracts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_char: Mapped[int] = mapped_column(Integer, nullable=False)
+    section_path: Mapped[Optional[str]] = mapped_column(Text)
+    extract_json: Mapped[Optional[dict]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    source: Mapped["Source"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint("source_id", "chunk_index", name="uq_sce_source_chunk"),
+        Index("ix_sce_source_status", "source_id", "status"),
+    )
+
+
+class SourceCompilationPlan(Base):
+    """Persisted Phase 2 REDUCE plan awaiting human review or approval.
+
+    Statuses:
+      - pending_review: chờ user duyệt
+      - revising: đang regenerate theo feedback (lock chống click đôi)
+      - approved: đã duyệt, refine đang chạy hoặc đã chạy
+      - rejected: bị từ chối (không tái sinh)
+    """
+
+    __tablename__ = "source_compilation_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+    )
+    plan_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pending_review"
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    reviewed_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL")
+    )
+    review_note: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    source: Mapped["Source"] = relationship()
+    reviewer: Mapped[Optional["Employee"]] = relationship(foreign_keys=[reviewed_by])
+    revisions: Mapped[list["SourceCompilationPlanRevision"]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="SourceCompilationPlanRevision.created_at.desc()",
+    )
+
+    __table_args__ = (
+        Index("ix_scp_status", "status"),
+    )
+
+
+class SourceCompilationPlanRevision(Base):
+    """Lịch sử request-changes của một plan.
+
+    Mỗi lần user yêu cầu chỉnh sửa sẽ tạo 1 row mới, lưu feedback và snapshot
+    plan trước khi regenerate. Status chuyển từ ``requested`` → ``running`` →
+    ``succeeded`` / ``failed``.
+    """
+
+    __tablename__ = "source_compilation_plan_revisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    plan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("source_compilation_plans.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL")
+    )
+    feedback: Mapped[str] = mapped_column(Text, nullable=False)
+    base_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_plan_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="requested"
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    plan: Mapped["SourceCompilationPlan"] = relationship(back_populates="revisions")
+    requester: Mapped[Optional["Employee"]] = relationship(foreign_keys=[requested_by])
+
+    __table_args__ = (
+        Index("ix_scp_revision_plan", "plan_id"),
+        Index("ix_scp_revision_source_status", "source_id", "status"),
+    )
 
 
 # ---------------------------------------------------------------------------

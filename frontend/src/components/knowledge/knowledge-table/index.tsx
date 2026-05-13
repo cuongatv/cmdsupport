@@ -26,6 +26,7 @@ import { KnowledgeType, Department, Source } from "./types";
 import { fileIcons, getFileExt } from "./utils";
 import { StatusDot } from "./status-dot";
 import { EditSourceDialog } from "./edit-source-dialog";
+import { PlanReviewDialog } from "./plan-review-dialog";
 
 type Props = {
   sources: Source[];
@@ -56,6 +57,7 @@ export function KnowledgeTable({
 }: Props) {
   const [actionError, setActionError] = React.useState<string | null>(null);
   const [editSource, setEditSource] = React.useState<Source | null>(null);
+  const [planSource, setPlanSource] = React.useState<Source | null>(null);
   const [reingestingIds, setReingestingIds] = React.useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = React.useState(search);
 
@@ -265,6 +267,14 @@ export function KnowledgeTable({
                           <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>edit</span>
                           Sửa
                         </DropdownMenuItem>
+                        {source.ingestion_pipeline === "mrp" && source.status === "plan_ready" && (
+                          <DropdownMenuItem onClick={() => setPlanSource(source)}>
+                            <span className="material-symbols-outlined mr-2" style={{ fontSize: 16 }}>
+                              rule
+                            </span>
+                            Duyệt kế hoạch MRP
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => handleReingest(source.id)}
                           disabled={reingestingIds.has(source.id) || source.status === "processing" || source.status === "pending"}
@@ -351,6 +361,14 @@ export function KnowledgeTable({
           departments={departments}
           onClose={() => setEditSource(null)}
           onSaved={() => { setEditSource(null); onRefresh(); }}
+        />
+      )}
+
+      {planSource && (
+        <PlanReviewDialog
+          source={planSource}
+          onClose={() => setPlanSource(null)}
+          onReviewed={() => { setPlanSource(null); onRefresh(); }}
         />
       )}
     </div>

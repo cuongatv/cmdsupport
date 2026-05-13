@@ -77,6 +77,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
   const [typeId, setTypeId] = useState("");
   const [scopeType, setScopeType] = useState("global");
   const [scopeId, setScopeId] = useState("");
+  const [pipeline, setPipeline] = useState<"legacy" | "mrp">("mrp");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -133,11 +134,14 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       const formData = new FormData();
       formData.append("file", file);
       if (typeId) formData.append("knowledge_type_id", typeId);
-      
+
       formData.append("scope_type", scopeType);
       if (scopeType !== "global" && scopeId) {
         formData.append("scope_id", scopeId);
       }
+      // Luôn gửi ingestion_pipeline lên server. Backend mặc định cũng là MRP,
+      // nhưng gửi tường minh giúp người dùng switch về legacy nếu cần.
+      formData.append("ingestion_pipeline", pipeline);
 
       await apiUpload("/api/sources/upload", formData);
       onUploaded();
@@ -146,6 +150,7 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
       setTypeId("");
       setScopeType("global");
       setScopeId("");
+      setPipeline("mrp");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tải lên thất bại");
     } finally {
@@ -348,6 +353,29 @@ export function UploadDialog({ open, onOpenChange, types, departments, onUploade
               </Select>
             </div>
           )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Luồng xử lý</Label>
+            <Select
+              value={pipeline}
+              onValueChange={(v) => setPipeline((v ?? "legacy") as "legacy" | "mrp")}
+            >
+              <SelectTrigger className="bg-background w-full">
+                <span>
+                  {pipeline === "mrp"
+                    ? "MRP - có bước duyệt kế hoạch"
+                    : "Agent biên dịch trực tiếp (legacy)"}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mrp">MRP - có bước duyệt kế hoạch</SelectItem>
+                <SelectItem value="legacy">Agent biên dịch trực tiếp (legacy)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              MRP chia tài liệu, gom bằng chứng, đợi bạn duyệt kế hoạch rồi mới tạo trang wiki. Chọn legacy nếu muốn agent biên dịch trực tiếp như trước đây.
+            </p>
+          </div>
 
           {error && (
             <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg flex items-center gap-2">

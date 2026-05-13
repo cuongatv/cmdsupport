@@ -17,7 +17,17 @@ const nextConfig: NextConfig = {
   // the proxy ECONNRESETs and the browser sees "API Error 500" even though
   // the backend succeeds. Bump to 5 minutes to match the frontend api()
   // timeoutMs in src/lib/api.ts.
-  experimental: { proxyTimeout: 300_000 },
+  //
+  // Next.js 16 also caps proxied request bodies at 10MB by default
+  // (`experimental.proxyClientMaxBodySize`). Knowledge Base uploads allow up
+  // to 50MB (see MAX_UPLOAD_BYTES in src/lib/api.ts and nginx
+  // client_max_body_size), so the proxy limit must match — otherwise large
+  // files are silently truncated and the browser sees a frontend abort
+  // ("Tải lên quá thời gian chờ") instead of reaching the FastAPI backend.
+  experimental: {
+    proxyTimeout: 300_000,
+    proxyClientMaxBodySize: 50 * 1024 * 1024,
+  },
   async redirects() {
     return [
       { source: '/cmd-support', destination: '/', permanent: false },

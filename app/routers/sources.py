@@ -19,7 +19,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.database.models import Employee, ScopeType, Source, SourceDepartment, WikiPage
+from app.database.models import (
+    Employee,
+    ScopeType,
+    Source,
+    SourceChunkExtract,
+    SourceCompilationPlan,
+    SourceCompilationPlanRevision,
+    SourceDepartment,
+    WikiPage,
+)
 from app.database.repository import Repository
 from app.services.audit_service import log_audit
 from app.services.auth_service import (
@@ -68,6 +77,9 @@ class SourceResponse(BaseModel):
     contributed_by_name: Optional[str] = None
     scope_type: str = "global"
     scope_id: Optional[uuid.UUID] = None
+    pipeline_strategy: Optional[str] = None
+    pipeline_phase: Optional[str] = None
+    ingestion_pipeline: str = "legacy"
     created_at: str
     updated_at: str
 
@@ -85,6 +97,20 @@ class SourceCreateURL(BaseModel):
     title: Optional[str] = None
     knowledge_type_id: Optional[uuid.UUID] = None
     department_ids: list[uuid.UUID] = []
+    ingestion_pipeline: Optional[str] = None
+
+
+class PlanApproveRequest(BaseModel):
+    note: Optional[str] = None
+    modified_plan: Optional[dict] = None
+
+
+class PlanRejectRequest(BaseModel):
+    note: Optional[str] = None
+
+
+class PlanReviseRequest(BaseModel):
+    feedback: str
 
 
 class SourceUpdate(BaseModel):
@@ -133,6 +159,9 @@ def _to_response(source: Source, wiki_page_count: int = 0) -> SourceResponse:
         contributed_by_name=source.contributor.name if source.contributor else None,
         scope_type=source.scope_type or "global",
         scope_id=source.scope_id,
+        pipeline_strategy=source.pipeline_strategy,
+        pipeline_phase=source.pipeline_phase,
+        ingestion_pipeline=(source.metadata_ or {}).get("ingestion_pipeline", "legacy"),
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )
@@ -291,6 +320,9 @@ async def get_source_progress(
         "progress_message": source.progress_message,
         "page_count": len(source.page_offsets or []),
         "wiki_page_count": wiki_count,
+        "pipeline_strategy": source.pipeline_strategy,
+        "pipeline_phase": source.pipeline_phase,
+        "ingestion_pipeline": (source.metadata_ or {}).get("ingestion_pipeline", "legacy"),
     }
 
 
@@ -300,13 +332,20 @@ async def upload_source(
     title: Optional[str] = Form(None),
     knowledge_type_id: Optional[str] = Form(None),
     department_ids: Optional[str] = Form(None),  # comma-separated UUIDs
+    ingestion_pipeline: Optional[str] = Form(None),
     scope_type: Optional[str] = Form(None),
     scope_id: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
+    from app.ai.mrp.pipeline import normalize_ingestion_pipeline, set_ingestion_pipeline
+
     file_data = await file.read()
     file_name = file.filename or "unknown"
+    try:
+        selected_pipeline = normalize_ingestion_pipeline(ingestion_pipeline)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
     # Parse department_ids
     dept_uuids: list[uuid.UUID] = []
@@ -341,6 +380,7 @@ async def upload_source(
         scope_type=scope_type or ScopeType.GLOBAL.value,
         scope_id=uuid.UUID(scope_id) if scope_id else None,
     )
+    set_ingestion_pipeline(source, selected_pipeline)
     source = await repo.create(source)
     await db.flush()
 
@@ -389,6 +429,13 @@ async def add_url_source(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("doc:create"),
 ):
+    from app.ai.mrp.pipeline import normalize_ingestion_pipeline, set_ingestion_pipeline
+
+    try:
+        selected_pipeline = normalize_ingestion_pipeline(req.ingestion_pipeline)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
     repo = Repository(db)
     source = Source(
         title=req.title or req.url,
@@ -401,6 +448,7 @@ async def add_url_source(
         contributed_by_employee_id=user.id,
         scope_type=ScopeType.GLOBAL.value,
     )
+    set_ingestion_pipeline(source, selected_pipeline)
     source = await repo.create(source)
     await db.flush()
 
@@ -496,13 +544,44 @@ async def recompile_source(
     source.progress = 0
     source.progress_message = "Queued for recompile..."
     source.error_message = None
-    await db.flush()
 
     pool = await get_arq_pool()
-    if source.source_type == "url":
+    if (source.metadata_ or {}).get("ingestion_pipeline") == "mrp":
+        plan = (await db.execute(
+            select(SourceCompilationPlan).where(SourceCompilationPlan.source_id == source.id)
+        )).scalar_one_or_none()
+        if plan and plan.status == "approved":
+            # Plan đã được duyệt nhưng REFINE/COMMIT chưa hoàn tất → tiếp tục
+            # đường refine. Giữ nguyên pipeline_phase để run_refine_pipeline
+            # biết bắt đầu từ đâu.
+            job = await pool.enqueue_job("ingest_refine_task", str(source_id))
+        else:
+            # Mọi trường hợp khác (plan done/rejected/none, hoặc đang
+            # pending_review) đều cần reset state để MAP+REDUCE chạy lại từ
+            # đầu. Nếu không reset, run_mrp_pipeline sẽ thấy
+            # pipeline_phase=commit và short-circuit, source kẹt mãi ở
+            # processing 10%.
+            source.pipeline_phase = None
+            if plan:
+                # Xoá plan + chunk extracts để pipeline tái dựng từ đầu.
+                # Cascade FK xoá luôn revisions của plan này.
+                await db.execute(
+                    sql_delete(SourceChunkExtract).where(
+                        SourceChunkExtract.source_id == source.id
+                    )
+                )
+                await db.execute(
+                    sql_delete(SourceCompilationPlan).where(
+                        SourceCompilationPlan.source_id == source.id
+                    )
+                )
+            job = await pool.enqueue_job("ingest_map_reduce_task", str(source_id))
+    elif source.source_type == "url":
         job = await pool.enqueue_job("ingest_url_task", str(source_id))
     else:
         job = await pool.enqueue_job("reingest_file_task", str(source_id), force)
+
+    await db.flush()
 
     source.job_id = job.job_id
     await db.commit()
@@ -515,6 +594,250 @@ async def recompile_source(
     )).scalar_one()
     logger.info(f"Queued recompile job {job.job_id} for source {source_id} (force={force})")
     return _to_response(source)
+
+
+async def _get_accessible_source(
+    source_id: uuid.UUID,
+    db: AsyncSession,
+    user: Employee,
+    action: str,
+) -> Source:
+    source = (await db.execute(
+        select(Source)
+        .options(*_source_load_options())
+        .where(Source.id == source_id)
+    )).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+    from app.services.permission_engine import can_access_document
+    if not await can_access_document(db, user, source, action):
+        raise HTTPException(403, "Access denied")
+    return source
+
+
+_INTERNAL_PLAN_KEYS = {"_claims", "_entities", "_concepts"}
+
+
+def _public_plan(plan_json: Optional[dict]) -> dict:
+    """Strip internal reducer keys from a compilation plan before returning."""
+    if not plan_json:
+        return {}
+    return {key: value for key, value in plan_json.items() if key not in _INTERNAL_PLAN_KEYS}
+
+
+def _serialize_revision(revision: SourceCompilationPlanRevision) -> dict:
+    return {
+        "id": str(revision.id),
+        "feedback": revision.feedback,
+        "status": revision.status,
+        "base_version": revision.base_version,
+        "requested_by": str(revision.requested_by) if revision.requested_by else None,
+        "created_at": revision.created_at.isoformat() if revision.created_at else None,
+        "completed_at": revision.completed_at.isoformat() if revision.completed_at else None,
+        "error_message": revision.error_message,
+    }
+
+
+async def _load_plan_revisions(
+    db: AsyncSession, plan_id: uuid.UUID
+) -> list[SourceCompilationPlanRevision]:
+    rows = (await db.execute(
+        select(SourceCompilationPlanRevision)
+        .where(SourceCompilationPlanRevision.plan_id == plan_id)
+        .order_by(SourceCompilationPlanRevision.created_at.desc())
+    )).scalars().all()
+    return list(rows)
+
+
+@router.get("/sources/{source_id}/plan")
+async def get_mrp_plan(
+    source_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = Depends(get_current_user),
+):
+    source = await _get_accessible_source(source_id, db, user, "read")
+    plan = (await db.execute(
+        select(SourceCompilationPlan).where(SourceCompilationPlan.source_id == source.id)
+    )).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="MRP plan not found")
+    revisions = await _load_plan_revisions(db, plan.id)
+    return {
+        "source_id": str(source.id),
+        "plan_id": str(plan.id),
+        "status": plan.status,
+        "version": plan.version,
+        "strategy": source.pipeline_strategy,
+        "pipeline_phase": source.pipeline_phase,
+        "plan": _public_plan(plan.plan_json or {}),
+        "review_note": plan.review_note,
+        "reviewed_by": str(plan.reviewed_by) if plan.reviewed_by else None,
+        "reviewed_at": plan.reviewed_at.isoformat() if plan.reviewed_at else None,
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+        "revisions": [_serialize_revision(item) for item in revisions],
+    }
+
+
+@router.post("/sources/{source_id}/plan/approve")
+async def approve_mrp_plan(
+    source_id: uuid.UUID,
+    body: Optional[PlanApproveRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("doc:edit"),
+):
+    from datetime import datetime, timezone
+
+    source = await _get_accessible_source(source_id, db, user, "edit")
+    plan = (await db.execute(
+        select(SourceCompilationPlan).where(SourceCompilationPlan.source_id == source.id)
+    )).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="MRP plan not found")
+    if plan.status == "revising":
+        raise HTTPException(
+            status_code=409,
+            detail="Plan đang được tạo lại theo yêu cầu chỉnh sửa, vui lòng chờ.",
+        )
+    if plan.status not in {"pending_review", "approved"}:
+        raise HTTPException(status_code=409, detail=f"Plan cannot be approved from status {plan.status}")
+
+    if body and body.modified_plan is not None:
+        merged = dict(body.modified_plan)
+        for key in _INTERNAL_PLAN_KEYS:
+            if key in (plan.plan_json or {}) and key not in merged:
+                merged[key] = (plan.plan_json or {})[key]
+        plan.plan_json = merged
+
+    plan.status = "approved"
+    plan.reviewed_by = user.id
+    plan.review_note = body.note if body else None
+    plan.reviewed_at = datetime.now(timezone.utc)
+
+    source.status = "processing"
+    source.pipeline_phase = "refine"
+    source.progress_message = "Plan approved - compiling wiki pages..."
+    source.error_message = None
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job("ingest_refine_task", str(source.id))
+    if job:
+        source.job_id = job.job_id
+    await log_audit(db, user, "approve", "source_mrp_plan", str(source.id), reason=source.title)
+    await db.commit()
+    return {"approved": True, "job_id": job.job_id if job else None}
+
+
+@router.post("/sources/{source_id}/plan/revise")
+async def revise_mrp_plan(
+    source_id: uuid.UUID,
+    body: PlanReviseRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("doc:edit"),
+):
+    """Yêu cầu chỉnh sửa kế hoạch MRP: chạy lại REDUCE planning với feedback."""
+    from datetime import datetime, timezone
+
+    feedback = (body.feedback or "").strip()
+    if not feedback:
+        raise HTTPException(status_code=400, detail="Feedback không được để trống.")
+    if len(feedback) > 4000:
+        raise HTTPException(status_code=400, detail="Feedback quá dài (tối đa 4000 ký tự).")
+
+    source = await _get_accessible_source(source_id, db, user, "edit")
+    # Lock plan row để chống click đôi (FOR UPDATE).
+    plan = (await db.execute(
+        select(SourceCompilationPlan)
+        .where(SourceCompilationPlan.source_id == source.id)
+        .with_for_update()
+    )).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="MRP plan not found")
+    if plan.status not in {"pending_review", "rejected"}:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Không thể yêu cầu chỉnh sửa khi plan ở trạng thái {plan.status}.",
+        )
+
+    revision = SourceCompilationPlanRevision(
+        plan_id=plan.id,
+        source_id=source.id,
+        requested_by=user.id,
+        feedback=feedback,
+        base_version=plan.version or 1,
+        previous_plan_snapshot=plan.plan_json,
+        status="requested",
+    )
+    db.add(revision)
+
+    plan.status = "revising"
+    source.status = "processing"
+    source.pipeline_phase = "reduce"
+    source.progress = 60
+    source.progress_message = "Đang tạo lại kế hoạch theo phản hồi..."
+    source.error_message = None
+    await db.flush()
+
+    pool = await get_arq_pool()
+    job = await pool.enqueue_job(
+        "revise_compilation_plan_task",
+        str(source.id),
+        str(revision.id),
+    )
+    if job:
+        source.job_id = job.job_id
+
+    await log_audit(
+        db,
+        user,
+        "revise",
+        "source_mrp_plan",
+        str(source.id),
+        reason=feedback[:200],
+    )
+    await db.commit()
+    await db.refresh(revision)
+    return {
+        "revision_id": str(revision.id),
+        "job_id": job.job_id if job else None,
+        "plan_status": plan.status,
+        "base_version": revision.base_version,
+        "submitted_at": revision.created_at.isoformat() if revision.created_at else datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post("/sources/{source_id}/plan/reject")
+async def reject_mrp_plan(
+    source_id: uuid.UUID,
+    body: PlanRejectRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("doc:edit"),
+):
+    from datetime import datetime, timezone
+
+    source = await _get_accessible_source(source_id, db, user, "edit")
+    plan = (await db.execute(
+        select(SourceCompilationPlan).where(SourceCompilationPlan.source_id == source.id)
+    )).scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=404, detail="MRP plan not found")
+    if plan.status == "revising":
+        raise HTTPException(
+            status_code=409,
+            detail="Plan đang được tạo lại theo yêu cầu chỉnh sửa, vui lòng chờ.",
+        )
+    if plan.status not in {"pending_review", "approved"}:
+        raise HTTPException(status_code=409, detail=f"Plan cannot be rejected from status {plan.status}")
+
+    plan.status = "rejected"
+    plan.reviewed_by = user.id
+    plan.review_note = body.note
+    plan.reviewed_at = datetime.now(timezone.utc)
+    source.status = "error"
+    source.error_message = body.note or "MRP plan rejected"
+    source.progress_message = "MRP plan rejected"
+    await log_audit(db, user, "reject", "source_mrp_plan", str(source.id), reason=body.note)
+    await db.commit()
+    return {"rejected": True}
 
 
 @router.delete("/sources/{source_id}")

@@ -28,6 +28,9 @@ export type Source = {
   contributed_by_name?: string;
   scope_type?: string;
   scope_id?: string;
+  ingestion_pipeline?: "legacy" | "mrp";
+  pipeline_strategy?: string | null;
+  pipeline_phase?: string | null;
   created_at: string;
   updated_at?: string;
 };

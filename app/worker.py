@@ -15,9 +15,11 @@ from typing import Optional
 from arq import cron
 from arq.connections import ArqRedis, RedisSettings, create_pool
 from loguru import logger
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import settings
 from app.jobs.task_jobs import task_assignment_notification, task_due_soon_scan
+from app.utils.progress import ProgressTracker
 
 
 def _get_redis_settings() -> RedisSettings:
@@ -42,28 +44,6 @@ async def get_arq_pool() -> ArqRedis:
 
 
 # ---------------------------------------------------------------------------
-# Progress helper
-# ---------------------------------------------------------------------------
-
-class ProgressTracker:
-    """Updates source.progress + source.progress_message in DB."""
-
-    def __init__(self, source_id: uuid.UUID):
-        self.source_id = source_id
-
-    async def update(self, progress: int, message: str):
-        from app.database import async_session_factory
-        from app.database.models import Source
-        async with async_session_factory() as session:
-            source = await session.get(Source, self.source_id)
-            if source:
-                source.progress = progress
-                source.progress_message = message
-                await session.commit()
-        logger.debug(f"[{self.source_id}] Progress: {progress}% — {message}")
-
-
-# ---------------------------------------------------------------------------
 # Ingestion tasks
 # ---------------------------------------------------------------------------
 
@@ -73,6 +53,7 @@ async def ingest_file_task(ctx: dict, source_id: str):
     Steps: download from MinIO → extract text → vision captions → outline → compile wiki.
     File must already be uploaded to MinIO before this task is enqueued.
     """
+    from app.ai.mrp.pipeline import get_ingestion_pipeline, run_mrp_pipeline
     from app.ai.registry import ProviderRegistry
     from app.ai.wiki_agent import compile_source_with_agent
     from app.database import async_session_factory
@@ -121,28 +102,39 @@ async def ingest_file_task(ctx: dict, source_id: str):
 
             await tracker.update(25, "Text extraction complete")
 
-            # --- Step 3: Extract images + vision captions (40%) ---
+            # --- Step 3: Extract images + vision captions (30→40%) ---
             await tracker.update(30, "Extracting and analyzing images...")
             images = extract_images(file_data, file_name, source_id)
 
             registry = ProviderRegistry(session)
             vision_provider = await registry.get_vision()
+            total_images = len(images)
             if vision_provider and images:
+                # Bump progress trong khoảng 30→40 mỗi vài image để UI thấy
+                # tiến độ thật. Vision API có thể rate-limit (429/504) khiến
+                # mỗi ảnh mất vài giây; nếu không emit progress, người dùng
+                # tưởng kẹt ở 30%.
                 for idx, img in enumerate(images, 1):
                     try:
-                        if idx % 5 == 0 or idx == 1 or idx == len(images):
-                            logger.info(f"Vision AI analyzing image {idx}/{len(images)}...")
+                        if idx % 5 == 0 or idx == 1 or idx == total_images:
+                            logger.info(f"Vision AI analyzing image {idx}/{total_images}...")
                         img_bytes = storage_service.download_file(img.minio_key)
                         mime_type = "image/png" if img.minio_key.lower().endswith(".png") else "image/jpeg"
                         img.caption = await vision_provider.analyze_image(img_bytes, mime_type)
                     except Exception as e:
                         logger.warning(f"Failed to analyze image {img.minio_key}: {e}")
+                    if total_images > 0 and (idx % 5 == 0 or idx == total_images):
+                        pct = 30 + int(10 * idx / total_images)
+                        await tracker.update(
+                            pct,
+                            f"Phân tích ảnh {idx}/{total_images}...",
+                        )
             elif images:
                 logger.info("No vision provider configured, skipping image captioning")
 
             # Inline captions into per-page text so the compiler sees them.
             _inline_image_captions(pages_data, images)
-            await tracker.update(40, f"Analyzed {len(images)} images")
+            await tracker.update(40, f"Đã phân tích {total_images} ảnh")
 
             # --- Step 4: Build outline + assemble full_text (50%) ---
             await tracker.update(45, "Building document outline...")
@@ -150,7 +142,17 @@ async def ingest_file_task(ctx: dict, source_id: str):
             full_text, page_offsets = assemble_full_text(pages_data)
             source.full_text = full_text
             source.page_offsets = page_offsets
-            await session.commit()
+            try:
+                await session.commit()
+            except StaleDataError:
+                # Source row đã bị delete giữa lúc worker chạy (user xoá tay,
+                # hoặc duplicate ingestion task race). Bỏ qua thay vì raise
+                # để arq không retry mãi.
+                await session.rollback()
+                logger.warning(
+                    f"ingest_file_task: source {source_id} disappeared mid-flight, aborting"
+                )
+                return {"status": "aborted", "reason": "source_deleted"}
             await tracker.update(50, f"Outline: {len(source.outline_json or [])} top-level sections")
 
             # --- Step 5: Resolve KnowledgeType context (52%) ---
@@ -160,7 +162,43 @@ async def ingest_file_task(ctx: dict, source_id: str):
                 if kt:
                     kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
 
-            # --- Step 6: Compile into wiki via mini-agent (55-95%) ---
+            # --- Step 6: Compile into wiki (55-95%) ---
+            if get_ingestion_pipeline(source) == "mrp":
+                await tracker.update(55, "Running MRP map/reduce pipeline...")
+                mrp_result = await run_mrp_pipeline(
+                    session=session,
+                    source=source,
+                    full_text=full_text,
+                    tracker=tracker,
+                    registry=registry,
+                    kt_slug=kt_slug,
+                    kt_name=kt_name,
+                    kt_desc=kt_desc,
+                )
+                mrp_status = mrp_result.get("status")
+                if mrp_status in {"plan_ready", "plan_auto_approved", "already_in_refine", "already_in_verify", "already_in_commit"}:
+                    if mrp_status == "plan_ready":
+                        source.status = "plan_ready"
+                        source.progress = 80
+                        source.progress_message = "Review compilation plan"
+                    else:
+                        source.progress_message = "Plan approved - compiling wiki pages..."
+                    source.error_message = None
+                    await session.commit()
+                    return {"status": mrp_status, "images": len(images), **mrp_result}
+                # Auto-approved + ran refine inline is handled by run_refine_pipeline elsewhere.
+                source.status = "ready"
+                source.progress = 100
+                source.progress_message = "Done"
+                source.error_message = None
+                await session.commit()
+                return {
+                    "status": "ready",
+                    "images": len(images),
+                    "pages_created": mrp_result.get("pages_created", 0),
+                    "pages_updated": mrp_result.get("pages_updated", 0),
+                }
+
             await tracker.update(55, "Compiling into wiki (agent)...")
 
             async def emit(step: int, message: str) -> None:
@@ -223,6 +261,8 @@ async def ingest_file_task(ctx: dict, source_id: str):
 
 async def ingest_url_task(ctx: dict, source_id: str):
     """arq task: URL ingestion → wiki compilation."""
+    from app.ai.mrp.pipeline import get_ingestion_pipeline, run_mrp_pipeline
+    from app.ai.registry import ProviderRegistry
     from app.ai.wiki_agent import compile_source_with_agent
     from app.database import async_session_factory
     from app.database.models import KnowledgeType, Source
@@ -268,6 +308,41 @@ async def ingest_url_task(ctx: dict, source_id: str):
                 kt = await session.get(KnowledgeType, source.knowledge_type_id)
                 if kt:
                     kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+
+            if get_ingestion_pipeline(source) == "mrp":
+                await tracker.update(55, "Running MRP map/reduce pipeline...")
+                registry = ProviderRegistry(session)
+                mrp_result = await run_mrp_pipeline(
+                    session=session,
+                    source=source,
+                    full_text=full_text,
+                    tracker=tracker,
+                    registry=registry,
+                    kt_slug=kt_slug,
+                    kt_name=kt_name,
+                    kt_desc=kt_desc,
+                )
+                mrp_status = mrp_result.get("status")
+                if mrp_status in {"plan_ready", "plan_auto_approved", "already_in_refine", "already_in_verify", "already_in_commit"}:
+                    if mrp_status == "plan_ready":
+                        source.status = "plan_ready"
+                        source.progress = 80
+                        source.progress_message = "Review compilation plan"
+                    else:
+                        source.progress_message = "Plan approved - compiling wiki pages..."
+                    source.error_message = None
+                    await session.commit()
+                    return {"status": mrp_status, **mrp_result}
+                source.status = "ready"
+                source.progress = 100
+                source.progress_message = "Done"
+                source.error_message = None
+                await session.commit()
+                return {
+                    "status": "ready",
+                    "pages_created": mrp_result.get("pages_created", 0),
+                    "pages_updated": mrp_result.get("pages_updated", 0),
+                }
 
             await tracker.update(55, "Compiling into wiki (agent)...")
 
@@ -343,6 +418,279 @@ async def reingest_file_task(ctx: dict, source_id: str, force: bool = False):
             await session.commit()
 
     await ingest_file_task(ctx, source_id)
+
+
+async def ingest_map_reduce_task(ctx: dict, source_id: str) -> dict:
+    """arq task: re-run MAP + REDUCE for an existing source using cached full_text."""
+    from app.ai.mrp.pipeline import run_mrp_pipeline
+    from app.ai.registry import ProviderRegistry
+    from app.database import async_session_factory
+    from app.database.models import KnowledgeType, Source
+
+    sid = uuid.UUID(source_id)
+    tracker = ProgressTracker(sid)
+    async with async_session_factory() as session:
+        source = await session.get(Source, sid)
+        if not source:
+            raise ValueError(f"Source {source_id} not found")
+        full_text = source.full_text or ""
+        if not full_text.strip():
+            raise ValueError(f"Source {source_id} has no extracted full_text; rerun ingest_file/url first")
+
+        try:
+            source.status = "processing"
+            await session.commit()
+
+            kt_slug = kt_name = kt_desc = None
+            if source.knowledge_type_id:
+                kt = await session.get(KnowledgeType, source.knowledge_type_id)
+                if kt:
+                    kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+
+            registry = ProviderRegistry(session)
+            await tracker.update(10, "Running MRP map/reduce pipeline...")
+            result = await run_mrp_pipeline(
+                session=session,
+                source=source,
+                full_text=full_text,
+                tracker=tracker,
+                registry=registry,
+                kt_slug=kt_slug,
+                kt_name=kt_name,
+                kt_desc=kt_desc,
+            )
+            mrp_status = result.get("status", "")
+            if mrp_status == "plan_ready":
+                source.status = "plan_ready"
+                source.progress = 80
+                source.progress_message = "Review compilation plan"
+                source.error_message = None
+                await session.commit()
+            elif mrp_status.startswith("already_in_"):
+                # Pipeline đã đi quá map/reduce ở phiên trước (ví dụ commit).
+                # Không clear state -> UI kẹt processing 10%. Reset về trạng
+                # thái phản ánh đúng phase hiện tại.
+                phase = mrp_status.removeprefix("already_in_")
+                if phase == "commit":
+                    source.status = "ready"
+                    source.progress = 100
+                    source.progress_message = "Đã biên dịch xong từ trước"
+                else:
+                    # refine / verify: refine task vẫn đang chạy ở job khác,
+                    # giữ trạng thái processing nhưng update message rõ ràng.
+                    source.progress_message = (
+                        f"Đang ở pha {phase}, không cần chạy lại MAP/REDUCE"
+                    )
+                source.error_message = None
+                await session.commit()
+            return result
+        except BaseException as exc:
+            etype = type(exc).__name__
+            logger.error(f"MRP map/reduce failed for {source_id}: {etype}: {exc}")
+            try:
+                source.status = "error"
+                source.error_message = f"{etype}: {str(exc)[:480]}"
+                source.progress_message = f"Error: {etype}"
+                await session.commit()
+            except Exception as commit_err:
+                logger.error(f"Failed to mark source {source_id} as errored: {commit_err}")
+            raise
+
+
+async def ingest_refine_task(ctx: dict, source_id: str) -> dict:
+    """arq task: run REFINE + VERIFY + COMMIT for an approved MRP plan."""
+    from app.ai.mrp.pipeline import run_refine_pipeline
+    from app.ai.registry import ProviderRegistry
+    from app.database import async_session_factory
+    from app.database.models import KnowledgeType, Source
+
+    sid = uuid.UUID(source_id)
+    tracker = ProgressTracker(sid)
+    async with async_session_factory() as session:
+        source = await session.get(Source, sid)
+        if not source:
+            raise ValueError(f"Source {source_id} not found")
+        full_text = source.full_text or ""
+        if not full_text.strip():
+            raise ValueError(f"Source {source_id} has no extracted full_text")
+
+        try:
+            source.status = "processing"
+            await session.commit()
+
+            kt_slug = kt_name = kt_desc = None
+            if source.knowledge_type_id:
+                kt = await session.get(KnowledgeType, source.knowledge_type_id)
+                if kt:
+                    kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+
+            registry = ProviderRegistry(session)
+            await tracker.update(80, "Compiling wiki pages from approved plan...")
+            result = await run_refine_pipeline(
+                session=session,
+                source=source,
+                full_text=full_text,
+                tracker=tracker,
+                registry=registry,
+                kt_slug=kt_slug,
+                kt_name=kt_name,
+                kt_desc=kt_desc,
+            )
+            return result
+        except BaseException as exc:
+            etype = type(exc).__name__
+            logger.error(f"MRP refine failed for {source_id}: {etype}: {exc}")
+            try:
+                source.status = "error"
+                source.error_message = f"{etype}: {str(exc)[:480]}"
+                source.progress_message = f"Error: {etype}"
+                await session.commit()
+            except Exception as commit_err:
+                logger.error(f"Failed to mark source {source_id} as errored: {commit_err}")
+            raise
+
+
+async def revise_compilation_plan_task(
+    ctx: dict,
+    source_id: str,
+    revision_id: str,
+) -> dict:
+    """arq task: rerun REDUCE planning call with user feedback to regenerate plan.
+
+    KHÔNG chạy lại MAP — chunk extracts coi như input bất biến cho vòng review.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.ai.mrp.reducer import run_reduce_phase
+    from app.ai.registry import ProviderRegistry
+    from app.database import async_session_factory
+    from app.database.models import (
+        KnowledgeType,
+        Source,
+        SourceChunkExtract,
+        SourceCompilationPlan,
+        SourceCompilationPlanRevision,
+    )
+
+    sid = uuid.UUID(source_id)
+    rid = uuid.UUID(revision_id)
+    tracker = ProgressTracker(sid)
+
+    async with async_session_factory() as session:
+        revision = await session.get(SourceCompilationPlanRevision, rid)
+        source = await session.get(Source, sid)
+        plan = (await session.execute(
+            select(SourceCompilationPlan).where(SourceCompilationPlan.source_id == sid)
+        )).scalar_one_or_none()
+        if not revision or not source or not plan:
+            raise ValueError(
+                f"revise_compilation_plan_task: missing revision/source/plan for {source_id}/{revision_id}"
+            )
+
+        # Guard: nếu một worker khác đã pickup cùng revision (re-enqueue,
+        # duplicate, hoặc job replay) thì exit sớm để không double-charge LLM
+        # và không ghi đè plan_json.
+        if revision.status not in {"requested", "running"}:
+            logger.info(
+                f"revise_compilation_plan_task: revision {revision_id} already in status "
+                f"{revision.status} — skipping rerun"
+            )
+            return {"status": "skipped", "revision_id": str(revision.id)}
+
+        try:
+            revision.status = "running"
+            plan.status = "revising"
+            source.status = "processing"
+            source.progress = 60
+            source.progress_message = "Đang tạo lại kế hoạch theo phản hồi..."
+            source.error_message = None
+            await session.commit()
+
+            chunk_rows = (await session.execute(
+                select(SourceChunkExtract)
+                .where(
+                    SourceChunkExtract.source_id == sid,
+                    SourceChunkExtract.status == "done",
+                )
+                .order_by(SourceChunkExtract.chunk_index)
+            )).scalars().all()
+            if not chunk_rows:
+                raise ValueError(
+                    f"revise_compilation_plan_task: no MAP extracts found for source {source_id}"
+                )
+
+            history = (await session.execute(
+                select(SourceCompilationPlanRevision)
+                .where(SourceCompilationPlanRevision.plan_id == plan.id)
+                .order_by(SourceCompilationPlanRevision.created_at.asc())
+            )).scalars().all()
+            history_payload = [
+                {
+                    "feedback": item.feedback,
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                    "base_version": item.base_version,
+                }
+                for item in history
+                if item.id != revision.id
+            ]
+
+            kt_slug = kt_name = kt_desc = None
+            if source.knowledge_type_id:
+                kt = await session.get(KnowledgeType, source.knowledge_type_id)
+                if kt:
+                    kt_slug, kt_name, kt_desc = kt.slug, kt.name, kt.description
+            del kt_slug  # not used in REDUCE-only flow
+
+            previous_plan = revision.previous_plan_snapshot or plan.plan_json or {}
+
+            registry = ProviderRegistry(session)
+            llm = await registry.get_llm()
+            embedding_provider = None
+            try:
+                embedding_provider = await registry.get_embedding(task="document")
+            except Exception as exc:
+                logger.warning(f"MRP REVISE: embedding unavailable: {exc}")
+
+            await tracker.update(65, "Tạo lại kế hoạch biên dịch...")
+            await run_reduce_phase(
+                session=session,
+                source=source,
+                chunk_extracts=list(chunk_rows),
+                llm=llm,
+                embedding_provider=embedding_provider,
+                kt_name=kt_name,
+                kt_desc=kt_desc,
+                tracker=tracker,
+                revision_feedback=revision.feedback,
+                feedback_history=history_payload,
+                previous_plan=previous_plan,
+            )
+
+            revision.status = "succeeded"
+            revision.completed_at = datetime.now(timezone.utc)
+            source.status = "plan_ready"
+            source.progress = 80
+            source.progress_message = "Kế hoạch đã được tạo lại - sẵn sàng để duyệt"
+            await session.commit()
+            return {"status": "plan_ready", "revision_id": str(revision.id)}
+        except BaseException as exc:
+            etype = type(exc).__name__
+            logger.error(f"MRP REVISE failed for source={source_id}: {etype}: {exc}")
+            try:
+                revision.status = "failed"
+                revision.error_message = f"{etype}: {str(exc)[:480]}"
+                revision.completed_at = datetime.now(timezone.utc)
+                plan.status = "pending_review"
+                source.status = "plan_ready"
+                source.progress_message = f"Tái sinh kế hoạch thất bại: {etype}"
+                await session.commit()
+            except Exception as commit_err:
+                logger.error(
+                    f"revise_compilation_plan_task: failed to mark revision errored: {commit_err}"
+                )
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +903,9 @@ class WorkerSettings:
         ingest_file_task,
         ingest_url_task,
         reingest_file_task,
+        ingest_map_reduce_task,
+        ingest_refine_task,
+        revise_compilation_plan_task,
         task_assignment_notification,
     ]
     cron_jobs = [
