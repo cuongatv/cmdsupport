@@ -12,6 +12,7 @@ type ProviderConfig = {
   embedding_provider: string;
   embedding_model_id: string;
   embedding_api_key: string;
+  embedding_dimensions: string;
   llm_provider: string;
   llm_model_id: string;
   llm_api_key: string;
@@ -27,6 +28,7 @@ const defaultConfig: ProviderConfig = {
   embedding_provider: "",
   embedding_model_id: "",
   embedding_api_key: "",
+  embedding_dimensions: "",
   llm_provider: "",
   llm_model_id: "",
   llm_api_key: "",
@@ -124,9 +126,11 @@ export default function SettingsPage() {
           provider={config.embedding_provider}
           model={config.embedding_model_id}
           apiKey={config.embedding_api_key}
+          dimensions={config.embedding_dimensions}
           onProviderChange={(v) => updateField("embedding_provider", v)}
           onModelChange={(v) => updateField("embedding_model_id", v)}
           onApiKeyChange={(v) => updateField("embedding_api_key", v)}
+          onDimensionsChange={(v) => updateField("embedding_dimensions", v)}
         />
 
         <ProviderConfigCard

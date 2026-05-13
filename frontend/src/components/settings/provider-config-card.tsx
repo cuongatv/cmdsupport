@@ -32,9 +32,11 @@ type Props = {
   provider: string;
   model: string;
   apiKey: string;
+  dimensions?: string;
   onProviderChange: (value: string) => void;
   onModelChange: (value: string) => void;
   onApiKeyChange: (value: string) => void;
+  onDimensionsChange?: (value: string) => void;
 };
 
 export function ProviderConfigCard({
@@ -45,9 +47,11 @@ export function ProviderConfigCard({
   provider,
   model,
   apiKey,
+  dimensions,
   onProviderChange,
   onModelChange,
   onApiKeyChange,
+  onDimensionsChange,
 }: Props) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
@@ -157,6 +161,30 @@ export function ProviderConfigCard({
           />
         </div>
       </div>
+
+      {capability === "embedding" && onDimensionsChange && (
+        <div className="mt-4 flex flex-col gap-1.5 md:max-w-xs">
+          <Label className="text-xs">
+            Dimensions{" "}
+            <span className="text-muted-foreground">(tuỳ chọn)</span>
+          </Label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            value={dimensions ?? ""}
+            onChange={(e) => onDimensionsChange(e.target.value)}
+            placeholder="VD: 768"
+            className="bg-background"
+          />
+          <p className="text-xs text-muted-foreground">
+            Số chiều của vector. Để trống để dùng mặc định của model. Hệ thống
+            lưu wiki với <code className="px-1 rounded bg-muted text-foreground">Vector(768)</code>
+            {" "}— với <code className="px-1 rounded bg-muted text-foreground">text-embedding-3-*</code>
+            {" "}của OpenAI/OpenRouter, đặt <strong>768</strong>.
+          </p>
+        </div>
+      )}
 
       {provider === "openrouter" && (
         <p className="mt-3 text-xs text-muted-foreground">
