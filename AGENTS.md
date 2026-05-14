@@ -35,8 +35,10 @@ arkon/
 | LLM wiki compilation pipeline | `app/ai/wiki_agent.py`, `wiki_compiler.py`, `wiki_analyzer.py` | LLM-prompt-heavy; treat string blocks as prompts, not code |
 | All ORM models | `app/database/models.py` | **48 KB single file** — see `app/database/AGENTS.md` |
 | Frontend route shell | `frontend/src/app/layout.tsx` | App Router root |
+| Department hub UI | `frontend/src/app/(portal)/admin/departments/[id]/page.tsx` | Department hub UI (4 tabs) |
 | Frontend HTTP client | `frontend/src/lib/api.ts` | every fetch goes through `api()` — never use raw `fetch` |
 | Frontend auth state | `frontend/src/lib/auth.tsx` | provider + permission helpers |
+| Multi-unit membership service | `app/services/membership_service.py` | multi-unit membership CRUD + invariants |
 | Add a DB column | edit `app/database/models.py` → `alembic revision --autogenerate -m "..."` → review → commit |
 | Add a REST endpoint | new file in `app/routers/`, register in `app/main.py` (NOT auto-discovered) |
 | Add an MCP tool | `app/mcp/tools.py` `register_tools()` |

@@ -26,7 +26,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared/empty-state";
-import { ScopeDialog } from "@/components/shared/scope-dialog";
 
 type Employee = {
   id: string;
@@ -69,7 +68,6 @@ export function EmployeeTable({
 }: Props) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [tokenDialog, setTokenDialog] = useState<{ token: string; instructions: string } | null>(null);
-  const [scopeEmployee, setScopeEmployee] = useState<Employee | null>(null);
   const [searchInput, setSearchInput] = useState(search);
 
   const handleToggle = async (id: string) => {
@@ -278,7 +276,7 @@ export function EmployeeTable({
                           onClick={() => handleDelete(emp.id)}
                           className="text-destructive"
                         >
-                          <span className="material-symbols-outlined text-base mr-2 " style={{ fontSize: 16 }}>delete</span>
+                          <span className="material-symbols-outlined text-base mr-2" style={{ fontSize: 16 }}>delete</span>
                           Xoá
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -344,15 +342,6 @@ export function EmployeeTable({
             </Button>
           </div>
         </div>
-      )}
-
-      {scopeEmployee && (
-        <ScopeDialog
-          open={!!scopeEmployee}
-          onOpenChange={(open) => { if (!open) setScopeEmployee(null); }}
-          label={scopeEmployee.name}
-          employeeId={scopeEmployee.id}
-        />
       )}
 
       <Dialog open={!!tokenDialog} onOpenChange={() => setTokenDialog(null)}>

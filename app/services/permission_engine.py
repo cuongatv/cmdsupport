@@ -3,7 +3,7 @@ Permission Engine — resolves access decisions for Global and Workspace realms.
 
 Global Realm:
   - Permissions are scoped: resource:action:own_dept or resource:action:all
-  - own_dept = user's department_id matches source's departments (via source_departments)
+  - own_dept = user's active department memberships intersect source departments
   - all = no scope restriction
   - No departments on resource = Global (visible to everyone with the action permission)
 
@@ -14,7 +14,7 @@ Workspace Realm:
 """
 
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models import (
     WORKSPACE_ROLE_HIERARCHY,
     Employee,
+    EmployeeDepartmentMembership,
     ProjectMember,
     Skill,
     Source,
@@ -33,6 +34,7 @@ from app.database.models import (
 # Permission string parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_permission(perm: str) -> tuple[str, str, str]:
     """Parse 'resource:action:scope' → (resource, action, scope).
     For org permissions like 'org:departments:read' → ('org', 'departments', 'read').
@@ -43,9 +45,11 @@ def parse_permission(perm: str) -> tuple[str, str, str]:
     return perm, "", ""
 
 
-def has_permission(permissions: list[str], resource: str, action: str, scope: str = "any") -> bool:
+def has_permission(
+    permissions: list[str], resource: str, action: str, scope: str = "any"
+) -> bool:
     """Check if a permission list contains the required permission.
-    
+
     scope = "any" → matches either own_dept or all
     scope = "all" → only matches :all
     scope = "own_dept" → matches :own_dept or :all
@@ -66,7 +70,9 @@ def has_any_permission(permissions: list[str], resource: str, action: str) -> bo
     return has_permission(permissions, resource, action, "any")
 
 
-def get_scope_level(permissions: list[str], resource: str, action: str) -> Optional[str]:
+def get_scope_level(
+    permissions: list[str], resource: str, action: str
+) -> Optional[str]:
     """Get the effective scope level for a resource:action.
     Returns 'all', 'own_dept', or None.
     """
@@ -80,8 +86,42 @@ def get_scope_level(permissions: list[str], resource: str, action: str) -> Optio
 
 
 # ---------------------------------------------------------------------------
+# Global Realm: Department membership resolution
+# ---------------------------------------------------------------------------
+
+
+async def get_user_department_ids(
+    session: AsyncSession,
+    user: Any,
+) -> set[uuid.UUID]:
+    """Return the set of department IDs the user has active membership in.
+
+    Falls back to {user.department_id} if session is None for backward compat
+    in sync contexts or tests that pre-date multi-membership. If no active
+    memberships exist and department_id is set, returns {department_id}.
+    """
+    legacy_department_id = getattr(user, "department_id", None)
+    if session is None:
+        if legacy_department_id is not None:
+            return {legacy_department_id}
+        return set()
+
+    stmt = select(EmployeeDepartmentMembership.department_id).where(
+        EmployeeDepartmentMembership.employee_id == user.id,
+        EmployeeDepartmentMembership.is_active.is_(True),
+    )
+    result = await session.execute(stmt)
+    dept_ids = set(result.scalars().all())
+
+    if not dept_ids and legacy_department_id is not None:
+        return {legacy_department_id}
+    return dept_ids
+
+
+# ---------------------------------------------------------------------------
 # Global Realm: Document access
 # ---------------------------------------------------------------------------
+
 
 async def can_access_document(
     db: AsyncSession,
@@ -90,13 +130,13 @@ async def can_access_document(
     action: str = "read",
 ) -> bool:
     """Check if user can perform action on a source document.
-    
+
     Logic:
     1. Admin → always True
     2. User has doc:{action}:all → True
     3. User has doc:{action}:own_dept →
        a. Source has no departments (Global doc) → True
-       b. Source has a department matching user.department_id → True
+       b. Source has a department matching user's active memberships → True
        c. Otherwise → False
     4. Otherwise → False
     """
@@ -115,8 +155,9 @@ async def can_access_document(
 
     # Check if source is global (no departments) or belongs to user's department
     dept_result = await db.execute(
-        select(SourceDepartment.department_id)
-        .where(SourceDepartment.source_id == source.id)
+        select(SourceDepartment.department_id).where(
+            SourceDepartment.source_id == source.id
+        )
     )
     source_dept_ids = {row[0] for row in dept_result.all()}
 
@@ -124,12 +165,13 @@ async def can_access_document(
         # No departments = Global doc
         return True
 
-    return user.department_id in source_dept_ids
+    user_dept_ids = await get_user_department_ids(db, user)
+    return bool(user_dept_ids & source_dept_ids)
 
 
 def build_document_filter(user: Employee, action: str = "read"):
     """Build SQLAlchemy filter clauses for listing documents based on user permissions.
-    
+
     Returns: (needs_filter: bool, filter_clauses: list)
     If needs_filter is False, show all documents.
     """
@@ -142,8 +184,8 @@ def build_document_filter(user: Employee, action: str = "read"):
         return False, []
 
     if f"doc:{action}:own_dept" in permissions:
-        # Filter: source has no departments (global) OR has user's department
-        return True, [user.department_id]
+        # Filter: source has no departments (global) OR has user's departments
+        return True, list(_get_cached_or_legacy_department_ids(user))
 
     # No permission at all — empty result
     return True, None
@@ -153,6 +195,7 @@ def build_document_filter(user: Employee, action: str = "read"):
 # Global Realm: AI Skill access
 # ---------------------------------------------------------------------------
 
+
 async def can_access_skill(
     db: AsyncSession,
     user: Employee,
@@ -160,13 +203,13 @@ async def can_access_skill(
     action: str = "read",
 ) -> bool:
     """Check if user can perform action on an AI skill.
-    
+
     Logic:
     1. Admin → True
     2. User has skill:{action}:all → True
     3. User has skill:{action}:own_dept →
        a. Skill has no department (Global) → True
-       b. Skill's department matches user.department_id → True
+       b. Skill has a department matching user's active memberships → True
        c. Otherwise → False
     4. Otherwise → False
     """
@@ -178,12 +221,13 @@ async def can_access_skill(
     if f"skill:{action}:all" in permissions:
         return True
 
-    # Skill visible if it's Global (no depts) OR user's dept is in skill's depts
+    # Skill visible if it's Global (no depts) OR user's dept memberships intersect skill's depts
     skill_dept_ids = {sd.department_id for sd in skill.departments}
     if not skill_dept_ids:
         return True
 
-    return user.department_id in skill_dept_ids
+    user_dept_ids = await get_user_department_ids(db, user)
+    return bool(user_dept_ids & skill_dept_ids)
 
 
 def build_skill_filter(user: Employee, action: str = "read"):
@@ -199,9 +243,9 @@ def build_skill_filter(user: Employee, action: str = "read"):
         return False, []
 
     if f"skill:{action}:own_dept" in permissions:
-        # Filter: skill has no department (global) OR matches user's department
+        # Filter: skill has no department (global) OR matches user's departments
         # This will be handled in SkillService.list_skills via allowed_department_ids
-        return True, [user.department_id]
+        return True, list(_get_cached_or_legacy_department_ids(user))
 
     return True, None
 
@@ -209,6 +253,7 @@ def build_skill_filter(user: Employee, action: str = "read"):
 # ---------------------------------------------------------------------------
 # Workspace Realm: Membership check
 # ---------------------------------------------------------------------------
+
 
 async def can_access_workspace(
     db: AsyncSession,
@@ -223,8 +268,7 @@ async def can_access_workspace(
         return True
 
     result = await db.execute(
-        select(ProjectMember.role)
-        .where(
+        select(ProjectMember.role).where(
             ProjectMember.project_id == workspace_id,
             ProjectMember.employee_id == user.id,
         )
@@ -245,8 +289,7 @@ async def get_workspace_role(
         return WorkspaceRole.ADMIN.value
 
     result = await db.execute(
-        select(ProjectMember.role)
-        .where(
+        select(ProjectMember.role).where(
             ProjectMember.project_id == workspace_id,
             ProjectMember.employee_id == user.id,
         )
@@ -268,21 +311,36 @@ def workspace_role_can(member_role: str, required_role: str) -> bool:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
+def _get_cached_or_legacy_department_ids(user: Employee) -> set[uuid.UUID]:
+    """Return request-cached department IDs or legacy department_id fallback."""
+    cached_dept_ids = getattr(user, "_cached_dept_ids", None)
+    if cached_dept_ids is not None:
+        return set(cached_dept_ids)
+
+    if user.department_id is not None:
+        return {user.department_id}
+    return set()
+
+
 def _get_user_permissions(user: Employee) -> set[str]:
     """Extract effective permissions from user's custom role."""
     if user.role == "admin":
         from app.services.permissions import ALL_PERMISSIONS
+
         return set(ALL_PERMISSIONS)
 
     if not user.custom_role:
         # Fallback — should rarely hit since auth_service auto-attaches Employee role
         from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
+
         return set(EMPLOYEE_DEFAULT_PERMISSIONS)
 
     stored = user.custom_role.permissions or []
 
     # Auto-migrate legacy permission names
     from app.services.permissions import LEGACY_PERMISSION_MAP
+
     effective: set[str] = set()
     for p in stored:
         if p in LEGACY_PERMISSION_MAP:
@@ -296,5 +354,6 @@ def _get_user_permissions(user: Employee) -> set[str]:
 def get_effective_permissions(user: Employee) -> list[str]:
     """Public version — returns sorted list for API responses."""
     from app.services.permissions import ALL_PERMISSIONS
+
     perms = _get_user_permissions(user)
     return sorted(p for p in perms if p in ALL_PERMISSIONS)

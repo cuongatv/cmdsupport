@@ -1,4 +1,5 @@
 """Task project, state, and label service layer."""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +12,7 @@ from app.database.models import (
     Department,
     Employee,
     Project,
+    Role,
     Task,
     TaskLabel,
     TaskProject,
@@ -24,11 +26,23 @@ from app.schemas.tasks import (
     TaskStateUpdate,
 )
 from app.services.audit_service import log_audit
+from app.services.permission_engine import get_user_department_ids
+from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
 from app.services.task_constants import (
     DEFAULT_STATE_GROUPS,
     DEFAULT_STATE_NAMES,
     POSITION_GAP,
 )
+
+
+class TaskProjectAccessDenied(PermissionError):
+    """Raised when an actor is not authorized to create a default task project.
+
+    Used by `resolve_default_task_project()` to refuse lazy-creation of a hidden
+    container in a department where the actor has no active membership and no
+    broad-scope create permission. Inherits ``PermissionError`` so the router's
+    ``_call_service`` helper translates it to HTTP 403 without extra wiring.
+    """
 
 
 async def create_task_project(
@@ -59,7 +73,9 @@ async def create_task_project(
     db.add(project)
     await db.flush()
 
-    for index, (name, group) in enumerate(zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)):
+    for index, (name, group) in enumerate(
+        zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)
+    ):
         db.add(
             TaskState(
                 task_project_id=project.id,
@@ -189,6 +205,13 @@ async def resolve_default_task_project(
     if existing is not None:
         return existing
 
+    # Authorize BEFORE creating a hidden default project so an unauthorized
+    # caller cannot lazy-spawn a project they will be denied access to. Only
+    # department-scoped lazy-creates need the membership gate — workspace
+    # creation flows through explicit workspace membership elsewhere.
+    if department_id is not None:
+        await _authorize_default_dept_project_create(db, actor, department_id)
+
     scope_id = workspace_id if workspace_id is not None else department_id
     assert scope_id is not None  # narrowed by XOR check above
     project = TaskProject(
@@ -203,7 +226,9 @@ async def resolve_default_task_project(
     db.add(project)
     await db.flush()
 
-    for index, (name, group) in enumerate(zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)):
+    for index, (name, group) in enumerate(
+        zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)
+    ):
         db.add(
             TaskState(
                 task_project_id=project.id,
@@ -220,7 +245,9 @@ async def resolve_default_task_project(
     return project
 
 
-async def get_task_project(db: AsyncSession, project_id: uuid.UUID) -> TaskProject | None:
+async def get_task_project(
+    db: AsyncSession, project_id: uuid.UUID
+) -> TaskProject | None:
     """Return a non-deleted task project by id, or None."""
     return await db.get(TaskProject, project_id)
 
@@ -296,14 +323,18 @@ async def create_state(
     _ensure_project_mutable(project, actor)
 
     max_position = await db.scalar(
-        select(func.max(TaskState.position)).where(TaskState.task_project_id == project_id)
+        select(func.max(TaskState.position)).where(
+            TaskState.task_project_id == project_id
+        )
     )
     state = TaskState(
         task_project_id=project_id,
         name=data.name,
         group=data.group,
         color=data.color,
-        position=(max_position + POSITION_GAP) if max_position is not None else data.position,
+        position=(max_position + POSITION_GAP)
+        if max_position is not None
+        else data.position,
         is_default=False,
     )
     db.add(state)
@@ -351,7 +382,10 @@ async def delete_state(
 
     if reassign_state_id is not None:
         reassign_state = await db.get(TaskState, reassign_state_id)
-        if reassign_state is None or reassign_state.task_project_id != state.task_project_id:
+        if (
+            reassign_state is None
+            or reassign_state.task_project_id != state.task_project_id
+        ):
             raise ValueError("reassign_state_id not found")
         await db.execute(
             update(Task)
@@ -402,6 +436,44 @@ def _ensure_project_mutable(project: TaskProject, actor: Employee) -> None:
 
 def _is_admin(actor: Employee) -> bool:
     return actor.role == "admin"
+
+
+async def _authorize_default_dept_project_create(
+    db: AsyncSession,
+    actor: Employee,
+    department_id: uuid.UUID,
+) -> None:
+    """Raise TaskProjectAccessDenied if actor cannot lazy-create in this dept.
+
+    Admins and holders of broad-scope create/manage permissions (`task:create:all`
+    or `task_project:manage:all`) bypass the membership gate. Everyone else
+    must have an active EmployeeDepartmentMembership (or a legacy
+    employees.department_id pointer, via get_user_department_ids' fallback) in
+    the target department.
+    """
+    if _is_admin(actor):
+        return
+
+    permissions = await _resolve_actor_permissions(db, actor)
+    if "task:create:all" in permissions or "task_project:manage:all" in permissions:
+        return
+
+    user_dept_ids = await get_user_department_ids(db, actor)
+    if department_id not in user_dept_ids:
+        raise TaskProjectAccessDenied(
+            f"actor is not an active member of department {department_id}"
+        )
+
+
+async def _resolve_actor_permissions(db: AsyncSession, actor: Employee) -> set[str]:
+    """Resolve the actor's effective permission set without trusting eager loads."""
+    if actor.custom_role_id is None:
+        return set(EMPLOYEE_DEFAULT_PERMISSIONS)
+
+    role = await db.get(Role, actor.custom_role_id)
+    if role is None:
+        return set(EMPLOYEE_DEFAULT_PERMISSIONS)
+    return set(role.permissions or [])
 
 
 def _provided_values(data: TaskProjectUpdate | TaskStateUpdate) -> dict[str, object]:

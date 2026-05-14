@@ -33,13 +33,16 @@ from app.database.models import (
 @dataclass
 class ResolvedIdentity:
     """The authenticated employee context, passed to MCP tools."""
+
     employee_id: uuid.UUID
     employee_name: str
     department_id: uuid.UUID
     department_name: str
     allowed_knowledge_types: Optional[list[str]] = None  # None = all
-    allowed_source_ids: Optional[list[str]] = None       # None = all
-    project_source_ids: list[str] = field(default_factory=list)  # always granted via projects
+    allowed_source_ids: Optional[list[str]] = None  # None = all
+    project_source_ids: list[str] = field(
+        default_factory=list
+    )  # always granted via projects
     is_admin: bool = False
     permissions: list[str] = field(default_factory=list)
 
@@ -117,9 +120,13 @@ class MCPAuthService:
             )
 
         if scope == "own_dept":
-            # Can only read: global docs + docs in own department
-            # Build list of allowed source IDs
-            allowed_ids = await self._get_department_source_ids(employee.department_id)
+            # Can only read: global docs + docs in any of the user's active
+            # department memberships (membership union). Falls back to
+            # {employee.department_id} when the user has no membership rows.
+            from app.services.permission_engine import get_user_department_ids
+
+            user_dept_ids = await get_user_department_ids(self.db, employee)
+            allowed_ids = await self._get_department_source_ids(user_dept_ids)
             return ResolvedIdentity(
                 employee_id=employee.id,
                 employee_name=employee.name,
@@ -141,25 +148,28 @@ class MCPAuthService:
             permissions=permissions,
         )
 
-    async def _get_department_source_ids(self, department_id: uuid.UUID) -> list[str]:
-        """Get IDs of sources that are global (no departments) or in the given department."""
+    async def _get_department_source_ids(
+        self, department_ids: set[uuid.UUID]
+    ) -> list[str]:
+        """Get IDs of sources that are global (no departments) or attached to
+        any of the given departments (membership union)."""
         # Sources with no department entries (global)
-        global_stmt = (
-            select(Source.id)
-            .where(
-                ~exists(
-                    select(SourceDepartment.source_id)
-                    .where(SourceDepartment.source_id == Source.id)
+        global_stmt = select(Source.id).where(
+            ~exists(
+                select(SourceDepartment.source_id).where(
+                    SourceDepartment.source_id == Source.id
                 )
             )
         )
         global_result = await self.db.execute(global_stmt)
         global_ids = [str(r[0]) for r in global_result.all()]
 
-        # Sources in this department
-        dept_stmt = (
-            select(SourceDepartment.source_id)
-            .where(SourceDepartment.department_id == department_id)
+        if not department_ids:
+            return global_ids
+
+        # Sources in any of the user's active department memberships
+        dept_stmt = select(SourceDepartment.source_id).where(
+            SourceDepartment.department_id.in_(department_ids)
         )
         dept_result = await self.db.execute(dept_stmt)
         dept_ids = [str(r[0]) for r in dept_result.all()]
@@ -178,6 +188,7 @@ class MCPAuthService:
             return []
 
         from app.database.models import Project
+
         source_stmt = (
             select(ProjectSource.source_id)
             .join(Project, Project.id == ProjectSource.project_id)
@@ -196,9 +207,7 @@ class MCPAuthService:
         token = f"ark_{secrets.token_urlsafe(32)}"
 
         stmt = (
-            update(Employee)
-            .where(Employee.id == employee_id)
-            .values(mcp_token=token)
+            update(Employee).where(Employee.id == employee_id).values(mcp_token=token)
         )
         await self.db.execute(stmt)
         await self.db.flush()
@@ -208,11 +217,7 @@ class MCPAuthService:
 
     async def revoke_token(self, employee_id: uuid.UUID) -> bool:
         """Revoke an employee's MCP token."""
-        stmt = (
-            update(Employee)
-            .where(Employee.id == employee_id)
-            .values(mcp_token=None)
-        )
+        stmt = update(Employee).where(Employee.id == employee_id).values(mcp_token=None)
         result = await self.db.execute(stmt)
         await self.db.flush()
         return result.rowcount > 0
@@ -241,12 +246,15 @@ def apply_scope_filter(query, identity: ResolvedIdentity):
     conditions = []
 
     if identity.allowed_source_ids is not None:
-        conditions.append(Source.id.in_([uuid.UUID(s) for s in identity.allowed_source_ids]))
+        conditions.append(
+            Source.id.in_([uuid.UUID(s) for s in identity.allowed_source_ids])
+        )
 
     if identity.allowed_knowledge_types is not None:
         from sqlalchemy import select as sa_select
 
         from app.database.models import KnowledgeType
+
         kt_subq = sa_select(KnowledgeType.id).where(
             KnowledgeType.slug.in_(identity.allowed_knowledge_types)
         )

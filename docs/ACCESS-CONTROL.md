@@ -105,6 +105,34 @@ The `admin` role (set on the Employee model) is a system-level override:
 
 ---
 
+## Multi-unit membership
+
+Employees may belong to multiple departments at the same time.
+
+- `Employee.department_id` stores the primary membership for legacy compatibility and default scoping.
+- Permission `own_dept` resolves to the UNION of all active membership `department_id` values for the employee.
+
+### Membership roles by unit type
+
+**`business_group`**
+- `lead` — Trưởng nhóm
+- `deputy_lead` — Phó trưởng nhóm
+- `controller` — Kiểm soát viên
+- `member` — Thành viên
+
+**`squad_team`**
+- `lead` — Trưởng nhóm
+- `deputy_lead` — Phó trưởng nhóm
+- `controller` — Kiểm soát viên
+- `member` — Thành viên
+- `product_owner`
+- `scrum_master`
+- `developer`
+
+Role/unit_type validity is enforced at both the database trigger and the service layer.
+
+---
+
 ## Workspace Realm — Membership Roles
 
 Each workspace (project) has its own member list. Membership roles are separate from global permissions.
@@ -187,7 +215,7 @@ For **workspace-scoped** pages, global permissions are not used — workspace ro
 
 **Admin Portal → Departments → New Department**
 
-Departments define the scope boundary for `own_dept` permissions. Every employee belongs to one department.
+Departments define the scope boundary for `own_dept` permissions. Primary membership remains the legacy default for employees, while additional active memberships expand `own_dept` access through the union of all active departments.
 
 ### 2. Create roles
 

@@ -34,7 +34,9 @@ async def seed_default_admin():
                 return  # Admin already exists, skip
 
             # Create admin department
-            dept = Department(name="Administration", description="System administrators")
+            dept = Department(
+                name="Administration", description="System administrators"
+            )
             session.add(dept)
             await session.flush()
 
@@ -64,6 +66,7 @@ async def lifespan(app: FastAPI):
         # Ensure MinIO bucket exists
         try:
             from app.services.storage_service import storage_service
+
             await storage_service.ensure_bucket()
             logger.success("MinIO bucket ready")
         except Exception as e:
@@ -74,9 +77,13 @@ async def lifespan(app: FastAPI):
 
         # Warn if sensitive defaults are unchanged
         if settings.secret_key == "change-me-to-a-random-secret-string":
-            logger.warning("⚠️  SECRET_KEY is set to the default value — change it before deploying to production!")
+            logger.warning(
+                "⚠️  SECRET_KEY is set to the default value — change it before deploying to production!"
+            )
         if settings.default_admin_password == "admin123":
-            logger.warning("⚠️  DEFAULT_ADMIN_PASSWORD is 'admin123' — change the admin password after first login!")
+            logger.warning(
+                "⚠️  DEFAULT_ADMIN_PASSWORD is 'admin123' — change the admin password after first login!"
+            )
 
         # MCP server ready
         logger.success("CMD Support MCP Server ready at /mcp")
@@ -113,12 +120,14 @@ from app.routers import (  # noqa: E402
     audit,
     auth,
     cmd_support,
+    departments,
     knowledge_types,
     notes,
     notifications,
     projects,
     rbac,
     roles,
+    scopes_gone,
     skills,
     sources,
     tasks,
@@ -133,6 +142,8 @@ app.include_router(wiki_drafts.router, prefix="/api", tags=["wiki-drafts"])
 app.include_router(wiki.router, prefix="/api", tags=["wiki"])
 app.include_router(admin_settings.router, prefix="/api", tags=["settings"])
 app.include_router(rbac.router, prefix="/api", tags=["rbac"])
+app.include_router(departments.router, prefix="/api", tags=["departments"])
+app.include_router(scopes_gone.router, prefix="/api", tags=["scopes-gone"])
 app.include_router(knowledge_types.router, prefix="/api", tags=["knowledge-types"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(roles.router, prefix="/api", tags=["roles"])
@@ -164,6 +175,7 @@ async def health():
         from sqlalchemy import text
 
         from app.database import async_session_factory
+
         async with async_session_factory() as session:
             await session.execute(text("SELECT 1"))
         services["database"] = "healthy"
@@ -175,6 +187,7 @@ async def health():
     # Redis
     try:
         from app.routers.sources import get_arq_pool
+
         pool = await get_arq_pool()
         await pool.ping()
         services["redis"] = "healthy"
@@ -186,6 +199,7 @@ async def health():
     # MinIO
     try:
         from app.services.storage_service import storage_service
+
         await storage_service.ensure_bucket()
         services["minio"] = "healthy"
     except Exception as e:
@@ -218,6 +232,7 @@ async def api_health():
 
     try:
         import redis.asyncio as aioredis
+
         r = aioredis.Redis(
             host=settings.redis_host,
             port=settings.redis_port,

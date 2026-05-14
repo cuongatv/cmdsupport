@@ -1,4 +1,5 @@
 """Task CRUD, subtask, versioning, position, and soft-delete service."""
+
 from __future__ import annotations
 
 import uuid
@@ -20,6 +21,7 @@ from app.database.models import (
 )
 from app.schemas.tasks import TaskCreate, TaskUpdate
 from app.services.audit_service import log_audit
+from app.services.task_access_service import is_eligible_assignee
 from app.services.task_constants import (
     INITIAL_TASK_VERSION,
     MAX_SUBTASK_DEPTH,
@@ -52,6 +54,8 @@ async def create_task(
             raise ValueError("employee not found")
         if not employee.is_active:
             raise ValueError("inactive employee cannot be assigned")
+        if not await is_eligible_assignee(db, employee, project):
+            raise ValueError("employee is out of scope for this task project")
 
     if data.parent_task_id is not None:
         parent = await _get_task_in_project(db, data.parent_task_id, project_id)
@@ -152,7 +156,9 @@ async def update_task(
         raise ValueError("not found")
 
     if data.version != task.version:
-        raise ValueError(f"version conflict: expected {task.version}, got {data.version}")
+        raise ValueError(
+            f"version conflict: expected {task.version}, got {data.version}"
+        )
 
     changes = data.model_dump(exclude_unset=True, exclude_none=True)
     changes.pop("version", None)
@@ -223,7 +229,9 @@ async def move_task_state(
     return task
 
 
-async def soft_delete_task(db: AsyncSession, task_id: uuid.UUID, actor: Employee) -> None:
+async def soft_delete_task(
+    db: AsyncSession, task_id: uuid.UUID, actor: Employee
+) -> None:
     """Soft-delete a task and its direct subtasks without committing."""
     task = await get_task(db, task_id)
     if task is None:
@@ -235,9 +243,7 @@ async def soft_delete_task(db: AsyncSession, task_id: uuid.UUID, actor: Employee
     )
     deleted_task_ids = list(result.scalars().all())
     await db.execute(
-        update(Task)
-        .where(Task.id.in_(deleted_task_ids))
-        .values(deleted_at=deleted_at)
+        update(Task).where(Task.id.in_(deleted_task_ids)).values(deleted_at=deleted_at)
     )
     for deleted_task_id in deleted_task_ids:
         db.add(

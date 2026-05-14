@@ -6,12 +6,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { DepartmentCards } from "@/components/departments/department-cards";
 import { DepartmentDialog } from "@/components/departments/department-dialog";
+import { type Department as DepartmentModel } from "@/lib/department-types";
 
-export type Department = {
-  id: string;
-  name: string;
-  description?: string;
-  employee_count: number;
+type Department = DepartmentModel & {
+  employee_count?: number;
+  open_task_count?: number;
+  task_count?: number;
+  active_task_count?: number;
 };
 
 export default function DepartmentsPage() {
@@ -33,7 +34,11 @@ export default function DepartmentsPage() {
   }, []);
 
   useEffect(() => {
-    loadDepartments();
+    const timeoutId = window.setTimeout(() => {
+      void loadDepartments();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [loadDepartments]);
 
   const handleCreate = () => {

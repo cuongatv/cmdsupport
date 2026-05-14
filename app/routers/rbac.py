@@ -10,12 +10,21 @@ from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
 from pydantic import BaseModel
+from sqlalchemy import func as sa_func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.database.models import Department, Employee, Province, Role
+from app.database.models import (
+    Department,
+    Employee,
+    EmployeeDepartmentMembership,
+    Province,
+    Role,
+    UnitType,
+)
+from app.services import membership_service
 from app.services.audit_service import log_audit
 from app.services.auth_service import (
     get_current_user,
@@ -23,6 +32,7 @@ from app.services.auth_service import (
     require_permission,
 )
 from app.services.mcp_auth_service import MCPAuthService
+from app.services.membership_service import DepartmentDeleteBlockedError
 from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
 from app.services.storage_service import storage_service
 
@@ -44,15 +54,22 @@ router = APIRouter()
 # DTOs
 # ---------------------------------------------------------------------------
 
+
 class DepartmentCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    unit_type: UnitType = UnitType.BUSINESS_GROUP
 
 
 class DepartmentOut(BaseModel):
     id: str
     name: str
     description: Optional[str]
+    unit_type: UnitType = UnitType.BUSINESS_GROUP
+    is_archived: bool = False
+    archived_at: Optional[str] = None
+    member_count: int = 0
+    # Legacy field kept for the existing admin UI — equals member_count.
     employee_count: int = 0
 
     class Config:
@@ -151,6 +168,7 @@ class ProvinceAssignmentUpdate(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _avatar_url_for(emp: Employee) -> Optional[str]:
     """Return a presigned URL for the employee's avatar, or None."""
     if not emp.avatar_key:
@@ -221,22 +239,43 @@ def _employee_to_out(emp: Employee) -> EmployeeOut:
 # Department CRUD
 # ---------------------------------------------------------------------------
 
+
 @router.get("/departments")
 async def list_departments(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:departments:read"),
 ):
-    """List all departments with employee counts."""
-    stmt = select(Department).options(selectinload(Department.employees))
+    """List all departments with active-membership counts.
+
+    ``member_count`` is the number of *active* rows in
+    ``employee_department_memberships``. ``employee_count`` is kept for
+    legacy UI callers and mirrors ``member_count``.
+    """
+    stmt = select(Department)
     result = await db.execute(stmt)
     departments = result.scalars().all()
+
+    member_counts_stmt = (
+        select(
+            EmployeeDepartmentMembership.department_id,
+            sa_func.count(EmployeeDepartmentMembership.id),
+        )
+        .where(EmployeeDepartmentMembership.is_active.is_(True))
+        .group_by(EmployeeDepartmentMembership.department_id)
+    )
+    member_counts_rows = (await db.execute(member_counts_stmt)).all()
+    counts: dict[uuid.UUID, int] = {row[0]: int(row[1]) for row in member_counts_rows}
 
     return [
         DepartmentOut(
             id=str(d.id),
             name=d.name,
             description=d.description,
-            employee_count=len(d.employees),
+            unit_type=d.unit_type,
+            is_archived=d.is_archived,
+            archived_at=d.archived_at.isoformat() if d.archived_at else None,
+            member_count=counts.get(d.id, 0),
+            employee_count=counts.get(d.id, 0),
         )
         for d in departments
     ]
@@ -248,12 +287,27 @@ async def create_department(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:departments:manage"),
 ):
-    """Create a new department."""
-    dept = Department(name=body.name, description=body.description)
+    """Create a new department.
+
+    ``unit_type`` is captured at creation time and is immutable thereafter —
+    PATCH /api/departments/{id} will reject any attempt to change it.
+    """
+    dept = Department(
+        name=body.name,
+        description=body.description,
+        unit_type=body.unit_type,
+    )
     db.add(dept)
-    await log_audit(db, _user, "create", "department", str(dept.id), reason=dept.name)
     await db.flush()
-    return {"id": str(dept.id), "name": dept.name}
+    await log_audit(db, _user, "create", "department", str(dept.id), reason=dept.name)
+    await db.commit()
+    await db.refresh(dept)
+    return {
+        "id": str(dept.id),
+        "name": dept.name,
+        "unit_type": dept.unit_type.value,
+        "is_archived": dept.is_archived,
+    }
 
 
 @router.put("/departments/{dept_id}")
@@ -263,6 +317,11 @@ async def update_department(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:departments:manage"),
 ):
+    """Legacy PUT — kept for the existing admin UI.
+
+    Name and description only; ``unit_type`` cannot be changed once set
+    (use PATCH /api/departments/{id} which returns a clear 400 if attempted).
+    """
     dept = await db.get(Department, uuid.UUID(dept_id))
     if not dept:
         raise HTTPException(404, "Department not found")
@@ -279,17 +338,34 @@ async def delete_department(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:departments:manage"),
 ):
-    dept = await db.get(Department, uuid.UUID(dept_id))
-    if not dept:
-        raise HTTPException(404, "Department not found")
-    await log_audit(db, _user, "delete", "department", str(dept.id), reason=dept.name)
-    await db.delete(dept)
+    """Hard-delete a department.
+
+    Delegates safety checks to ``membership_service.delete_department`` which
+    refuses to drop a department that is not archived, still has memberships,
+    or still has TaskProject rows pointing at it. Each refusal surfaces here
+    as a 409 with the offending reason(s) in ``detail``.
+    """
+    try:
+        dept_uuid = uuid.UUID(dept_id)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid department id") from exc
+
+    try:
+        await membership_service.delete_department(db, dept_uuid)
+    except DepartmentDeleteBlockedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    await log_audit(db, _user, "delete", "department", dept_id, reason="hard delete")
+    await db.commit()
     return {"deleted": True}
 
 
 # ---------------------------------------------------------------------------
 # Employee CRUD
 # ---------------------------------------------------------------------------
+
 
 @router.get("/employees")
 async def list_employees(
@@ -310,11 +386,15 @@ async def list_employees(
 
     if department_id:
         base = base.where(Employee.department_id == uuid.UUID(department_id))
-        count_base = count_base.where(Employee.department_id == uuid.UUID(department_id))
+        count_base = count_base.where(
+            Employee.department_id == uuid.UUID(department_id)
+        )
     if search:
         like = f"%{search}%"
         base = base.where(Employee.name.ilike(like) | Employee.email.ilike(like))
-        count_base = count_base.where(Employee.name.ilike(like) | Employee.email.ilike(like))
+        count_base = count_base.where(
+            Employee.name.ilike(like) | Employee.email.ilike(like)
+        )
 
     # Total count
     total = (await db.execute(count_base)).scalar() or 0
@@ -354,9 +434,11 @@ async def create_employee(
 
     custom_role_id = uuid.UUID(body.custom_role_id) if body.custom_role_id else None
     if body.role == "employee" and custom_role_id is None:
-        custom_role = (await db.execute(
-            select(Role).where(Role.name == "Employee", Role.is_system.is_(True))
-        )).scalar_one_or_none()
+        custom_role = (
+            await db.execute(
+                select(Role).where(Role.name == "Employee", Role.is_system.is_(True))
+            )
+        ).scalar_one_or_none()
         if custom_role is None:
             custom_role = Role(
                 name="Employee",
@@ -450,7 +532,14 @@ async def toggle_employee(
     if not emp:
         raise HTTPException(404, "Employee not found")
     emp.is_active = not emp.is_active
-    await log_audit(db, _user, "update", "employee", str(emp.id), reason=f"toggle active={emp.is_active}")
+    await log_audit(
+        db,
+        _user,
+        "update",
+        "employee",
+        str(emp.id),
+        reason=f"toggle active={emp.is_active}",
+    )
     await db.flush()
     return {"id": str(emp.id), "is_active": emp.is_active}
 
@@ -458,6 +547,7 @@ async def toggle_employee(
 # ---------------------------------------------------------------------------
 # Avatar Upload
 # ---------------------------------------------------------------------------
+
 
 @router.post("/employees/{emp_id}/avatar", response_model=AvatarResponse)
 async def upload_employee_avatar(
@@ -478,7 +568,10 @@ async def upload_employee_avatar(
             400,
             "Định dạng ảnh không hợp lệ. Chỉ chấp nhận jpg, jpeg, png, webp.",
         )
-    if file.content_type and file.content_type.lower() not in AVATAR_ALLOWED_CONTENT_TYPES:
+    if (
+        file.content_type
+        and file.content_type.lower() not in AVATAR_ALLOWED_CONTENT_TYPES
+    ):
         raise HTTPException(
             400,
             f"Content-Type không hợp lệ: {file.content_type}.",
@@ -518,7 +611,9 @@ async def upload_employee_avatar(
     )
 
     emp.avatar_key = object_name
-    await log_audit(db, _user, "update", "employee", str(emp.id), reason="upload avatar")
+    await log_audit(
+        db, _user, "update", "employee", str(emp.id), reason="upload avatar"
+    )
     await db.flush()
     await db.commit()
 
@@ -542,7 +637,9 @@ async def delete_employee_avatar(
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"Failed to delete avatar {emp.avatar_key}: {exc}")
         emp.avatar_key = None
-        await log_audit(db, _user, "update", "employee", str(emp.id), reason="delete avatar")
+        await log_audit(
+            db, _user, "update", "employee", str(emp.id), reason="delete avatar"
+        )
         await db.flush()
     return {"deleted": True}
 
@@ -550,6 +647,7 @@ async def delete_employee_avatar(
 # ---------------------------------------------------------------------------
 # MCP Token Management
 # ---------------------------------------------------------------------------
+
 
 @router.post("/employees/{emp_id}/token", response_model=TokenResponse)
 async def generate_mcp_token(
@@ -593,6 +691,7 @@ async def revoke_mcp_token(
 # ---------------------------------------------------------------------------
 # Self-Service: Employee gets their own MCP token
 # ---------------------------------------------------------------------------
+
 
 @router.post("/my/mcp-token", response_model=TokenResponse)
 async def get_my_mcp_token(
@@ -643,6 +742,7 @@ async def get_my_mcp_token_status(
 # ---------------------------------------------------------------------------
 # Province ↔ Employee Assignment (Menu Tổ chức → Thông tin phụ trách Chi nhánh)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/province-assignments")
 async def list_province_assignments(
@@ -702,7 +802,9 @@ async def update_province_assignment(
         "province_assignment",
         str(prov.id),
         reason=(
-            f"{prov.code} -> {new_assignee_id}" if new_assignee_id else f"{prov.code} -> cleared"
+            f"{prov.code} -> {new_assignee_id}"
+            if new_assignee_id
+            else f"{prov.code} -> cleared"
         ),
     )
     await db.flush()
@@ -713,7 +815,9 @@ async def update_province_assignment(
         await db.execute(
             select(Province)
             .options(
-                selectinload(Province.assigned_employee).selectinload(Employee.department),
+                selectinload(Province.assigned_employee).selectinload(
+                    Employee.department
+                ),
             )
             .where(Province.id == prov.id)
         )

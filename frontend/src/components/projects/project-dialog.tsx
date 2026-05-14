@@ -150,7 +150,11 @@ export function ProjectDialog({ open, onOpenChange, project, onSaved }: Props) {
               <Label>Trạng thái</Label>
               <Select value={status} onValueChange={(v) => { if (v) setStatus(v); }}>
                 <SelectTrigger className="w-full bg-background">
-                  <SelectValue />
+                  <SelectValue>
+                    {(v: string | null) =>
+                      v === "archived" ? "Đã lưu trữ" : v === "active" ? "Hoạt động" : "Chọn trạng thái"
+                    }
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Hoạt động</SelectItem>

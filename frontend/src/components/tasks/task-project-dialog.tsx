@@ -33,6 +33,10 @@ type TaskProjectDialogProps = {
   workspaces: ScopeOption[];
   departments: ScopeOption[];
   onSaved: () => void;
+  // Pre-fill scope when opening from a scoped context (e.g. department hub).
+  // Ignored in edit mode; project values win.
+  initialScope?: ScopeKind;
+  initialDepartmentId?: string;
 };
 
 function getErrorMessage(err: unknown, fallback: string): string {
@@ -53,6 +57,8 @@ export function TaskProjectDialog({
   workspaces,
   departments,
   onSaved,
+  initialScope,
+  initialDepartmentId,
 }: TaskProjectDialogProps) {
   const isEdit = project !== null;
 
@@ -67,13 +73,13 @@ export function TaskProjectDialog({
     () => project?.description ?? ""
   );
   const [scopeKind, setScopeKind] = React.useState<ScopeKind>(() =>
-    inferScope(project)
+    isEdit ? inferScope(project) : initialScope ?? inferScope(project)
   );
   const [workspaceId, setWorkspaceId] = React.useState(
     () => project?.workspace_id ?? ""
   );
-  const [departmentId, setDepartmentId] = React.useState(
-    () => project?.department_id ?? ""
+  const [departmentId, setDepartmentId] = React.useState(() =>
+    isEdit ? project?.department_id ?? "" : initialDepartmentId ?? ""
   );
   const [allowAnyEmployee, setAllowAnyEmployee] = React.useState(
     () => project?.allow_any_employee ?? false
