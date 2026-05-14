@@ -1,6 +1,5 @@
 from app.services.permissions import ALL_PERMISSIONS, EMPLOYEE_DEFAULT_PERMISSIONS
 
-
 TASK_PERMISSIONS = [
     "task:read:own_dept",
     "task:read:all",

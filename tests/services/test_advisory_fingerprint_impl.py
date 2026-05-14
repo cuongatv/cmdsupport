@@ -20,7 +20,6 @@ from app.services.cmd_advisory_fingerprint import (
     compute_source_snapshot_hash,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers: explicit-kwarg wrappers so basedpyright sees every arg's exact type
 # (dict-spread + None overrides would widen str-typed fields to str | None and

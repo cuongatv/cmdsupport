@@ -165,10 +165,25 @@ async def list_task_projects(
 _DEFAULT_PROJECT_IDENTIFIER_PREFIX = "GEN"
 _DEFAULT_PROJECT_NAME = "Công việc chung"
 
+# Personal-project identifier prefix. Mirrors the default-project layout but
+# scoped to an individual employee so the planner / habit views always have a
+# canonical container to point at.
+_PERSONAL_PROJECT_IDENTIFIER_PREFIX = "MY"
+_PERSONAL_PROJECT_NAME_TEMPLATE = "Công việc cá nhân của {name}"
+
 
 def _default_project_identifier(scope_id: uuid.UUID) -> str:
     """Build a stable, schema-valid identifier for a scope's default project."""
     return f"{_DEFAULT_PROJECT_IDENTIFIER_PREFIX}{scope_id.hex[:6].upper()}"
+
+
+def _personal_project_identifier(employee_id: uuid.UUID) -> str:
+    """Build a stable identifier for an employee's personal task project.
+
+    Schema limit is ``String(10)`` (see ``TaskProject.identifier``); the prefix
+    plus six hex characters lands at 8, well under the cap.
+    """
+    return f"{_PERSONAL_PROJECT_IDENTIFIER_PREFIX}{employee_id.hex[:6].upper()}"
 
 
 async def resolve_default_task_project(
@@ -239,6 +254,67 @@ async def resolve_default_task_project(
             )
         )
     await log_audit(db, actor, "create", "task_project", str(project.id))
+    await db.flush()
+    await db.refresh(project, ["states"])
+    project.states.sort(key=lambda state: state.position)
+    return project
+
+
+async def get_or_create_personal_project(
+    db: AsyncSession,
+    employee: Employee,
+) -> TaskProject:
+    """Return the employee's personal TaskProject, lazy-creating one on first use.
+
+    Personal projects are owner-scoped containers for an employee's own tasks
+    (`owner_employee_id` branch of the TaskProject scope XOR). The planner,
+    dashboard, and calendar views all need a canonical project to point at, so
+    we materialise it on first access rather than during user-onboarding.
+
+    Re-uses the oldest non-archived personal project for the employee if one
+    already exists, mirroring `resolve_default_task_project` so duplicate rows
+    can't fan out. The function flushes but does not commit — the calling
+    request boundary (router) owns the commit.
+    """
+    stmt = (
+        select(TaskProject)
+        .where(
+            TaskProject.owner_employee_id == employee.id,
+            TaskProject.is_archived.is_(False),
+        )
+        .order_by(TaskProject.created_at, TaskProject.id)
+        .limit(1)
+    )
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    project = TaskProject(
+        name=_PERSONAL_PROJECT_NAME_TEMPLATE.format(name=employee.name),
+        description=None,
+        identifier=_personal_project_identifier(employee.id),
+        workspace_id=None,
+        department_id=None,
+        owner_employee_id=employee.id,
+        created_by_id=employee.id,
+        allow_any_employee=False,
+    )
+    db.add(project)
+    await db.flush()
+
+    for index, (name, group) in enumerate(
+        zip(DEFAULT_STATE_NAMES, DEFAULT_STATE_GROUPS)
+    ):
+        db.add(
+            TaskState(
+                task_project_id=project.id,
+                name=name,
+                group=group,
+                position=index * POSITION_GAP,
+                is_default=index == 0,
+            )
+        )
+    await log_audit(db, employee, "create", "task_project", str(project.id))
     await db.flush()
     await db.refresh(project, ["states"])
     project.states.sort(key=lambda state: state.position)

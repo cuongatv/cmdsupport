@@ -28,6 +28,13 @@ async def can_access_task_project(
     if _is_admin(employee):
         return True
 
+    if task_project.owner_employee_id is not None:
+        # Personal task projects are owner-only. Keep this check before broad
+        # permission shortcuts so task:read:all / manage:all cannot leak another
+        # employee's personal workspace; admins remain the explicit global
+        # escape hatch via the branch above.
+        return task_project.owner_employee_id == employee.id
+
     permissions = await _get_employee_permissions(db, employee)
     if "task:read:all" in permissions or "task_project:manage:all" in permissions:
         return True
@@ -52,14 +59,20 @@ async def can_access_task(db: AsyncSession, employee: Employee, task: Task) -> b
     if _is_admin(employee):
         return True
 
+    task_project = task.task_project or await db.get(TaskProject, task.task_project_id)
+    if task_project is None:
+        return False
+
+    if task_project.owner_employee_id is not None:
+        # Personal task rows inherit the owner-only rule from their project.
+        # Check before broad read shortcuts so task:read:all cannot pierce
+        # personal scope.
+        return task_project.owner_employee_id == employee.id
+
     permissions = await _get_employee_permissions(db, employee)
     if "task:read:all" in permissions:
         return True
     if "task:read:own_dept" not in permissions:
-        return False
-
-    task_project = task.task_project or await db.get(TaskProject, task.task_project_id)
-    if task_project is None:
         return False
 
     return await can_access_task_project(db, employee, task_project)
@@ -99,6 +112,9 @@ async def list_eligible_assignees(
         stmt = stmt.join(ProjectMember, ProjectMember.employee_id == Employee.id).where(
             ProjectMember.project_id == task_project.workspace_id
         )
+    elif task_project.owner_employee_id is not None:
+        # Personal task projects: only the owner can be assigned.
+        stmt = stmt.where(Employee.id == task_project.owner_employee_id)
     else:
         return []
 

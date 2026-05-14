@@ -9,9 +9,11 @@ Smoke-friendly defaults:
     swap the real `get_db` dependency for a no-op stub so handlers can run
     without any Postgres connection.
 """
+
 from __future__ import annotations
 
 import uuid
+from datetime import date, time
 from typing import AsyncIterator
 
 import httpx
@@ -48,7 +50,9 @@ async def test_client() -> AsyncIterator[httpx.AsyncClient]:
     from app.main import app  # imported lazily so test_app_import stays honest
 
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
         yield client
 
 
@@ -113,3 +117,79 @@ async def override_db_noop() -> AsyncIterator[None]:
         yield
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest_asyncio.fixture
+async def personal_habit_factory(db_session: AsyncSession):
+    """
+    Factory fixture for ``PersonalHabit`` rows bound to the rollback session.
+
+    Yields an async callable ``await factory(owner_employee_id, **overrides)``
+    that materialises a habit owned by ``owner_employee_id`` with sensible
+    defaults (mon-fri 09:00 for 30 minutes, no priority, active). The row is
+    flushed onto ``db_session`` but never committed — teardown rolls everything
+    back so tests stay isolated.
+    """
+    from app.database.models import PersonalHabit, TaskPriority
+
+    async def _create(
+        owner_employee_id: uuid.UUID,
+        *,
+        title: str = "Test Habit",
+        priority: TaskPriority = TaskPriority.NONE,
+        preferred_time: time = time(9, 0),
+        duration_minutes: int = 30,
+        active_days: list[int] | None = None,
+        is_active: bool = True,
+    ) -> PersonalHabit:
+        habit = PersonalHabit(
+            owner_employee_id=owner_employee_id,
+            title=title,
+            priority=priority,
+            preferred_time=preferred_time,
+            duration_minutes=duration_minutes,
+            active_days=list(active_days)
+            if active_days is not None
+            else [0, 1, 2, 3, 4],
+            is_active=is_active,
+        )
+        db_session.add(habit)
+        await db_session.flush()
+        await db_session.refresh(habit)
+        return habit
+
+    return _create
+
+
+@pytest_asyncio.fixture
+async def habit_occurrence_factory(db_session: AsyncSession):
+    """
+    Factory fixture for ``HabitOccurrenceState`` rows bound to the rollback session.
+
+    Yields an async callable ``await factory(habit_id, occurrence_date, **overrides)``
+    that materialises a per-date state for the given habit (defaults to
+    ``COMPLETED``). Reuses ``db_session`` so teardown rolls everything back.
+    """
+    from app.database.models import HabitOccurrenceState, HabitOccurrenceStatus
+
+    async def _create(
+        habit_id: uuid.UUID,
+        occurrence_date: date,
+        state: HabitOccurrenceStatus = HabitOccurrenceStatus.COMPLETED,
+        *,
+        actual_start: time | None = None,
+        shift_reason: str | None = None,
+    ) -> HabitOccurrenceState:
+        row = HabitOccurrenceState(
+            habit_id=habit_id,
+            occurrence_date=occurrence_date,
+            state=state,
+            actual_start=actual_start,
+            shift_reason=shift_reason,
+        )
+        db_session.add(row)
+        await db_session.flush()
+        await db_session.refresh(row)
+        return row
+
+    return _create

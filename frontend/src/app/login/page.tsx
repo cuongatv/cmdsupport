@@ -21,8 +21,8 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      router.push("/admin");
+      const loggedInUser = await login(email, password);
+      router.push(loggedInUser.role === "admin" ? "/admin" : "/me");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {

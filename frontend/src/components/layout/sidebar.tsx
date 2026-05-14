@@ -112,7 +112,12 @@ function useGroupToggle(groupId: string, defaultOpen: boolean) {
 /* ─── Helpers ─── */
 
 function isActive(href: string, pathname: string) {
-  return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+  if (href === "/admin") return pathname === "/admin";
+  // `/me` is the personal workspace landing page; only exact-match here so the
+  // sibling `/me/calendar`, `/me/tasks`, and `/me/units` nav items don't
+  // both light up at the same time.
+  if (href === "/me") return pathname === "/me";
+  return pathname.startsWith(href);
 }
 
 /** Pick a color for workspace icon based on workspace type */
@@ -406,6 +411,24 @@ export function Sidebar() {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1 sidebar-scrollbar">
+        {/* My workspace — personal */}
+        {user && (
+          <>
+            <SidebarNavItem
+              item={{ label: "Không gian làm việc", href: "/me", icon: "person" }}
+              pathname={pathname}
+            />
+            <SidebarNavItem
+              item={{ label: "Lịch tuần", href: "/me/calendar", icon: "calendar_month" }}
+              pathname={pathname}
+            />
+            <SidebarNavItem
+              item={{ label: "Thói quen", href: "/me/habits", icon: "repeat" }}
+              pathname={pathname}
+            />
+          </>
+        )}
+
         {/* Dashboard */}
         <SidebarNavItem
           item={{ label: "Dashboard", href: "/admin", icon: "dashboard" }}

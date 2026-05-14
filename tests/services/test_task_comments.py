@@ -5,10 +5,16 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
-from app.database.models import Employee, Notification, Task, TaskActivity, TaskAssignee, TaskComment
-from app.schemas.tasks import TaskCreate, TaskProjectCreate
+from app.database.models import (
+    Employee,
+    Notification,
+    Task,
+    TaskActivity,
+    TaskAssignee,
+    TaskComment,
+)
 from app.routers.tasks import create_comment_endpoint
-from app.schemas.tasks import TaskCommentCreate
+from app.schemas.tasks import TaskCommentCreate, TaskCreate, TaskProjectCreate
 from app.services.task_comment_service import (
     create_comment,
     delete_comment,

@@ -1,4 +1,5 @@
 """Pydantic DTOs for the native task management module."""
+
 from __future__ import annotations
 
 import uuid
@@ -7,11 +8,20 @@ from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.habits import (
+    CalendarWeekResponse as HabitCalendarWeekResponse,
+)
+from app.schemas.habits import (
+    DashboardOverviewResponse as HabitDashboardOverviewResponse,
+)
 from app.services.task_constants import (
     DEFAULT_STATE_GROUPS,
     MAX_DESCRIPTION_BYTES,
     PRIORITY_LEVELS,
 )
+
+CalendarWeekResponse = HabitCalendarWeekResponse
+DashboardOverviewResponse = HabitDashboardOverviewResponse
 
 T = TypeVar("T")
 
@@ -105,6 +115,9 @@ class TaskCreate(BaseModel):
     parent_task_id: Optional[uuid.UUID] = None
     reporter_id: Optional[uuid.UUID] = None
     due_date: Optional[datetime] = None
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
+    schedule_locked: bool = False
     assignee_ids: list[uuid.UUID] = Field(default_factory=list)
     label_ids: list[uuid.UUID] = Field(default_factory=list)
 
@@ -131,6 +144,9 @@ class TaskUpdate(BaseModel):
     parent_task_id: Optional[uuid.UUID] = None
     reporter_id: Optional[uuid.UUID] = None
     due_date: Optional[datetime] = None
+    scheduled_start_at: Optional[datetime] = None
+    scheduled_end_at: Optional[datetime] = None
+    schedule_locked: Optional[bool] = None
     version: int
 
     @field_validator("priority")
@@ -169,10 +185,16 @@ class TaskOut(BaseModel):
     position: float
     version: int
     due_date: Optional[datetime]
+    scheduled_start_at: Optional[datetime]
+    scheduled_end_at: Optional[datetime]
+    schedule_locked: bool
     completed_at: Optional[datetime]
     deleted_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+
+
+TaskRead = TaskOut
 
 
 class TaskLabelCreate(BaseModel):
@@ -291,3 +313,7 @@ class DashboardOut(BaseModel):
     overdue_count: int
     due_this_week: list[DueSoonItem]
     total_tasks: int
+
+
+TaskCreate = TaskCreate
+TaskUpdate = TaskUpdate

@@ -7,7 +7,7 @@ Permission Architecture v2 — Dual-Realm:
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
 from enum import Enum as PyEnum
 from typing import Optional
 
@@ -15,6 +15,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -71,6 +73,20 @@ class MembershipRole(str, PyEnum):
     PRODUCT_OWNER = "product_owner"
     SCRUM_MASTER = "scrum_master"
     DEVELOPER = "developer"
+
+
+class TaskPriority(str, PyEnum):
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+class HabitOccurrenceStatus(str, PyEnum):
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
+    SHIFTED = "shifted"
 
 
 WORKSPACE_ROLE_HIERARCHY: dict[WorkspaceRole, int] = {
@@ -820,6 +836,14 @@ class Employee(Base):
         back_populates="assigned_employee",
         foreign_keys="Province.assigned_employee_id",
     )
+    personal_task_projects: Mapped[list["TaskProject"]] = relationship(
+        back_populates="owner_employee",
+        foreign_keys="TaskProject.owner_employee_id",
+    )
+    personal_habits: Mapped[list["PersonalHabit"]] = relationship(
+        back_populates="owner_employee",
+        foreign_keys="PersonalHabit.owner_employee_id",
+    )
 
     __table_args__ = (
         Index("ix_employees_mcp_token", "mcp_token"),
@@ -1348,7 +1372,7 @@ class CmdAdvisorySession(Base):
 
 
 class TaskProject(Base):
-    """A native task project scoped to exactly one parent: workspace XOR department."""
+    """A native task project scoped to exactly one parent: workspace, department, or employee."""
 
     __tablename__ = "task_projects"
 
@@ -1358,13 +1382,18 @@ class TaskProject(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     identifier: Mapped[str] = mapped_column(String(10), nullable=False)  # e.g. "PROJ"
-    # XOR parent: exactly one of workspace_id / department_id must be set
+    # XOR parent: exactly one of workspace_id / department_id / owner_employee_id must be set
     workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
     department_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    owner_employee_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="RESTRICT"),
         nullable=True,
     )
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -1387,6 +1416,10 @@ class TaskProject(Base):
     department: Mapped[Optional["Department"]] = relationship(
         foreign_keys=[department_id]
     )
+    owner_employee: Mapped[Optional["Employee"]] = relationship(
+        back_populates="personal_task_projects",
+        foreign_keys=[owner_employee_id],
+    )
     created_by: Mapped[Optional["Employee"]] = relationship(
         foreign_keys=[created_by_id]
     )
@@ -1402,11 +1435,14 @@ class TaskProject(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "(workspace_id IS NOT NULL)::int + (department_id IS NOT NULL)::int = 1",
+            "(workspace_id IS NOT NULL)::int + "
+            "(department_id IS NOT NULL)::int + "
+            "(owner_employee_id IS NOT NULL)::int = 1",
             name="ck_task_project_scope_xor",
         ),
         Index("ix_task_projects_workspace_id", "workspace_id"),
         Index("ix_task_projects_department_id", "department_id"),
+        Index("ix_task_projects_owner_employee_id", "owner_employee_id"),
     )
 
 
@@ -1490,6 +1526,15 @@ class Task(Base):
         Integer, nullable=False, default=1, comment="Optimistic concurrency version"
     )
     due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    scheduled_start_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scheduled_end_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    schedule_locked: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -1535,6 +1580,7 @@ class Task(Base):
         Index("ix_tasks_parent_task_id", "parent_task_id"),
         Index("ix_tasks_reporter_id", "reporter_id"),
         Index("ix_tasks_due_date", "due_date"),
+        Index("ix_tasks_scheduled_start_at", "scheduled_start_at"),
         Index("ix_tasks_deleted_at", "deleted_at"),
         Index("ix_tasks_priority", "priority"),
     )
@@ -1713,6 +1759,104 @@ class TaskActivity(Base):
     __table_args__ = (
         Index("ix_task_activities_task_id", "task_id"),
         Index("ix_task_activities_created_at", "created_at"),
+    )
+
+
+class PersonalHabit(Base):
+    """A recurring personal habit template owned by one employee."""
+
+    __tablename__ = "personal_habits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    owner_employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    priority: Mapped[TaskPriority] = mapped_column(
+        SQLAlchemyEnum(
+            TaskPriority,
+            name="task_priority_enum",
+            create_type=False,
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+        ),
+        nullable=False,
+        default=TaskPriority.NONE,
+        server_default=TaskPriority.NONE.value,
+    )
+    preferred_time: Mapped[time] = mapped_column(Time, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    active_days: Mapped[list[int]] = mapped_column(JSONB, nullable=False, default=list)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    owner_employee: Mapped["Employee"] = relationship(
+        back_populates="personal_habits",
+        foreign_keys=[owner_employee_id],
+    )
+    occurrences: Mapped[list["HabitOccurrenceState"]] = relationship(
+        back_populates="habit", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "duration_minutes >= 1",
+            name="ck_personal_habits_duration_minutes_positive",
+        ),
+        Index("ix_personal_habits_owner_employee_id", "owner_employee_id"),
+        Index("ix_personal_habits_is_active", "is_active"),
+    )
+
+
+class HabitOccurrenceState(Base):
+    """Per-date completion/skip/shift state for a personal habit."""
+
+    __tablename__ = "habit_occurrence_states"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    habit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("personal_habits.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    occurrence_date: Mapped[date] = mapped_column(Date, nullable=False)
+    state: Mapped[HabitOccurrenceStatus] = mapped_column(
+        SQLAlchemyEnum(
+            HabitOccurrenceStatus,
+            name="habit_occurrence_status_enum",
+            create_type=False,
+            values_callable=lambda enum_cls: [m.value for m in enum_cls],
+        ),
+        nullable=False,
+    )
+    actual_start: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
+    shift_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    habit: Mapped["PersonalHabit"] = relationship(back_populates="occurrences")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "habit_id",
+            "occurrence_date",
+            name="uq_habit_occurrence_state_habit_date",
+        ),
+        Index("ix_habit_occurrence_states_habit_id", "habit_id"),
+        Index("ix_habit_occurrence_states_occurrence_date", "occurrence_date"),
     )
 
 

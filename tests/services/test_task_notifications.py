@@ -11,9 +11,7 @@ from app.database.models import Employee, Notification, Task, TaskAssignee
 from app.schemas.tasks import TaskCreate, TaskProjectCreate
 from app.services.task_notification_service import (
     notify_assigned,
-    notify_commented,
     notify_mentioned,
-    notify_state_changed,
     scan_due_soon,
 )
 from app.services.task_project_service import create_task_project

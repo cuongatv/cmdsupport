@@ -1,0 +1,3 @@
+# T22 screenshot evidence dir.
+# Populated on first run of `npm run test:e2e -- me-workspace.spec.ts`.
+# See docs/evidence/me-workspace-T22.md for the scenario → filename map.

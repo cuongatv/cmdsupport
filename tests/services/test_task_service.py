@@ -9,7 +9,12 @@ from app.database.models import Employee, Task, TaskActivity
 from app.schemas.tasks import TaskCreate, TaskProjectCreate, TaskUpdate
 from app.services.task_constants import POSITION_GAP
 from app.services.task_project_service import create_task_project
-from app.services.task_service import create_task, list_tasks, soft_delete_task, update_task
+from app.services.task_service import (
+    create_task,
+    list_tasks,
+    soft_delete_task,
+    update_task,
+)
 
 pytestmark = pytest.mark.asyncio
 

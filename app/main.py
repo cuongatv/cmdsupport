@@ -121,6 +121,7 @@ from app.routers import (  # noqa: E402
     auth,
     cmd_support,
     departments,
+    habits,
     knowledge_types,
     notes,
     notifications,
@@ -152,6 +153,7 @@ app.include_router(skills.router, prefix="/api", tags=["skills"])
 app.include_router(cmd_support.router, prefix="/api", tags=["cmd-support"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(habits.router, prefix="/api", tags=["habits"])
 
 
 @app.get("/")

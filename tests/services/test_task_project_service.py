@@ -8,7 +8,11 @@ from sqlalchemy import text
 
 from app.database.models import Employee, TaskProject, TaskState
 from app.schemas.tasks import TaskLabelCreate, TaskProjectCreate
-from app.services.task_constants import DEFAULT_STATE_GROUPS, DEFAULT_STATE_NAMES, POSITION_GAP
+from app.services.task_constants import (
+    DEFAULT_STATE_GROUPS,
+    DEFAULT_STATE_NAMES,
+    POSITION_GAP,
+)
 from app.services.task_project_service import (
     archive_task_project,
     create_label,
