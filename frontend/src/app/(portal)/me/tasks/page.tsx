@@ -1,11 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { createPersonalTask } from "@/lib/habit-api";
-import type { PaginatedResponse, Task, TaskPriority } from "@/lib/task-types";
+import { listTaskStates } from "@/lib/task-api";
+import type {
+  PaginatedResponse,
+  Task,
+  TaskPriority,
+  TaskState,
+} from "@/lib/task-types";
 import { formatTaskDate, formatTaskDateTime } from "@/lib/task-types";
+
+// Lazy-load Kanban: it has no SSR-relevant content and bundles a click-only
+// card component that's pointless to render before hydration. Mirrors how
+// /admin/tasks defers its DnD-kit-backed Kanban for the same reason.
+const MyTasksKanban = dynamic(
+  () => import("@/components/tasks/my-tasks-kanban"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center rounded-xl border border-border bg-card py-16 text-sm text-muted-foreground">
+        <span className="material-symbols-outlined mr-2 animate-spin text-base">
+          progress_activity
+        </span>
+        Đang tải bảng kanban…
+      </div>
+    ),
+  },
+);
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +63,10 @@ import {
 } from "@/lib/me-sync";
 
 const DEFAULT_PAGE_SIZE = 20;
+// Kanban shows every task on a single board (no pagination), so we request
+// the largest page the backend allows. `/api/me/tasks` caps `page_size` at
+// 200 (`Query(le=200)` in app/routers/habits.py); requesting more returns 422.
+const KANBAN_PAGE_SIZE = 200;
 const PRIORITY_VALUES = new Set<string>([
   "none",
   "low",
@@ -45,6 +74,7 @@ const PRIORITY_VALUES = new Set<string>([
   "high",
   "urgent",
 ]);
+type ViewMode = "list" | "kanban";
 const PRIORITY_CLASSES: Record<TaskPriority, string> = {
   none: "border-border text-muted-foreground bg-background",
   low: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -101,6 +131,14 @@ export default function MyTasksPage() {
     searchParams.get("page_size"),
     DEFAULT_PAGE_SIZE,
   );
+  const viewParam = searchParams.get("view");
+  const view: ViewMode = viewParam === "kanban" ? "kanban" : "list";
+  const isKanbanView = view === "kanban";
+  // Kanban skips pagination — always request page 1 with KANBAN_PAGE_SIZE so
+  // every assigned task lands on the board. List view keeps the user-chosen
+  // page + pageSize for stable URLs.
+  const effectivePage = isKanbanView ? 1 : page;
+  const effectivePageSize = isKanbanView ? KANBAN_PAGE_SIZE : pageSize;
 
   const priority = PRIORITY_VALUES.has(priorityParam) ? priorityParam : "";
 
@@ -119,6 +157,21 @@ export default function MyTasksPage() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // state_id -> TaskState union across every project_id present in `tasks`.
+  // Kanban needs this to map each task's state_id to a `state.group` so it
+  // can bucket cards into the 5 canonical columns. Refetched whenever the
+  // task list changes; project-scoped TaskStates are tiny (a handful of
+  // rows each), and most users only see tasks from 1-3 projects.
+  const [stateMap, setStateMap] = useState<Record<string, TaskState>>({});
+  // project_id -> TaskState[] sorted by position asc. Drag & drop in the
+  // Kanban needs this: when a card is dropped into a different group
+  // column, we have to pick a real `state_id` in *that task's project*
+  // matching the target group. Stored separately from `stateMap` so the
+  // Kanban can resolve "first state in project X with group=done" cheaply.
+  const [projectStatesMap, setProjectStatesMap] = useState<
+    Record<string, TaskState[]>
+  >({});
 
   // Retry counter — wired to the error band's "Thử lại" button so the user
   // can re-run the fetch without leaving the page.
@@ -235,10 +288,10 @@ export default function MyTasksPage() {
     if (priority) params.set("priority", priority);
     if (overdueParam) params.set("overdue", "true");
     if (searchParam) params.set("search", searchParam);
-    params.set("page", String(page));
-    params.set("page_size", String(pageSize));
+    params.set("page", String(effectivePage));
+    params.set("page_size", String(effectivePageSize));
     return params.toString();
-  }, [priority, overdueParam, searchParam, page, pageSize]);
+  }, [priority, overdueParam, searchParam, effectivePage, effectivePageSize]);
 
   useEffect(() => {
     let cancelled = false;
@@ -283,6 +336,73 @@ export default function MyTasksPage() {
   const handlePageChange = (next: number) => {
     updateUrl({ page: next > 1 ? String(next) : "" });
   };
+
+  const handleViewChange = (nextView: ViewMode) => {
+    // Reset page when switching to kanban (the board ignores pagination).
+    // Drop the param entirely on `list` so the URL stays clean by default.
+    updateUrl({
+      view: nextView === "kanban" ? "kanban" : "",
+      page: "",
+    });
+  };
+
+  // Union TaskState across every project_id present in the current tasks.
+  // Personal task list spans many projects (cá nhân, đơn vị, không gian
+  // làm việc) and there's no `/api/me/states` endpoint, so we fan out one
+  // `listTaskStates` call per distinct project_id and merge into a flat
+  // map keyed by state_id. Skipped when the Kanban view isn't active —
+  // list view doesn't use this map.
+  useEffect(() => {
+    if (!isKanbanView) return;
+    let cancelled = false;
+    // setTimeout(0) defers every setState past the synchronous effect body,
+    // matching the project's React 19 / `react-hooks/set-state-in-effect`
+    // pattern used elsewhere in this file.
+    const timerId = window.setTimeout(() => {
+      if (cancelled) return;
+      if (tasks.length === 0) {
+        setStateMap({});
+        setProjectStatesMap({});
+        return;
+      }
+      void (async () => {
+        const projectIds = Array.from(
+          new Set(tasks.map((t) => t.task_project_id)),
+        );
+        try {
+          const perProject = await Promise.all(
+            projectIds.map((id) =>
+              listTaskStates(id)
+                .catch(() => [] as TaskState[])
+                .then((states) => ({ id, states })),
+            ),
+          );
+          if (cancelled) return;
+          const merged: Record<string, TaskState> = {};
+          const byProject: Record<string, TaskState[]> = {};
+          for (const { id, states } of perProject) {
+            // Sort by position asc so "first state with group=X" is stable.
+            byProject[id] = [...states].sort(
+              (a, b) => a.position - b.position,
+            );
+            for (const state of states) {
+              merged[state.id] = state;
+            }
+          }
+          setStateMap(merged);
+          setProjectStatesMap(byProject);
+        } catch {
+          if (cancelled) return;
+          setStateMap({});
+          setProjectStatesMap({});
+        }
+      })();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [isKanbanView, tasks]);
 
   const hasFilters = priority !== "" || overdueParam || searchParam !== "";
   const startIndex = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -413,16 +533,114 @@ export default function MyTasksPage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground tabular-nums">
-            {total > 0
-              ? `Hiển thị ${startIndex}–${endIndex} trên ${total} công việc`
-              : loading
-                ? "Đang tải…"
-                : "0 công việc"}
+            {isKanbanView
+              ? total > 0
+                ? `${total} công việc trên bảng`
+                : loading
+                  ? "Đang tải…"
+                  : "0 công việc"
+              : total > 0
+                ? `Hiển thị ${startIndex}–${endIndex} trên ${total} công việc`
+                : loading
+                  ? "Đang tải…"
+                  : "0 công việc"}
           </span>
+
+          <div
+            className="inline-flex rounded-lg border border-border bg-card p-0.5 shadow-sm"
+            role="group"
+            aria-label="Chế độ hiển thị"
+            data-testid="me-task-view-toggle"
+          >
+            <button
+              type="button"
+              onClick={() => handleViewChange("list")}
+              data-testid="me-task-view-list-btn"
+              aria-pressed={view === "list"}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+                view === "list"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">
+                view_list
+              </span>
+              Danh sách
+            </button>
+            <button
+              type="button"
+              onClick={() => handleViewChange("kanban")}
+              data-testid="me-task-view-kanban-btn"
+              aria-pressed={view === "kanban"}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+                view === "kanban"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[14px]">
+                view_kanban
+              </span>
+              Kanban
+            </button>
+          </div>
         </div>
 
+        {isKanbanView ? (
+          <div data-testid="me-tasks-kanban-wrapper">
+            {loading ? (
+              <div className="flex items-center justify-center rounded-xl border border-border bg-card py-16 text-sm text-muted-foreground">
+                <span className="material-symbols-outlined mr-2 animate-spin text-base">
+                  progress_activity
+                </span>
+                Đang tải công việc…
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
+                <EmptyState
+                  icon={hasFilters ? "filter_list_off" : "checklist"}
+                  title={
+                    hasFilters
+                      ? "Không có công việc phù hợp bộ lọc"
+                      : "Bạn chưa có công việc nào"
+                  }
+                  description={
+                    hasFilters
+                      ? "Hãy thử bỏ một số bộ lọc để xem thêm kết quả."
+                      : "Khi quản trị viên hoặc đồng nghiệp giao việc cho bạn, công việc sẽ xuất hiện tại đây."
+                  }
+                  action={
+                    hasFilters ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setSearchDraft("");
+                          updateFilter({ priority: "", overdue: "", search: "" });
+                        }}
+                        className="min-h-[40px] sm:min-h-8"
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          close
+                        </span>
+                        Xoá bộ lọc
+                      </Button>
+                    ) : null
+                  }
+                />
+              </div>
+            ) : (
+              <MyTasksKanban
+                tasks={tasks}
+                stateMap={stateMap}
+                projectStatesMap={projectStatesMap}
+                onTaskMoved={reload}
+              />
+            )}
+          </div>
+        ) : (
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sahara">
           {loading ? (
             <TaskTableSkeleton />
@@ -515,8 +733,9 @@ export default function MyTasksPage() {
             </Table>
           )}
         </div>
+        )}
 
-        {totalPages > 1 && (
+        {!isKanbanView && totalPages > 1 && (
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
               Trang {page} / {totalPages}

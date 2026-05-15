@@ -1,13 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import {
   getCalendarWeek,
   updatePersonalTask,
   upsertOccurrence,
 } from "@/lib/habit-api";
+import {
+  getTask,
+  getTaskProject,
+  listEligibleAssignees,
+  listTaskLabels,
+  listTaskStates,
+  listTasks,
+} from "@/lib/task-api";
 import type {
   CalendarEvent,
   CalendarHabitEvent,
@@ -16,8 +23,17 @@ import type {
   HabitOccurrenceStatus,
   UnitDashboardAggregate,
 } from "@/lib/habit-types";
+import type {
+  EligibleAssignee,
+  Task,
+  TaskLabel,
+  TaskProject,
+  TaskState,
+} from "@/lib/task-types";
+import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { TaskDetailPanel } from "@/components/tasks/task-detail-panel";
 import { WeeklyCalendar, formatWeekRange } from "@/components/calendar/weekly-calendar";
 import {
   bumpAfterHabitMutation,
@@ -74,7 +90,6 @@ function scopeKey(scope: Scope): string {
 }
 
 export default function MeCalendarPage() {
-  const router = useRouter();
   // Cross-surface sync: re-fetch on calendar bumps + tab refocus. The
   // popover's occurrence upsert calls `bumpAfterHabitMutation()` below,
   // which bumps calendar (this page picks it up) + habits + dashboard.
@@ -112,6 +127,30 @@ export default function MeCalendarPage() {
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState("");
+
+  // Task detail panel — opens when the user clicks a task card on the
+  // calendar. Mirrors the /admin/tasks list flow so the click feels
+  // identical: same modal, same edit/comment/attachment surface. Detail
+  // context (project, states, labels, eligible assignees, parent
+  // candidates) is lazy-loaded per task because /me/calendar can show
+  // tasks from many projects (cá nhân + đơn vị + workspace).
+  const { hasPermission } = useAuth();
+  const canEdit =
+    hasPermission("task:edit:own_dept") || hasPermission("task:edit:all");
+  const canDelete =
+    hasPermission("task:delete:own_dept") || hasPermission("task:delete:all");
+
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [detailError, setDetailError] = useState("");
+  const [detailProject, setDetailProject] = useState<TaskProject | null>(null);
+  const [detailStates, setDetailStates] = useState<TaskState[]>([]);
+  const [detailLabels, setDetailLabels] = useState<TaskLabel[]>([]);
+  const [detailAssignees, setDetailAssignees] = useState<EligibleAssignee[]>(
+    [],
+  );
+  const [detailParentCandidates, setDetailParentCandidates] = useState<Task[]>(
+    [],
+  );
 
   // ESC closes the habit popover. Project-wide convention.
   useEffect(() => {
@@ -211,12 +250,92 @@ export default function MeCalendarPage() {
   }, []);
 
   // ---------- event handlers ----------
-  const handleTaskClick = useCallback(
-    (event: CalendarTaskEvent) => {
-      router.push(`/admin/tasks/${event.task_id}`);
-    },
-    [router],
-  );
+  // Fetch the full Task (calendar event only carries task_id + scheduling
+  // metadata) and open the same TaskDetailPanel the /admin/tasks list
+  // uses. Detail-context (project, states, labels, assignees, parent
+  // candidates) is loaded by the effect below — same lazy-load pattern
+  // /me/tasks page uses.
+  const handleTaskClick = useCallback((event: CalendarTaskEvent) => {
+    setDetailError("");
+    void (async () => {
+      try {
+        const task = await getTask(event.task_id);
+        setSelectedTask(task);
+      } catch (err) {
+        setDetailError(getErrorMessage(err, "Không tải được công việc"));
+      }
+    })();
+  }, []);
+
+  // Load the detail-panel context whenever a task is selected. Mirrors the
+  // /me/tasks `loadDetailContext` flow exactly: each task can belong to a
+  // different project, so we fetch per-task rather than relying on a
+  // page-level cache.
+  const loadDetailContext = useCallback(async (task: Task | null) => {
+    if (task === null) {
+      setDetailProject(null);
+      setDetailStates([]);
+      setDetailLabels([]);
+      setDetailAssignees([]);
+      setDetailParentCandidates([]);
+      return;
+    }
+    const projectId = task.task_project_id;
+    try {
+      const project = await getTaskProject(projectId);
+      const [statesData, assigneesData, labelsData, parentRes] =
+        await Promise.all([
+          listTaskStates(projectId).catch(() => [] as TaskState[]),
+          listEligibleAssignees(projectId).catch(
+            () => [] as EligibleAssignee[],
+          ),
+          listTaskLabels(projectId).catch(() => [] as TaskLabel[]),
+          listTasks({
+            task_project_id: projectId,
+            page: 1,
+            page_size: 100,
+          }).catch(() => ({
+            items: [] as Task[],
+            total: 0,
+            page: 1,
+            page_size: 100,
+            total_pages: 0,
+          })),
+        ]);
+      setDetailProject(project);
+      setDetailStates(statesData);
+      setDetailAssignees(assigneesData);
+      setDetailLabels(labelsData);
+      setDetailParentCandidates(
+        parentRes.items.filter((t) => t.parent_task_id === null),
+      );
+    } catch {
+      setDetailProject(null);
+      setDetailStates([]);
+      setDetailLabels([]);
+      setDetailAssignees([]);
+      setDetailParentCandidates([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timerId = window.setTimeout(() => {
+      if (cancelled) return;
+      void loadDetailContext(selectedTask);
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
+  }, [selectedTask, loadDetailContext]);
+
+  const handleDetailPanelOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setSelectedTask(null);
+      setDetailError("");
+    }
+  }, []);
 
   const handleHabitClick = useCallback((event: CalendarHabitEvent) => {
     const occurrenceDate = new Date(event.start).toISOString().slice(0, 10);
@@ -484,6 +603,44 @@ export default function MeCalendarPage() {
           ) : null
         }
       />
+
+      {detailError && (
+        <div
+          className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center gap-2"
+          role="alert"
+        >
+          <span className="material-symbols-outlined text-base">error</span>
+          {detailError}
+        </div>
+      )}
+
+      {/* Task detail modal — same component the unit task list uses, so the
+          click experience matches across surfaces. The panel handles its
+          own edit/comment/attachment UI; we just feed it task + project
+          context and refresh the calendar grid when something mutates. */}
+      {selectedTask && detailProject && (
+        <TaskDetailPanel
+          key={selectedTask.id}
+          open={selectedTask !== null}
+          onOpenChange={handleDetailPanelOpenChange}
+          task={selectedTask}
+          project={detailProject}
+          states={detailStates}
+          labels={detailLabels}
+          eligibleAssignees={detailAssignees}
+          parentCandidates={detailParentCandidates}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onChanged={() => {
+            // A task edit can shift due_date / state / assignee — any of
+            // which may move the task on the calendar grid. Refetch the
+            // week + reload the detail context so the panel itself
+            // reflects the new values too.
+            reload();
+            void loadDetailContext(selectedTask);
+          }}
+        />
+      )}
     </>
   );
 }
