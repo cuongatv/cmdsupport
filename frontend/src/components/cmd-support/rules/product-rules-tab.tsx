@@ -261,14 +261,14 @@ export function ProductRulesTab() {
           key: r.id,
           cells: [
             r.wiki_page_title || r.product_name_custom || "—",
-            <span className="line-clamp-3 text-xs text-muted-foreground">
+            <span key="basic" className="line-clamp-3 text-xs text-muted-foreground">
               {r.basic_info || "—"}
             </span>,
-            <span className="line-clamp-3 text-xs">{r.customer_persona || "—"}</span>,
-            <span className="text-xs text-muted-foreground">
+            <span key="persona" className="line-clamp-3 text-xs">{r.customer_persona || "—"}</span>,
+            <span key="upd" className="text-xs text-muted-foreground">
               {r.updated_by?.name ?? "—"}
             </span>,
-            <div className="flex gap-1 justify-end">
+            <div key="act" className="flex gap-1 justify-end">
               <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>
                 <span className="material-symbols-outlined text-base">edit</span>
               </Button>

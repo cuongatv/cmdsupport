@@ -219,11 +219,11 @@ export function SegmentRulesTab() {
         rows={rules.map((r) => ({
           key: r.id,
           cells: [
-            <span className="font-medium">{SEGMENT_SHORT_LABEL[r.segment] ?? r.segment}</span>,
-            <span className="line-clamp-3 text-xs text-muted-foreground">{r.basic_info || "—"}</span>,
-            <span className="line-clamp-3 text-xs">{r.segment_specifics || "—"}</span>,
-            <span className="text-xs text-muted-foreground">{r.updated_by?.name ?? "—"}</span>,
-            <div className="flex gap-1 justify-end">
+            <span key="seg" className="font-medium">{SEGMENT_SHORT_LABEL[r.segment] ?? r.segment}</span>,
+            <span key="basic" className="line-clamp-3 text-xs text-muted-foreground">{r.basic_info || "—"}</span>,
+            <span key="spec" className="line-clamp-3 text-xs">{r.segment_specifics || "—"}</span>,
+            <span key="upd" className="text-xs text-muted-foreground">{r.updated_by?.name ?? "—"}</span>,
+            <div key="act" className="flex gap-1 justify-end">
               <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>
                 <span className="material-symbols-outlined text-base">edit</span>
               </Button>
