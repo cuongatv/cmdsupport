@@ -50,7 +50,7 @@ export type TaskDialogProps = {
   task: Task | null;
   // `project` is required for edit and for project-context create flows
   // (Kanban, project dashboard). When the user is creating from the scope
-  // filter only (Không gian làm việc / Phòng ban), pass `scope` instead and
+  // filter only (Không gian làm việc / Đơn vị), pass `scope` instead and
   // leave `project` null — the backend resolves the hidden default project.
   project: TaskProject | null;
   scope?: TaskScope | null;
@@ -82,10 +82,28 @@ function dueDateToInputValue(value: string | null | undefined): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function inputValueToDueDate(value: string): string | null {
-  if (!value) return null;
-  // End of day UTC keeps the visible date stable across timezones.
-  return `${value}T23:59:59.000Z`;
+/** Extract HH:mm from an ISO due_date in the browser's local time, or "" if
+ *  the time portion is midnight local (treated as "no time picked"). */
+function dueDateToTimeInputValue(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  if (hours === 0 && minutes === 0) return "";
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function combineDueDateAndTime(
+  dateValue: string,
+  timeValue: string,
+): string | null {
+  if (!dateValue) return null;
+  // No time → midnight LOCAL (browser's tz). Backend treats midnight Hanoi as
+  // "no specific hour" and renders the calendar block at 09:00 Hanoi.
+  // toISOString() converts the local wall-clock to UTC for storage.
+  const time = timeValue || "00:00";
+  return new Date(`${dateValue}T${time}`).toISOString();
 }
 
 export function TaskDialog({
@@ -103,7 +121,7 @@ export function TaskDialog({
   onSaved,
 }: TaskDialogProps) {
   const isEdit = task !== null;
-  // Scope-only create: user picked a Không gian làm việc / Phòng ban but no
+  // Scope-only create: user picked a Không gian làm việc / Đơn vị but no
   // project. We hide state/label/assignee/parent pickers because those are
   // project-scoped and we don't have a project yet — the backend will resolve
   // the hidden default project and apply its default state.
@@ -130,6 +148,9 @@ export function TaskDialog({
   );
   const [dueDateInput, setDueDateInput] = React.useState(() =>
     dueDateToInputValue(task?.due_date)
+  );
+  const [dueTimeInput, setDueTimeInput] = React.useState(() =>
+    dueDateToTimeInputValue(task?.due_date)
   );
   const [assigneeIds, setAssigneeIds] = React.useState<string[]>([]);
   const [labelIds, setLabelIds] = React.useState<string[]>([]);
@@ -176,7 +197,7 @@ export function TaskDialog({
           state_id: stateId,
           // reporter_id intentionally omitted — left untouched server-side.
           parent_task_id: parentTaskId || null,
-          due_date: inputValueToDueDate(dueDateInput),
+          due_date: combineDueDateAndTime(dueDateInput, dueTimeInput),
         };
         saved = await updateTask(task.id, updateBody);
       } else if (isScopeCreate && scope) {
@@ -187,7 +208,7 @@ export function TaskDialog({
           title: trimmedTitle,
           description: description.trim() || null,
           priority,
-          due_date: inputValueToDueDate(dueDateInput),
+          due_date: combineDueDateAndTime(dueDateInput, dueTimeInput),
         };
         saved = await createTaskInScope(scope, createBody);
       } else if (project) {
@@ -197,7 +218,7 @@ export function TaskDialog({
           priority,
           state_id: stateId,
           parent_task_id: parentTaskId || null,
-          due_date: inputValueToDueDate(dueDateInput),
+          due_date: combineDueDateAndTime(dueDateInput, dueTimeInput),
           assignee_ids: assigneeIds,
           label_ids: labelIds,
         };
@@ -358,17 +379,36 @@ export function TaskDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="task-dialog-due-date">Ngày hết hạn</Label>
-            <Input
-              id="task-dialog-due-date"
-              name="target_date"
-              data-testid="task-dialog-due-date-input"
-              type="date"
-              value={dueDateInput}
-              onChange={(e) => setDueDateInput(e.target.value)}
-              className="bg-background"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="task-dialog-due-date">Ngày hết hạn</Label>
+              <Input
+                id="task-dialog-due-date"
+                name="target_date"
+                data-testid="task-dialog-due-date-input"
+                type="date"
+                value={dueDateInput}
+                onChange={(e) => {
+                  setDueDateInput(e.target.value);
+                  if (!e.target.value) setDueTimeInput("");
+                }}
+                className="bg-background"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="task-dialog-due-time">Giờ hết hạn (tuỳ chọn)</Label>
+              <Input
+                id="task-dialog-due-time"
+                name="target_time"
+                data-testid="task-dialog-due-time-input"
+                type="time"
+                value={dueTimeInput}
+                onChange={(e) => setDueTimeInput(e.target.value)}
+                disabled={!dueDateInput}
+                placeholder="09:00"
+                className="bg-background"
+              />
+            </div>
           </div>
 
           {!isScopeCreate && (

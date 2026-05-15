@@ -6,6 +6,7 @@
  * timeouts, JSON serialization, and FastAPI-style error decoding.
  */
 import { api } from "@/lib/api";
+import type { Task, TaskPriority } from "@/lib/task-types";
 import type {
   CalendarWeekResponse,
   DashboardOverviewResponse,
@@ -15,6 +16,39 @@ import type {
   HabitUpdate,
   OccurrenceUpsertBody,
 } from "./habit-types";
+
+// ---------------------------------------------------------------------------
+// Personal task creation (POST /api/me/tasks)
+// ---------------------------------------------------------------------------
+
+export type PersonalTaskCreate = {
+  title: string;
+  description?: string | null;
+  priority?: TaskPriority;
+  due_date?: string | null; // ISO 8601 with offset (server stores UTC)
+};
+
+export function createPersonalTask(body: PersonalTaskCreate): Promise<Task> {
+  return api<Task>("/api/me/tasks", { method: "POST", body });
+}
+
+export type PersonalTaskUpdate = Partial<{
+  title: string;
+  description: string | null;
+  priority: TaskPriority;
+  due_date: string | null;
+}>;
+
+/**
+ * Patch an owner-scoped task (`/api/me/tasks/{id}`). Used by the calendar
+ * drag-drop to push a new `due_date`. Backend rejects non-owner edits with 404.
+ */
+export function updatePersonalTask(
+  id: string,
+  body: PersonalTaskUpdate,
+): Promise<Task> {
+  return api<Task>(`/api/me/tasks/${id}`, { method: "PATCH", body });
+}
 
 // ---------------------------------------------------------------------------
 // Habit CRUD

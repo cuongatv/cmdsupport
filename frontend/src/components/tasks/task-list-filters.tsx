@@ -67,7 +67,7 @@ type TaskListFiltersProps = {
   values: TaskListFilterValues;
   scopedFiltersDisabled: boolean;
   // Legacy: the radio "Phạm vi" group was removed in favor of the explicit
-  // Phòng ban + Không gian làm việc dropdowns. Props kept optional to avoid
+  // Đơn vị + Không gian làm việc dropdowns. Props kept optional to avoid
   // breaking any external caller still wiring them.
   showScopeFilter?: boolean;
   onProjectChange: (projectId: string) => void;
@@ -160,7 +160,7 @@ export function TaskListFilters({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Scope pickers (Phòng ban + Không gian làm việc) sit on their own row
+      {/* Scope pickers (Đơn vị + Không gian làm việc) sit on their own row
           at the top of the filter bar. Picking either one is enough to enable
           task creation in that scope — no need to also pick a project. */}
       <div
@@ -172,7 +172,7 @@ export function TaskListFilters({
             htmlFor="task-filter-department"
             className={FILTER_LABEL_CLASS}
           >
-            Phòng ban
+            Đơn vị
           </Label>
           <Select
             value={toSelectValue(values.department_id)}
@@ -196,17 +196,17 @@ export function TaskListFilters({
                 </span>
               ) : (
                 <span className="text-muted-foreground">
-                  Tất cả phòng ban
+                  Tất cả đơn vị
                 </span>
               )}
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={TASK_FILTER_ALL_VALUE}>
-                Tất cả phòng ban
+                Tất cả đơn vị
               </SelectItem>
               {departments.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  Chưa có phòng ban nào
+                  Chưa có đơn vị nào
                 </div>
               ) : (
                 departments.map((d) => (

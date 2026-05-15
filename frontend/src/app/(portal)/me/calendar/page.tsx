@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import { getCalendarWeek, upsertOccurrence } from "@/lib/habit-api";
+import {
+  getCalendarWeek,
+  updatePersonalTask,
+  upsertOccurrence,
+} from "@/lib/habit-api";
 import type {
   CalendarEvent,
   CalendarHabitEvent,
@@ -17,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { WeeklyCalendar, formatWeekRange } from "@/components/calendar/weekly-calendar";
 import {
   bumpAfterHabitMutation,
+  bumpDashboardVersion,
+  bumpUnitsVersion,
   useCalendarVersion,
   useFocusBump,
 } from "@/lib/me-sync";
@@ -93,6 +99,19 @@ export default function MeCalendarPage() {
   const [activeHabit, setActiveHabit] = useState<CalendarHabitEvent | null>(null);
   const [popoverPending, setPopoverPending] = useState<HabitOccurrenceStatus | "undo" | null>(null);
   const [popoverError, setPopoverError] = useState("");
+
+  // Drag-drop state — owned here so the calendar stays presentational.
+  // `pendingMove` carries the optimistic position; `savingTaskId` flags the
+  // in-flight PATCH so the card can be dimmed; `moveError` surfaces failures
+  // in the existing red error band (same row as the load error).
+  const [pendingMove, setPendingMove] = useState<{
+    taskId: string;
+    newStart: Date;
+    newEnd: Date;
+  } | null>(null);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState("");
 
   // ESC closes the habit popover. Project-wide convention.
   useEffect(() => {
@@ -207,6 +226,92 @@ export default function MeCalendarPage() {
     setPopoverError("");
   }, []);
 
+  // ---------- drag-drop write action ----------
+  const handleTaskMove = useCallback(
+    async (taskId: string, newStart: Date) => {
+      const orig = (data?.events ?? []).find(
+        (ev): ev is CalendarTaskEvent =>
+          ev.event_type === "task" && ev.task_id === taskId,
+      );
+      if (!orig) return;
+
+      // Preserve the task's original duration on move. Backend stores
+      // `due_date` as the END marker (block ends at due_date — see
+      // app/routers/habits.py), so we PATCH the new end.
+      const origStart = new Date(orig.scheduled_start_at);
+      const origEnd = new Date(orig.scheduled_end_at);
+      const duration = Math.max(
+        origEnd.getTime() - origStart.getTime(),
+        15 * 60 * 1000, // never collapse below 15 min
+      );
+      const newEnd = new Date(newStart.getTime() + duration);
+
+      // No-op: dropped on the same slot the task already occupies.
+      if (origStart.getTime() === newStart.getTime()) return;
+
+      setPendingMove({ taskId, newStart, newEnd });
+      setSavingTaskId(taskId);
+      setMoveError("");
+
+      try {
+        await updatePersonalTask(taskId, { due_date: newEnd.toISOString() });
+        // Cross-surface bump so dashboard buckets + unit aggregates refresh
+        // on next visit, then refetch this week to pick up the new times.
+        bumpDashboardVersion();
+        bumpUnitsVersion();
+        reload();
+      } catch (err) {
+        setMoveError(getErrorMessage(err, "Không cập nhật được công việc"));
+      } finally {
+        setPendingMove(null);
+        setSavingTaskId(null);
+      }
+    },
+    [data, reload],
+  );
+
+  // Drag a habit on the calendar → per-occurrence override for THAT day only.
+  // The habit's template (preferred_time, active_days) at /me/habits stays
+  // untouched; every other day still renders at the original time. Backend
+  // stores the override as `actual_start` on `habit_occurrence_states` keyed
+  // by (habit_id, occurrence_date) — see Rule 0 in app/routers/habits.py
+  // _build_habit_events.
+  //
+  // To change the recurring template the user must edit the habit at /me/habits.
+  const handleHabitMove = useCallback(
+    async (habitId: string, newTimeHHmm: string, occurrenceDate: string) => {
+      const orig = (data?.events ?? []).find(
+        (ev): ev is CalendarHabitEvent =>
+          ev.event_type === "habit" && ev.habit_id === habitId,
+      );
+      if (!orig) return;
+      const origDate = new Date(orig.start);
+      const origHHmm = `${String(origDate.getHours()).padStart(2, "0")}:${String(origDate.getMinutes()).padStart(2, "0")}`;
+      if (origHHmm === newTimeHHmm) return;
+
+      setSavingHabitId(habitId);
+      setMoveError("");
+      try {
+        // Upsert per-day override. State "shifted" matches the semantics:
+        // user moved this occurrence away from the template's preferred_time.
+        // Existing state (completed/skipped) is overwritten — drag-after-complete
+        // is rare; if it surfaces as a UX issue we'll thread the previous state
+        // through here.
+        await upsertOccurrence(habitId, occurrenceDate, {
+          state: "shifted",
+          actual_start: `${newTimeHHmm}:00`,
+        });
+        bumpAfterHabitMutation();
+        reload();
+      } catch (err) {
+        setMoveError(getErrorMessage(err, "Không đổi giờ thói quen"));
+      } finally {
+        setSavingHabitId(null);
+      }
+    },
+    [data, reload],
+  );
+
   // ---------- popover write actions ----------
   const handleOccurrenceWrite = useCallback(
     async (state: HabitOccurrenceStatus, label: HabitOccurrenceStatus | "undo") => {
@@ -319,8 +424,10 @@ export default function MeCalendarPage() {
         </div>
       </div>
 
-      {/* Error band with retry */}
-      {error && (
+      {/* Error band with retry — surfaces both the week-fetch error and any
+          drag-drop PATCH failure. The retry button only re-fetches the week,
+          which is also the right escape hatch after a failed move. */}
+      {(error || moveError) && (
         <div
           className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
           role="alert"
@@ -329,12 +436,15 @@ export default function MeCalendarPage() {
             <span className="material-symbols-outlined text-base mt-0.5 shrink-0">
               error_outline
             </span>
-            <span>{error}</span>
+            <span>{error || moveError}</span>
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={reload}
+            onClick={() => {
+              setMoveError("");
+              reload();
+            }}
             className="min-h-[40px] sm:min-h-7 self-start sm:self-auto px-2 border-destructive/30 text-destructive hover:bg-destructive/10"
           >
             <span className="material-symbols-outlined text-sm">refresh</span>
@@ -350,6 +460,11 @@ export default function MeCalendarPage() {
         loading={loading}
         onTaskClick={handleTaskClick}
         onHabitClick={handleHabitClick}
+        onTaskMove={handleTaskMove}
+        onHabitMove={handleHabitMove}
+        pendingMove={pendingMove}
+        savingTaskId={savingTaskId}
+        savingHabitId={savingHabitId}
         activeHabitKey={activeHabitKey}
         popoverContent={
           activeHabit ? (

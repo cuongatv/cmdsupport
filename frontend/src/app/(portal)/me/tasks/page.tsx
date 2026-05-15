@@ -1,17 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { createPersonalTask } from "@/lib/habit-api";
 import type { PaginatedResponse, Task, TaskPriority } from "@/lib/task-types";
 import { formatTaskDate, formatTaskDateTime } from "@/lib/task-types";
 import { PageHeader } from "@/components/shared/page-header";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/shared/empty-state";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -22,8 +29,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TASK_PRIORITY_LABELS } from "@/components/tasks/task-list-filters";
-import { useDashboardVersion, useFocusBump } from "@/lib/me-sync";
-import { cn } from "@/lib/utils";
+import { TaskScopeSwitcher } from "@/components/tasks/task-scope-switcher";
+import {
+  bumpDashboardVersion,
+  bumpUnitsVersion,
+  useDashboardVersion,
+  useFocusBump,
+} from "@/lib/me-sync";
 
 const DEFAULT_PAGE_SIZE = 20;
 const PRIORITY_VALUES = new Set<string>([
@@ -73,7 +85,6 @@ export default function MyTasksPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { hasPermission } = useAuth();
 
   // The personal task list shares the dataset that drives /me's dashboard
   // buckets — subscribing to dashboardVersion refetches whenever a habit
@@ -81,14 +92,6 @@ export default function MyTasksPage() {
   // covers the tab-refocus stale check.
   const dashboardVersion = useDashboardVersion();
   useFocusBump();
-
-  // Personal task creation today requires the full create dialog from the
-  // admin task module (scope picker + project resolution). Anyone who can
-  // create a task somewhere will see the link; everyone else just gets the
-  // read-only list.
-  const canCreate =
-    hasPermission("task:create:own_dept") ||
-    hasPermission("task:create:all");
 
   const priorityParam = searchParams.get("priority") ?? "";
   const overdueParam = searchParams.get("overdue") === "true";
@@ -121,6 +124,84 @@ export default function MyTasksPage() {
   // can re-run the fetch without leaving the page.
   const [reloadTick, setReloadTick] = useState(0);
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
+
+  // Create-task dialog state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
+  const [createPriority, setCreatePriority] = useState<TaskPriority>("none");
+  // Two separate inputs so the user can pick a date and optionally a time.
+  // If the time is left blank the backend renders the task at 09:00 Hanoi
+  // on the calendar (see app/routers/habits.py "Default-time rule").
+  const [createDueDate, setCreateDueDate] = useState(""); // YYYY-MM-DD
+  const [createDueTime, setCreateDueTime] = useState(""); // HH:mm (optional)
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const resetCreateForm = useCallback(() => {
+    setCreateTitle("");
+    setCreateDescription("");
+    setCreatePriority("none");
+    setCreateDueDate("");
+    setCreateDueTime("");
+    setCreateError("");
+  }, []);
+
+  const handleCreateOpenChange = useCallback(
+    (open: boolean) => {
+      setCreateOpen(open);
+      if (!open) resetCreateForm();
+    },
+    [resetCreateForm],
+  );
+
+  const handleCreateSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      const title = createTitle.trim();
+      if (!title) {
+        setCreateError("Tiêu đề không được để trống");
+        return;
+      }
+      setCreateSubmitting(true);
+      setCreateError("");
+      try {
+        // Compose date + optional time into an ISO timestamp. When the time
+        // input is empty we send midnight Hanoi (start of day); the backend's
+        // "Default-time rule" then renders that on the calendar at 09:00.
+        // Browser interprets the bare "YYYY-MM-DDTHH:mm" string as local
+        // wall-clock and toISOString() converts to UTC for storage.
+        let dueIso: string | null = null;
+        if (createDueDate) {
+          const timePart = createDueTime || "00:00";
+          dueIso = new Date(`${createDueDate}T${timePart}`).toISOString();
+        }
+        await createPersonalTask({
+          title,
+          description: createDescription.trim() || null,
+          priority: createPriority,
+          due_date: dueIso,
+        });
+        bumpDashboardVersion();
+        bumpUnitsVersion();
+        handleCreateOpenChange(false);
+        reload();
+      } catch (err) {
+        setCreateError(getErrorMessage(err, "Không tạo được công việc"));
+      } finally {
+        setCreateSubmitting(false);
+      }
+    },
+    [
+      createTitle,
+      createDescription,
+      createPriority,
+      createDueDate,
+      createDueTime,
+      handleCreateOpenChange,
+      reload,
+    ],
+  );
 
   const updateUrl = useCallback(
     (updates: Record<string, string>) => {
@@ -213,20 +294,18 @@ export default function MyTasksPage() {
         title="Công việc của tôi"
         description="Mọi công việc bạn được phân công trên toàn bộ đơn vị và không gian nghiệp vụ."
         action={
-          canCreate ? (
-            <Link
-              href="/admin/tasks"
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "min-h-[40px] px-3 sm:min-h-8 sm:px-2.5 bg-primary text-primary-foreground hover:bg-primary/90",
-              )}
-            >
-              <span className="material-symbols-outlined text-sm">add</span>
-              Tạo công việc
-            </Link>
-          ) : null
+          <Button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="min-h-[40px] px-3 sm:min-h-8 sm:px-2.5 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <span className="material-symbols-outlined text-sm">add</span>
+            Tạo công việc
+          </Button>
         }
       />
+
+      <TaskScopeSwitcher current="personal" />
 
       {error && (
         <div
@@ -474,6 +553,143 @@ export default function MyTasksPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={createOpen} onOpenChange={handleCreateOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tạo công việc cá nhân</DialogTitle>
+            <DialogDescription>
+              Công việc sẽ được tạo trong Không gian làm việc cá nhân của bạn,
+              không chia sẻ với đơn vị hay nhóm.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateSubmit} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="me-create-title"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Tiêu đề
+              </label>
+              <Input
+                id="me-create-title"
+                value={createTitle}
+                onChange={(e) => setCreateTitle(e.target.value)}
+                placeholder="Ví dụ: Soạn báo cáo tuần"
+                maxLength={500}
+                required
+                autoFocus
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="me-create-priority"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Ưu tiên
+              </label>
+              <select
+                id="me-create-priority"
+                value={createPriority}
+                onChange={(e) =>
+                  setCreatePriority(e.target.value as TaskPriority)
+                }
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="none">Không</option>
+                <option value="low">Thấp</option>
+                <option value="medium">Trung bình</option>
+                <option value="high">Cao</option>
+                <option value="urgent">Khẩn</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="me-create-due-date"
+                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  Ngày đến hạn
+                </label>
+                <Input
+                  id="me-create-due-date"
+                  type="date"
+                  value={createDueDate}
+                  onChange={(e) => {
+                    setCreateDueDate(e.target.value);
+                    if (!e.target.value) setCreateDueTime("");
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="me-create-due-time"
+                  className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  Giờ đến hạn (tuỳ chọn)
+                </label>
+                <Input
+                  id="me-create-due-time"
+                  type="time"
+                  value={createDueTime}
+                  onChange={(e) => setCreateDueTime(e.target.value)}
+                  disabled={!createDueDate}
+                  placeholder="09:00"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="me-create-description"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Mô tả (tuỳ chọn)
+              </label>
+              <textarea
+                id="me-create-description"
+                value={createDescription}
+                onChange={(e) => setCreateDescription(e.target.value)}
+                rows={4}
+                placeholder="Ghi chú thêm cho công việc này..."
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+
+            {createError && (
+              <p className="text-xs text-destructive" role="alert">
+                {createError}
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleCreateOpenChange(false)}
+                disabled={createSubmitting}
+              >
+                Huỷ
+              </Button>
+              <Button type="submit" disabled={createSubmitting}>
+                {createSubmitting ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm animate-spin">
+                      progress_activity
+                    </span>
+                    Đang tạo...
+                  </>
+                ) : (
+                  "Tạo công việc"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

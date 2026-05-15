@@ -61,14 +61,6 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    id: "task-management",
-    label: "Vận hành",
-    requiredPermissions: ["task:read:own_dept", "task:read:all"],
-    items: [
-      { label: "Quản lý công việc", href: "/admin/tasks", icon: "task_alt", requiredPermissions: ["task:read:own_dept", "task:read:all"] },
-    ],
-  },
-  {
     id: "organization",
     label: "Tổ chức",
     requiredPermissions: ["org:departments:read", "org:employees:read", "org:roles:read"],
@@ -411,31 +403,41 @@ export function Sidebar() {
 
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-1 sidebar-scrollbar">
-        {/* My workspace — personal */}
+        {/* Unified "Không gian làm việc" group — gathers personal dashboard,
+            task board (formerly under "Vận hành"), week calendar, habits and
+            unit list under one parent so the user has a single mental model
+            for "where my work lives". Each item self-gates on permissions; the
+            board entry stays hidden for users without task:read:* scope. */}
         {user && (
-          <>
-            <SidebarNavItem
-              item={{ label: "Không gian làm việc", href: "/me", icon: "person" }}
-              pathname={pathname}
-            />
-            <SidebarNavItem
-              item={{ label: "Lịch tuần", href: "/me/calendar", icon: "calendar_month" }}
-              pathname={pathname}
-            />
-            <SidebarNavItem
-              item={{ label: "Thói quen", href: "/me/habits", icon: "repeat" }}
-              pathname={pathname}
-            />
-          </>
+          <SidebarStaticSection
+            section={{
+              id: "my-workspace",
+              label: "Không gian làm việc",
+              items: [
+                { label: "Dashboard", href: "/me", icon: "dashboard" },
+                {
+                  label: "Quản lý công việc",
+                  href: "/admin/tasks",
+                  icon: "task_alt",
+                  requiredPermissions: ["task:read:own_dept", "task:read:all"],
+                },
+                { label: "Lịch tuần", href: "/me/calendar", icon: "calendar_month" },
+                { label: "Thói quen", href: "/me/habits", icon: "repeat" },
+                { label: "Đơn vị của tôi", href: "/me/units", icon: "domain" },
+              ],
+            }}
+            hasPermission={hasPermission}
+            pathname={pathname}
+          />
         )}
 
-        {/* Dashboard */}
+        {/* Cổng quản trị */}
         <SidebarNavItem
-          item={{ label: "Dashboard", href: "/admin", icon: "dashboard" }}
+          item={{ label: "Cổng quản trị", href: "/admin", icon: "admin_panel_settings" }}
           pathname={pathname}
         />
 
-        {/* Workspaces — collapsible, inline list */}
+        {/* Workspaces — collapsible, inline list (Squad/Team) */}
         <SidebarWorkspacesSection pathname={pathname} canCreate={hasPermission("workspace:view:all")} />
 
         {/* Static sections — no collapse */}

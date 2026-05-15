@@ -37,6 +37,7 @@ import {
 import { TaskListTable } from "@/components/tasks/task-list-table";
 import { TaskDialog } from "@/components/tasks/task-dialog";
 import { TaskDetailPanel } from "@/components/tasks/task-detail-panel";
+import { TaskScopeSwitcher } from "@/components/tasks/task-scope-switcher";
 
 // Wrap Kanban with `next/dynamic({ ssr: false })` per Next.js 16 guidance — DnD-kit
 // reads pointer events on mount and would otherwise mismatch SSR markup.
@@ -195,7 +196,7 @@ export default function TaskListPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   // Per-project context for the detail panel. When viewing tasks by scope
-  // (Phòng ban / Không gian làm việc), tasks can span multiple TaskProjects,
+  // (Đơn vị / Không gian làm việc), tasks can span multiple TaskProjects,
   // so we lazy-load each task's project + states/labels/eligible assignees on
   // demand instead of relying on the single-project effect.
   const [detailProject, setDetailProject] = useState<TaskProject | null>(null);
@@ -214,7 +215,7 @@ export default function TaskListPage() {
   const [kanbanStates, setKanbanStates] = useState<TaskState[]>([]);
   // Scope-aware filter options: assignees + labels unioned across every
   // project_id that appears in `tasks`. Drives the "Người phụ trách" and
-  // "Nhãn" dropdowns when the user is filtering by scope (Phòng ban / Không
+  // "Nhãn" dropdowns when the user is filtering by scope (Đơn vị / Không
   // gian làm việc) instead of a single project.
   const [filterAssignees, setFilterAssignees] = useState<EligibleAssignee[]>(
     []
@@ -315,7 +316,7 @@ export default function TaskListPage() {
   }, [loadProjects]);
 
   // Load workspace and department options so the filter bar can offer
-  // concrete scope pickers (Không gian làm việc / Phòng ban) — these drive
+  // concrete scope pickers (Không gian làm việc / Đơn vị) — these drive
   // scope-based task creation when the user does not pick a specific project.
   const loadScopes = useCallback(async () => {
     if (!canRead) {
@@ -604,7 +605,7 @@ export default function TaskListPage() {
       return;
     }
     // List view supports two addressing modes: explicit project (legacy /
-    // deep-link), or scope (Phòng ban / Không gian làm việc). Both come from
+    // deep-link), or scope (Đơn vị / Không gian làm việc). Both come from
     // URL filters so reload/back-button keeps the same view.
     const hasProject = filterValues.task_project_id !== "";
     const hasScope =
@@ -822,7 +823,7 @@ export default function TaskListPage() {
       "Không gian làm việc"
     : filterValues.department_id
       ? departments.find((d) => d.id === filterValues.department_id)?.name ??
-        "Phòng ban"
+        "Đơn vị"
       : undefined;
   const canCreateTask = currentProject !== null || createScope !== null;
 
@@ -912,7 +913,7 @@ export default function TaskListPage() {
   }
 
   // List view drives off scope now, not project. "No selection" means user
-  // hasn't picked Phòng ban or Không gian làm việc yet AND there's no legacy
+  // hasn't picked Đơn vị or Không gian làm việc yet AND there's no legacy
   // project filter pinned via deep-link.
   const noSelection =
     !hasProjectSelected &&
@@ -949,7 +950,7 @@ export default function TaskListPage() {
     <>
       <PageHeader
         title="Quản lý công việc"
-        description="Tra cứu và tạo công việc theo phòng ban hoặc không gian làm việc. Lọc thêm theo trạng thái, người nhận và mức ưu tiên khi cần."
+        description="Tra cứu và tạo công việc theo đơn vị hoặc không gian làm việc. Lọc thêm theo trạng thái, người nhận và mức ưu tiên khi cần."
         action={
           canCreate ? (
             <Button
@@ -962,7 +963,7 @@ export default function TaskListPage() {
               title={
                 canCreateTask
                   ? undefined
-                  : "Chọn một phòng ban hoặc không gian làm việc để tạo công việc"
+                  : "Chọn một đơn vị hoặc không gian làm việc để tạo công việc"
               }
             >
               <span className="material-symbols-outlined text-sm">add</span>
@@ -971,6 +972,8 @@ export default function TaskListPage() {
           ) : null
         }
       />
+
+      <TaskScopeSwitcher current="team" />
 
       <div className="flex flex-col gap-5">
         {projectError && (
@@ -1016,7 +1019,7 @@ export default function TaskListPage() {
           values={filterValues}
           // Filter dropdowns now have a populated option set regardless of
           // whether the user picked a single project — they're driven by the
-          // scope (Phòng ban / Không gian làm việc) state cache.
+          // scope (Đơn vị / Không gian làm việc) state cache.
           scopedFiltersDisabled={false}
           onProjectChange={handleProjectChange}
           onWorkspaceChange={handleWorkspaceChange}
@@ -1080,7 +1083,7 @@ export default function TaskListPage() {
             <EmptyState
               icon="folder_open"
               title="Chọn phạm vi để xem công việc"
-              description="Chọn một phòng ban hoặc không gian làm việc ở bộ lọc phía trên để hiển thị danh sách công việc tương ứng."
+              description="Chọn một đơn vị hoặc không gian làm việc ở bộ lọc phía trên để hiển thị danh sách công việc tương ứng."
             />
           </div>
         ) : isKanbanView ? (
@@ -1162,7 +1165,7 @@ export default function TaskListPage() {
 
       {/* Scope-create flow: we resolved the hidden default project before
           opening the dialog, so it behaves identically to the project flow
-          — same pickers, same eligibility rules (Phòng ban members for a
+          — same pickers, same eligibility rules (Đơn vị members for a
           department, ProjectMember roster for a workspace) — but the saved
           handler also pins the list filter to the resolved project so the
           new task is visible immediately. */}
