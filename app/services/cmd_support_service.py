@@ -3,6 +3,7 @@ CMD Support Service — advisory session creation, retrieval, and listing.
 """
 
 import copy
+import hashlib
 import json
 import re
 import time
@@ -33,6 +34,7 @@ from app.services.cmd_advisory_fingerprint import (
     compute_advisory_fingerprint,
     compute_source_snapshot_hash,
 )
+from app.services.consulting_rule_service import gather_applicable_rules_text
 
 # Sentinel UUID for anonymous audit log entries (principal_id is NOT NULL)
 _ANONYMOUS_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
@@ -356,6 +358,14 @@ async def create_advice(
     retrieved_page_identity = [
         (page.id, page.version, page.updated_at) for page, _ in results
     ]
+    # Quy tắc tư vấn — admin-curated rules cho segment / province / sản phẩm.
+    # Gom từ DB và bơm vào prompt như khối "QUY TẮC TƯ VẤN ÁP DỤNG".
+    consulting_rules_block = await gather_applicable_rules_text(
+        db,
+        segment=segment,
+        province_code=province_code,
+        wiki_page_ids=retrieved_page_ids,
+    )
     input_fingerprint = compute_advisory_fingerprint(
         customer_segment=segment,
         province_code=province_code,
@@ -367,7 +377,18 @@ async def create_advice(
         model_provider=llm_config.provider.value,
         model_id=llm_config.model_id,
     )
-    source_snapshot_hash = compute_source_snapshot_hash(retrieved_page_identity)
+    base_snapshot = compute_source_snapshot_hash(retrieved_page_identity)
+    if consulting_rules_block:
+        # Bao gồm hash của rules vào source snapshot để khi admin sửa rule,
+        # cache cũ tự động được nhận diện là "refreshed" và chạy lại LLM.
+        rules_digest = hashlib.sha256(
+            consulting_rules_block.encode("utf-8")
+        ).hexdigest()
+        source_snapshot_hash = hashlib.sha256(
+            f"{base_snapshot}|rules:{rules_digest}".encode("utf-8")
+        ).hexdigest()
+    else:
+        source_snapshot_hash = base_snapshot
     reuse_status = "new"
     refresh_reason = None
 
@@ -478,6 +499,7 @@ async def create_advice(
         additional_context=additional_context,
         context_blocks=context_blocks,
         advice_language=language,
+        consulting_rules_block=consulting_rules_block or None,
     )
 
     # Call LLM

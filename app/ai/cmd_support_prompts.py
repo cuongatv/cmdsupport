@@ -128,11 +128,16 @@ def build_user_prompt(
     context_blocks: list[dict[str, object]],
     segment_label: str | None = None,
     advice_language: str = "vi",
+    consulting_rules_block: str | None = None,
 ) -> str:
 
     """Build the user prompt with customer profile and wiki CONTEXT blocks.
 
     Each context_block: {"index": int, "slug": str, "title": str, "summary": str, "excerpt": str}
+
+    `consulting_rules_block` (optional) là khối "QUY TẮC TƯ VẤN ÁP DỤNG" do
+    consulting_rule_service tổng hợp từ rules theo sản phẩm/phân khúc/địa bàn —
+    đóng vai trò ngữ cảnh bổ sung, KHÔNG phải nguồn để cite.
     """
     language_label = "English" if advice_language == "en" else "Tiếng Việt"
 
@@ -148,6 +153,10 @@ def build_user_prompt(
     lines.append(f"Nhu cầu: {needs}")
     if additional_context:
         lines.append(f"Bối cảnh bổ sung: {additional_context}")
+
+    if consulting_rules_block:
+        lines.append("")
+        lines.append(consulting_rules_block)
 
     lines.append("")
     lines.append("=== CONTEXT (Tri thức nội bộ BIDV) ===")

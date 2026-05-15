@@ -1367,6 +1367,172 @@ class CmdAdvisorySession(Base):
 
 
 # ---------------------------------------------------------------------------
+# Consulting Rules — Quy tắc tư vấn theo 3 chiều: Sản phẩm / Phân khúc / Địa bàn
+# ---------------------------------------------------------------------------
+
+
+class ConsultingRuleProduct(Base):
+    """Quy tắc tư vấn theo chiều sản phẩm/chính sách.
+
+    `wiki_page_id` trỏ đến một WikiPage (lý tưởng có knowledge_type=Product) khi
+    rule gắn vào tri thức đã được AI compile. `product_name_custom` dùng khi RM
+    nhập "+ Thêm mới" cho sản phẩm chưa có trong wiki.
+
+    1-1: mỗi wiki_page_id (hoặc mỗi product_name_custom) chỉ có một rule. Điều
+    này được enforced bằng partial unique index trong migration.
+    """
+
+    __tablename__ = "consulting_rules_product"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    wiki_page_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wiki_pages.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    product_name_custom: Mapped[Optional[str]] = mapped_column(
+        String(300), nullable=True
+    )
+    basic_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    customer_persona: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    wiki_page: Mapped[Optional["WikiPage"]] = relationship(
+        foreign_keys=[wiki_page_id]
+    )
+    created_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[created_by_id]
+    )
+    updated_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[updated_by_id]
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(wiki_page_id IS NOT NULL)::int + (product_name_custom IS NOT NULL)::int = 1",
+            name="ck_consulting_rule_product_xor",
+        ),
+        Index(
+            "ux_consulting_rule_product_wiki",
+            "wiki_page_id",
+            unique=True,
+            postgresql_where=text("wiki_page_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_consulting_rule_product_custom",
+            "product_name_custom",
+            unique=True,
+            postgresql_where=text("product_name_custom IS NOT NULL"),
+        ),
+    )
+
+
+class ConsultingRuleSegment(Base):
+    """Quy tắc tư vấn theo chiều phân khúc khách hàng.
+
+    `segment` là một trong các giá trị hardcoded: sme | midcom | public_admin
+    (trùng với CUSTOMER_SEGMENTS ở app/routers/cmd_support.py).
+    1-1: mỗi segment chỉ có một rule.
+    """
+
+    __tablename__ = "consulting_rules_segment"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    segment: Mapped[str] = mapped_column(
+        String(30), nullable=False, unique=True
+    )
+    basic_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    segment_specifics: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    created_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[created_by_id]
+    )
+    updated_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[updated_by_id]
+    )
+
+
+class ConsultingRuleProvince(Base):
+    """Quy tắc tư vấn theo chiều địa bàn (tỉnh/thành phố).
+
+    1-1: mỗi province_id chỉ có một rule.
+    """
+
+    __tablename__ = "consulting_rules_province"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    province_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("provinces.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    basic_info: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    province_specifics: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    province: Mapped["Province"] = relationship(foreign_keys=[province_id])
+    created_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[created_by_id]
+    )
+    updated_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[updated_by_id]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Native Task Management
 # ---------------------------------------------------------------------------
 

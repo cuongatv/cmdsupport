@@ -45,6 +45,8 @@ ALL_PERMISSIONS: list[str] = [
     "cmd:advice:create",
     "cmd:advice:read:own",
     "cmd:advice:read:all",
+    "cmd:rules:read",
+    "cmd:rules:write",
 
     # Organization
     "org:departments:read", "org:departments:manage",
@@ -105,6 +107,8 @@ PERMISSION_GROUPS: dict[str, list[str]] = {
         "cmd:advice:create",
         "cmd:advice:read:own",
         "cmd:advice:read:all",
+        "cmd:rules:read",
+        "cmd:rules:write",
     ],
     "Organization": [
         "org:departments:read", "org:departments:manage",
@@ -164,6 +168,8 @@ PERMISSION_LABELS: dict[str, str] = {
     "cmd:advice:create":      "Tạo phiên tư vấn KHDN",
     "cmd:advice:read:own":    "Xem phiên tư vấn của mình",
     "cmd:advice:read:all":    "Xem tất cả phiên tư vấn",
+    "cmd:rules:read":         "Xem quy tắc tư vấn (sản phẩm/phân khúc/địa bàn)",
+    "cmd:rules:write":        "Tạo/sửa/xoá quy tắc tư vấn",
 
     # Organization
     "org:departments:read":   "View departments",
@@ -227,6 +233,8 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
     "cmd:advice:create":         "Tạo phiên tư vấn sản phẩm dịch vụ cho khách hàng doanh nghiệp, sử dụng AI phân tích từ wiki nội bộ.",
     "cmd:advice:read:own":       "Xem lại các phiên tư vấn KHDN mà bạn đã tạo.",
     "cmd:advice:read:all":       "Xem tất cả phiên tư vấn KHDN trong hệ thống, bao gồm của nhân viên khác.",
+    "cmd:rules:read":            "Xem các quy tắc tư vấn theo chiều sản phẩm, phân khúc khách hàng và địa bàn.",
+    "cmd:rules:write":           "Tạo, sửa, xoá quy tắc tư vấn. Quy tắc được tự động bổ sung vào prompt khi RM tạo phiên tư vấn.",
 
     # Organization
     "org:departments:read":      "View the list of departments and their details. Required for most admin views.",

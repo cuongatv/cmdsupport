@@ -52,12 +52,14 @@ const navSections: NavSection[] = [
   },
   {
     id: "cmd-support",
-    label: "CMD Support",
+    label: "TƯ VẤN KHÁCH HÀNG",
     items: [
       { label: "Tư vấn KHDN", href: "/admin/cmd-support", icon: "smart_toy",
         requiredPermissions: ["cmd:advice:create", "cmd:advice:read:own", "cmd:advice:read:all"] },
       { label: "Lịch sử tư vấn", href: "/admin/cmd-support/history", icon: "history",
         requiredPermissions: ["cmd:advice:read:own", "cmd:advice:read:all"] },
+      { label: "Quy tắc tư vấn", href: "/admin/cmd-support/rules", icon: "rule",
+        requiredPermissions: ["cmd:rules:read", "cmd:rules:write"] },
     ],
   },
   {
