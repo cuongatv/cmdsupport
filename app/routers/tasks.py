@@ -33,6 +33,7 @@ from app.schemas.tasks import (
     TaskCommentOut,
     TaskCommentUpdate,
     TaskCreate,
+    TaskForwardRequest,
     TaskLabelCreate,
     TaskLabelOut,
     TaskMoveRequest,
@@ -121,6 +122,9 @@ from app.services.task_project_service import (
 )
 from app.services.task_service import (
     create_task as create_task_record,
+)
+from app.services.task_service import (
+    forward_task as forward_task_record,
 )
 from app.services.task_service import (
     get_task as get_task_record,
@@ -696,6 +700,29 @@ async def remove_assignee_endpoint(
     await log_audit(db, user, "unassign", "task", str(task_id))
     await db.flush()
     await db.commit()
+
+
+@router.post("/{task_id}/forward", response_model=TaskOut)
+async def forward_task_endpoint(
+    task_id: uuid.UUID,
+    body: TaskForwardRequest,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:edit"),
+) -> Task:
+    """Forward (chuyển tiếp) a task to another assignee.
+
+    ``target_department_id`` may be ``null`` for same-unit forward; the server
+    infers the source department from the task's project (or the current
+    assignee's primary department for workspace-scoped tasks). Reason is
+    required (min 10 chars). Returns 409 on version conflict.
+    """
+    await _get_accessible_task(db, task_id, user)
+    result = await _call_service(forward_task_record(db, task_id, body, user))
+    task, removed_ids, added_ids, _source_dept, _target_dept = result
+    await _enqueue_assignment_notifications(task.id, added_ids)
+    await db.commit()
+    await db.refresh(task)
+    return task
 
 
 @router.post("/{task_id}/comments", response_model=TaskCommentOut, status_code=status.HTTP_201_CREATED)

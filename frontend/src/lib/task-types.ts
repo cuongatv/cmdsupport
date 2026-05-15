@@ -234,6 +234,34 @@ export type TaskMoveRequest = {
   version: number;
 };
 
+export type TaskForwardRequest = {
+  /** Null => same-unit forward; server infers source department. */
+  target_department_id: string | null;
+  new_assignee_id: string;
+  /** Required by backend, min 10 non-whitespace chars. */
+  reason: string;
+  keep_previous_assignees?: boolean;
+  version: number;
+};
+
+export type DepartmentSummary = {
+  id: string;
+  name: string;
+  unit_type?: string;
+  is_archived?: boolean;
+};
+
+export type DepartmentMember = {
+  id: string;
+  employee_id: string;
+  department_id: string;
+  role: string;
+  capacity_percent: number | null;
+  is_primary: boolean;
+  is_active: boolean;
+  employee_name: string | null;
+};
+
 export type TaskCommentCreate = {
   body: string;
 };

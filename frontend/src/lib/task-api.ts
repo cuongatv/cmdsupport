@@ -2,6 +2,8 @@ import { api, apiUpload } from "@/lib/api";
 import type {
   DashboardAssigneeItem,
   DashboardStateItem,
+  DepartmentMember,
+  DepartmentSummary,
   DueSoonItem,
   EligibleAssignee,
   Notification,
@@ -19,6 +21,7 @@ import type {
   TaskCreate,
   TaskDashboard,
   TaskFilters,
+  TaskForwardRequest,
   TaskLabel,
   TaskLabelCreate,
   TaskLabelUpdate,
@@ -182,6 +185,18 @@ export function updateTask(taskId: string, body: TaskUpdate): Promise<Task> {
 
 export function moveTask(taskId: string, body: TaskMoveRequest): Promise<Task> {
   return api<Task>(`/api/tasks/${taskId}/move`, { method: "POST", body });
+}
+
+export function forwardTask(taskId: string, body: TaskForwardRequest): Promise<Task> {
+  return api<Task>(`/api/tasks/${taskId}/forward`, { method: "POST", body });
+}
+
+export function listDepartments(): Promise<DepartmentSummary[]> {
+  return api<DepartmentSummary[]>("/api/departments");
+}
+
+export function listDepartmentMembers(departmentId: string): Promise<DepartmentMember[]> {
+  return api<DepartmentMember[]>(`/api/departments/${departmentId}/members`);
 }
 
 export function deleteTask(taskId: string): Promise<void> {

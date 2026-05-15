@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database.models import (
+    Department,
     Employee,
+    EmployeeDepartmentMembership,
     Task,
     TaskActivity,
     TaskAssignee,
@@ -19,7 +21,7 @@ from app.database.models import (
     TaskProject,
     TaskState,
 )
-from app.schemas.tasks import TaskCreate, TaskUpdate
+from app.schemas.tasks import TaskCreate, TaskForwardRequest, TaskUpdate
 from app.services.audit_service import log_audit
 from app.services.task_access_service import is_eligible_assignee
 from app.services.task_constants import (
@@ -227,6 +229,169 @@ async def move_task_state(
     await log_audit(db, actor, "update", "task", str(task.id))
     await db.flush()
     return task
+
+
+async def forward_task(
+    db: AsyncSession,
+    task_id: uuid.UUID,
+    data: TaskForwardRequest,
+    actor: Employee,
+) -> tuple[Task, list[uuid.UUID], list[uuid.UUID], uuid.UUID, uuid.UUID]:
+    """Forward (chuyển tiếp) a task: replace assignee(s), optionally cross-unit.
+
+    Returns ``(task, removed_assignee_ids, added_assignee_ids,
+    source_department_id, target_department_id)`` so the router can fan-out
+    notifications outside the DB transaction. Does NOT commit — caller owns the
+    transaction boundary.
+    """
+    task = await get_task(db, task_id)
+    if task is None:
+        raise ValueError("not found")
+
+    if task.completed_at is not None:
+        raise ValueError("cannot forward a completed task")
+    if task.deleted_at is not None:
+        raise ValueError("cannot forward a deleted task")
+
+    if data.version != task.version:
+        raise ValueError(
+            f"version conflict: expected {task.version}, got {data.version}"
+        )
+
+    project = task.task_project or await db.get(TaskProject, task.task_project_id)
+    if project is None:
+        raise ValueError("task project not found")
+    if project.owner_employee_id is not None:
+        raise ValueError("cannot forward a personal task")
+
+    # Snapshot current assignees BEFORE any mutation. Used for source-unit
+    # inference (workspace tasks) and for the activity log.
+    old_assignee_ids = [assignee.employee_id for assignee in task.assignees]
+
+    source_department_id = await _infer_source_department_id(
+        db, project, old_assignee_ids
+    )
+    if source_department_id is None:
+        raise ValueError(
+            "cannot infer source department for this task; assign someone first"
+        )
+
+    target_department_id = data.target_department_id or source_department_id
+
+    target_department = await db.get(Department, target_department_id)
+    if target_department is None:
+        raise ValueError("target department not found")
+    if target_department.is_archived:
+        raise ValueError("target department is archived")
+
+    new_assignee = await db.get(Employee, data.new_assignee_id)
+    if new_assignee is None:
+        raise ValueError("new assignee not found")
+    if not new_assignee.is_active:
+        raise ValueError("inactive employee cannot be assigned")
+
+    membership_exists = await db.scalar(
+        select(func.count())
+        .select_from(EmployeeDepartmentMembership)
+        .where(
+            EmployeeDepartmentMembership.employee_id == new_assignee.id,
+            EmployeeDepartmentMembership.department_id == target_department_id,
+            EmployeeDepartmentMembership.is_active.is_(True),
+        )
+    )
+    # Union with legacy employees.department_id pointer — BIDV pilot data
+    # predates the multi-unit membership backfill, so some employees only have
+    # the legacy FK. Mirror task_access_service.list_eligible_assignees.
+    legacy_member = (
+        new_assignee.department_id == target_department_id
+    )
+    if not membership_exists and not legacy_member:
+        raise ValueError(
+            "new assignee is not an active member of the target department"
+        )
+
+    # No-op guard: forwarding to the only current assignee with keep=False
+    # collapses to "nothing changes". Forwarding to an existing assignee with
+    # keep=True is also a no-op.
+    if data.keep_previous_assignees and data.new_assignee_id in old_assignee_ids:
+        raise ValueError("new assignee is already on this task")
+    if (
+        not data.keep_previous_assignees
+        and old_assignee_ids == [data.new_assignee_id]
+    ):
+        raise ValueError("new assignee is already the sole assignee")
+
+    removed_ids: list[uuid.UUID] = []
+    if not data.keep_previous_assignees:
+        for assignee in list(task.assignees):
+            await db.delete(assignee)
+            removed_ids.append(assignee.employee_id)
+
+    added_ids: list[uuid.UUID] = []
+    if data.new_assignee_id not in old_assignee_ids:
+        db.add(TaskAssignee(task_id=task.id, employee_id=data.new_assignee_id))
+        added_ids.append(data.new_assignee_id)
+
+    task.version += 1
+
+    is_cross_unit = source_department_id != target_department_id
+    db.add(
+        TaskActivity(
+            task_id=task.id,
+            actor_id=actor.id,
+            verb="forwarded",
+            field_name="assignee",
+            old_value=",".join(str(eid) for eid in old_assignee_ids) or None,
+            new_value=str(data.new_assignee_id),
+            meta={
+                "reason": data.reason.strip(),
+                "from_department_id": str(source_department_id),
+                "to_department_id": str(target_department_id),
+                "is_cross_unit": is_cross_unit,
+                "kept_previous": data.keep_previous_assignees,
+                "removed_assignee_ids": [str(eid) for eid in removed_ids],
+            },
+        )
+    )
+
+    await log_audit(db, actor, "forward", "task", str(task.id))
+    await db.flush()
+    return task, removed_ids, added_ids, source_department_id, target_department_id
+
+
+async def _infer_source_department_id(
+    db: AsyncSession,
+    project: TaskProject,
+    current_assignee_ids: list[uuid.UUID],
+) -> uuid.UUID | None:
+    """Pick the "source unit" of a task for forwarding purposes.
+
+    - Department-scoped project → the project's department.
+    - Workspace-scoped project → the first current assignee's primary
+      department (falls back to ``Employee.department_id``).
+    - Personal project is rejected upstream; return None defensively.
+    """
+    if project.department_id is not None:
+        return project.department_id
+
+    if project.workspace_id is not None and current_assignee_ids:
+        for assignee_id in current_assignee_ids:
+            employee = await db.get(Employee, assignee_id)
+            if employee is None:
+                continue
+            primary_dept_id = await db.scalar(
+                select(EmployeeDepartmentMembership.department_id).where(
+                    EmployeeDepartmentMembership.employee_id == employee.id,
+                    EmployeeDepartmentMembership.is_active.is_(True),
+                    EmployeeDepartmentMembership.is_primary.is_(True),
+                )
+            )
+            if primary_dept_id is not None:
+                return primary_dept_id
+            if employee.department_id is not None:
+                return employee.department_id
+
+    return None
 
 
 async def soft_delete_task(

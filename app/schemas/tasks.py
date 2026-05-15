@@ -170,6 +170,23 @@ class TaskMoveRequest(BaseModel):
     version: int
 
 
+class TaskForwardRequest(BaseModel):
+    """Forward (chuyển tiếp) a task to another assignee, optionally in another department."""
+
+    target_department_id: Optional[uuid.UUID] = None
+    new_assignee_id: uuid.UUID
+    reason: str = Field(..., min_length=10)
+    keep_previous_assignees: bool = False
+    version: int
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, v: str) -> str:
+        if len(v.strip()) < 10:
+            raise ValueError("reason must be at least 10 non-whitespace characters")
+        return v
+
+
 class TaskOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

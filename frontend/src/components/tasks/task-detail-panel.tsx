@@ -4,6 +4,7 @@ import React from "react";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { deleteTask, listTasks } from "@/lib/task-api";
+import { TaskForwardDialog } from "@/components/tasks/task-forward-dialog";
 import {
   formatTaskDate,
   formatTaskDateTime,
@@ -106,11 +107,15 @@ export function TaskDetailPanel({
   const currentUserId = user?.id ?? null;
 
   const [editOpen, setEditOpen] = React.useState(false);
+  const [forwardOpen, setForwardOpen] = React.useState(false);
   const [createSubtaskOpen, setCreateSubtaskOpen] = React.useState(false);
   const [subtasks, setSubtasks] = React.useState<Task[]>([]);
   const [subtasksLoading, setSubtasksLoading] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [error, setError] = React.useState("");
+
+  const canForward =
+    canEdit && task.completed_at === null && task.deleted_at === null;
 
   const isSubtask = task.parent_task_id !== null;
   const state = states.find((s) => s.id === task.state_id) ?? null;
@@ -408,6 +413,18 @@ export function TaskDetailPanel({
                 >
                   Đóng
                 </Button>
+                {canForward && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setForwardOpen(true)}
+                    data-testid="task-detail-forward-btn"
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      forward
+                    </span>
+                    Chuyển tiếp
+                  </Button>
+                )}
                 {canEdit && (
                   <Button
                     onClick={() => setEditOpen(true)}
@@ -461,6 +478,23 @@ export function TaskDetailPanel({
             onChanged();
             setCreateSubtaskOpen(false);
             void loadSubtasks();
+          }}
+        />
+      )}
+
+      {forwardOpen && (
+        <TaskForwardDialog
+          key={`forward-${task.id}-${task.version}`}
+          open={forwardOpen}
+          onOpenChange={setForwardOpen}
+          task={task}
+          sourceDepartmentId={project.department_id}
+          currentAssigneeIds={[]}
+          currentUserId={currentUserId}
+          onForwarded={() => {
+            onChanged();
+            setForwardOpen(false);
+            onOpenChange(false);
           }}
         />
       )}

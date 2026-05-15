@@ -43,6 +43,7 @@ from app.database.models import (
     Department,
     Employee,
     EmployeeDepartmentMembership,
+    MembershipRole,
     Skill,
     SkillDepartment,
     Source,
@@ -206,12 +207,26 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
     _user: Employee = require_permission("org:departments:read"),
 ):
-    """List active memberships for a department with employee names joined."""
+    """List active members for a department, unioning the membership table with
+    the legacy ``employees.department_id`` pointer.
+
+    BIDV pilot data was created before the multi-unit membership backfill, so
+    some employees only have ``employees.department_id`` set without a matching
+    row in ``employee_department_memberships``. Mirror the union logic from
+    ``task_access_service.list_eligible_assignees`` here so the forward-task
+    picker (and any other UI that lists "who's in this unit") never shows a
+    spurious empty list for legacy-only memberships.
+
+    Legacy-only employees are reported as synthesized membership rows with a
+    null UUID id and the ``member`` role; they have no real membership row,
+    so PATCH /memberships/{id} on them will 404 — that's expected, callers
+    should backfill via POST /departments/{id}/members first.
+    """
     dept = await db.get(Department, department_id)
     if dept is None:
         raise HTTPException(status_code=404, detail="Department not found")
 
-    stmt = (
+    membership_stmt = (
         select(EmployeeDepartmentMembership)
         .options(selectinload(EmployeeDepartmentMembership.employee))
         .where(
@@ -219,14 +234,41 @@ async def list_members(
             EmployeeDepartmentMembership.is_active.is_(True),
         )
     )
-    result = await db.execute(stmt)
-    memberships = result.scalars().all()
-    return [
+    membership_rows = (await db.execute(membership_stmt)).scalars().all()
+    seen_employee_ids: set[uuid.UUID] = {m.employee_id for m in membership_rows}
+
+    legacy_stmt = (
+        select(Employee)
+        .where(
+            Employee.department_id == department_id,
+            Employee.is_active.is_(True),
+        )
+        .order_by(Employee.name, Employee.email)
+    )
+    if seen_employee_ids:
+        legacy_stmt = legacy_stmt.where(Employee.id.notin_(seen_employee_ids))
+    legacy_rows = (await db.execute(legacy_stmt)).scalars().all()
+
+    response: list[MembershipResponse] = [
         _membership_to_response(
             m, employee_name=m.employee.name if m.employee else None
         )
-        for m in memberships
+        for m in membership_rows
     ]
+    for emp in legacy_rows:
+        response.append(
+            MembershipResponse(
+                id=uuid.UUID(int=0),
+                employee_id=emp.id,
+                department_id=department_id,
+                role=MembershipRole.MEMBER,
+                capacity_percent=None,
+                is_primary=False,
+                is_active=True,
+                employee_name=emp.name,
+            )
+        )
+    return response
 
 
 @router.post(

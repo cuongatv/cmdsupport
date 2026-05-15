@@ -20,6 +20,7 @@ const VERB_LABELS: Record<string, string> = {
   state_changed: "đã đổi trạng thái",
   assigned: "đã được giao việc",
   unassigned: "đã được gỡ giao việc",
+  forwarded: "đã chuyển tiếp công việc",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -41,6 +42,7 @@ const VERB_ICONS: Record<string, string> = {
   state_changed: "swap_horiz",
   assigned: "person_add",
   unassigned: "person_remove",
+  forwarded: "forward",
 };
 
 function getErrorMessage(err: unknown, fallback: string): string {
