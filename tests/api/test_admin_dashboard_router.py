@@ -24,6 +24,7 @@ from app.database.models import (
     ProjectMember,
     Role,
     Task,
+    TaskFlowSnapshot,
     TaskProject,
     TaskState,
 )
@@ -348,6 +349,51 @@ async def test_flow_summary_happy_path(
         "risk_items",
         "capacity_items",
     } <= payload.keys()
+
+
+async def test_flow_summary_populates_chart_series(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+    todo_state, doing_state, done_state = dashboard_seed.admin_states
+    snapshots = [
+        (QUERY_DAY - timedelta(days=2), todo_state.id, 4, 0),
+        (QUERY_DAY - timedelta(days=1), doing_state.id, 3, 1),
+        (QUERY_DAY, done_state.id, 2, 0),
+    ]
+    for snapshot_date, state_id, task_count, blocked_count in snapshots:
+        db_session.add(
+            TaskFlowSnapshot(
+                task_project_id=dashboard_seed.admin_project.id,
+                snapshot_date=snapshot_date,
+                state_id=state_id,
+                task_count=task_count,
+                blocked_count=blocked_count,
+            )
+        )
+    await db_session.flush()
+
+    response = await _flow_summary(
+        api_client,
+        auth_headers_factory(dashboard_seed.admin),
+        start_date=(QUERY_DAY - timedelta(days=2)).isoformat(),
+        end_date=QUERY_DAY.isoformat(),
+        project_id=str(dashboard_seed.admin_project.id),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    cfd_series = payload["chart_series"]["cfd_series"]
+    assert cfd_series
+    assert len(cfd_series) == 3
+    assert cfd_series[0]["state_counts"]["todo"] == 4
+    assert cfd_series[1]["state_counts"]["in_progress"] == 3
+    assert cfd_series[1]["blocked_count"] == 1
+    assert cfd_series[2]["state_counts"]["done"] == 2
 
 
 async def test_flow_summary_feature_flag_off_returns_disabled_payload(

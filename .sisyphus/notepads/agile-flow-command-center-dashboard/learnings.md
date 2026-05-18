@@ -172,3 +172,10 @@ Returns 0 matches on the current dashboard set. Bake this into any future PR che
 
 - [2026-05-18] Updated admin dashboard Playwright expectations so /admin now defaults to Agile; no dashboard copy mentions a default view.
 
+
+## Task F1/F4 reviewer fix - dashboard real series (2026-05-18)
+- compute_admin_dashboard_summary now populates chart_series and advisory panels server-side with RBAC-scoped SQL aggregates: CFD groups TaskFlowSnapshot by snapshot_date/state group, aging and risk share one active-task query, throughput uses date_trunc('week'), and capacity joins EmployeeDepartmentMembership to per-member open task aggregates.
+- Query-count guard stayed under budget by reusing the aging result for risk_items instead of issuing a second task-risk query; the expanded endpoint still passes test_flow_summary_single_query_no_n_plus_one with len(statements) < 10.
+- TaskFlowSnapshot model fields are task_project_id/task_count, not project_id/count. Tests should import TaskFlowSnapshot and seed task_project_id + task_count.
+- API container again lacked tests/dev tools; installed dev extras in the running container and copied tests plus the changed service into /app before verification. Targeted pytest passed 11/11; ruff check app/ alembic/ passed.
+
