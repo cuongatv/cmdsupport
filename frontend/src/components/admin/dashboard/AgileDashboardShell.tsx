@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
+import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -15,23 +16,17 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section cards that occupy the slots filled in T8–T13 by the
-// KPI strip, CFD chart, aging table, throughput chart, blocked panel, and
-// capacity heatmap. Rendered as a uniform skeleton row so the shell looks
-// intentional rather than empty mid-rollout.
+// Placeholder section cards that occupy the slots filled in T9–T13 by the
+// CFD chart, aging table, throughput chart, blocked panel, and capacity
+// heatmap. The KPI slot (T8) is now backed by <AgileKpiStrip> above the
+// grid; data wiring still lives in T14 so the strip receives `data={null}`
+// for now and self-renders a skeleton row.
 const PLACEHOLDER_SECTIONS: {
   id: string;
   title: string;
   description: string;
   testId: string;
 }[] = [
-  {
-    id: "kpi",
-    title: "KPI dòng chảy",
-    description:
-      "WIP, blocked, aging, throughput, cycle time, lead time — sẽ hiển thị ở Wave 2 (T8).",
-    testId: "agile-section-kpi-placeholder",
-  },
   {
     id: "cfd",
     title: "Cumulative Flow Diagram",
@@ -189,6 +184,8 @@ export function AgileDashboardShell() {
           arrow_forward
         </span>
       </Link>
+
+      <AgileKpiStrip data={null} loading={false} />
 
       <div
         className="grid grid-cols-1 gap-4 lg:grid-cols-2"
