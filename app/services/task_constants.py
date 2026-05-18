@@ -34,6 +34,41 @@ POSITION_MAX: float = 1_000_000.0
 # Versioning (optimistic concurrency)
 INITIAL_TASK_VERSION: int = 1
 
+# WIP / aging advisory defaults
+WIP_POLICIES: list[str] = ["off", "warn", "enforce"]
+AGING_DEFAULT_DAYS: int = 7
+
+# Phase 2 — Agile semantics
+TASK_TYPES: list[str] = ["story", "task", "bug", "epic", "spike"]
+ESTIMATE_SIZES: list[str] = ["xs", "s", "m", "l", "xl"]
+SPRINT_STATUSES: list[str] = ["planned", "active", "completed", "cancelled"]
+
+# Activity verbs for Phase 2 mutations. Kept as module-level constants so
+# callers never hard-code the literal strings into TaskActivity.verb.
+ACTIVITY_VERB_TASK_TYPE_CHANGED: str = "task_type_changed"
+ACTIVITY_VERB_ESTIMATE_CHANGED: str = "estimate_changed"
+ACTIVITY_VERB_STORY_POINTS_CHANGED: str = "story_points_changed"
+ACTIVITY_VERB_ACCEPTANCE_CRITERIA_CHANGED: str = "acceptance_criteria_changed"
+ACTIVITY_VERB_DOR_UPDATED: str = "dor_updated"
+ACTIVITY_VERB_DOD_UPDATED: str = "dod_updated"
+ACTIVITY_VERB_TASK_BLOCKED: str = "task_blocked"
+ACTIVITY_VERB_TASK_UNBLOCKED: str = "task_unblocked"
+ACTIVITY_VERB_SPRINT_ASSIGNED: str = "sprint_assigned"
+ACTIVITY_VERB_SPRINT_REMOVED: str = "sprint_removed"
+ACTIVITY_VERB_SPRINT_ID_CLEARED_ON_PROJECT_MOVE: str = "sprint_id_cleared_on_project_move"
+ACTIVITY_VERB_SPRINT_STARTED: str = "sprint_started"
+ACTIVITY_VERB_SPRINT_COMPLETED: str = "sprint_completed"
+
+# Stable ASCII-only error codes for Vietnamese UI/API payloads
+FEATURE_DISABLED_ERROR_CODE: str = "FEATURE_DISABLED"
+WIP_EXCEEDED_ERROR_CODE: str = "WIP_EXCEEDED"
+AGING_WARNING_ERROR_CODE: str = "AGING_WARNING"
+
+# Phase 4 — Knowledge integration: link type vocabulary + activity verbs.
+KNOWLEDGE_LINK_TYPES: list[str] = ["reference", "solution", "blocker", "related"]
+ACTIVITY_VERB_KNOWLEDGE_LINK_ADDED: str = "knowledge_link_added"
+ACTIVITY_VERB_KNOWLEDGE_LINK_REMOVED: str = "knowledge_link_removed"
+
 # Default states created per new TaskProject (order matters)
 DEFAULT_STATE_NAMES: list[str] = [
     "Backlog",

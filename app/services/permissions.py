@@ -57,6 +57,13 @@ ALL_PERMISSIONS: list[str] = [
 
     # Workspaces
     "workspace:view:all",
+
+    # Agile Governance (Phase 5 — advisory-only in Stage A)
+    "agile.sprint.create",
+    "agile.sprint.close",
+    "agile.wip.override",
+    "agile.dod.bypass",
+    "agile.governance.advisory.read",
 ]
 
 
@@ -119,6 +126,13 @@ PERMISSION_GROUPS: dict[str, list[str]] = {
     ],
     "Workspaces": [
         "workspace:view:all",
+    ],
+    "Agile Governance": [
+        "agile.sprint.create",
+        "agile.sprint.close",
+        "agile.wip.override",
+        "agile.dod.bypass",
+        "agile.governance.advisory.read",
     ],
 }
 
@@ -184,6 +198,13 @@ PERMISSION_LABELS: dict[str, str] = {
 
     # Workspaces
     "workspace:view:all":     "View all workspaces (admin override)",
+
+    # Agile Governance (Phase 5 — Stage A advisory)
+    "agile.sprint.create":              "Tạo Sprint mới",
+    "agile.sprint.close":               "Đóng Sprint",
+    "agile.wip.override":               "Bỏ qua giới hạn WIP của cột",
+    "agile.dod.bypass":                 "Bỏ qua tiêu chí DoD khi chuyển sang Done",
+    "agile.governance.advisory.read":   "Xem cảnh báo quản trị Agile",
 }
 
 
@@ -249,6 +270,13 @@ PERMISSION_DESCRIPTIONS: dict[str, str] = {
 
     # Workspaces
     "workspace:view:all":     "View all workspaces even without being a member. By default, only admins have this.",
+
+    # Agile Governance (Phase 5 — Stage A advisory)
+    "agile.sprint.create":              "Cho phép tạo Sprint mới trong dự án Agile. Stage A chỉ ghi cảnh báo, không chặn hành động.",
+    "agile.sprint.close":               "Cho phép đóng Sprint (chuyển trạng thái sang completed). Stage A chỉ ghi cảnh báo, không chặn hành động.",
+    "agile.wip.override":               "Cho phép vượt giới hạn WIP đã cấu hình trên cột Kanban. Stage A chỉ ghi cảnh báo khi người dùng kích hoạt cảnh báo WIP mà không có quyền này.",
+    "agile.dod.bypass":                 "Cho phép chuyển task sang trạng thái Done dù tiêu chí DoD chưa hoàn tất. Stage A chỉ ghi cảnh báo, không chặn hành động.",
+    "agile.governance.advisory.read":   "Cho phép xem nhật ký cảnh báo quản trị Agile (permission_denied_advisory) trong trang Audit.",
 }
 
 
