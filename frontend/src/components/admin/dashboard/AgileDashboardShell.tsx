@@ -8,6 +8,7 @@ import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
 import { AgileAgingWip } from "@/components/admin/dashboard/AgileAgingWip";
 import { AgileThroughput } from "@/components/admin/dashboard/AgileThroughput";
 import { AgileBlockedPanel } from "@/components/admin/dashboard/AgileBlockedPanel";
+import { AgileCapacityHeatmap } from "@/components/admin/dashboard/AgileCapacityHeatmap";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -20,29 +21,12 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section card for the capacity slot still pending in T13. The
-// KPI slot (T8) is backed by <AgileKpiStrip>, the CFD slot (T9) by
-// <AgileCfd>, the aging slot (T10) by <AgileAgingWip>, the throughput slot
-// (T11) by <AgileThroughput>, and the blocked slot (T12) by
-// <AgileBlockedPanel>; data wiring still lives in T14, so all receive
-// `data={null}` for now and self-render skeletons.
-const PLACEHOLDER_SECTIONS: {
-  id: string;
-  title: string;
-  description: string;
-  testId: string;
-}[] = [
-  {
-    id: "capacity",
-    title: "Tải trọng đội ngũ",
-    description:
-      "Heatmap capacity theo squad/phòng ban — sẽ hiển thị ở Wave 2 (T13).",
-    testId: "agile-section-capacity-placeholder",
-  },
-];
-
-// AgileDashboardShell — empty Agile view that hosts the filters and the
-// section skeleton until T8–T14 fill in the charts and data wiring.
+// AgileDashboardShell — Agile view that hosts the filters and the section
+// grid. All six section slots (T8–T13) are now backed by real components:
+// KPIs (<AgileKpiStrip>), CFD (<AgileCfd>), aging WIP (<AgileAgingWip>),
+// throughput (<AgileThroughput>), blocker/risk (<AgileBlockedPanel>), and
+// capacity (<AgileCapacityHeatmap>). Data wiring still lives in T14, so all
+// receive `data={null}` for now and self-render skeletons.
 // Filter state is intentionally local: this task only renders the controls;
 // `getAdminDashboardFlowSummary` is not called yet (deferred to T14).
 export function AgileDashboardShell() {
@@ -172,19 +156,7 @@ export function AgileDashboardShell() {
         <AgileAgingWip data={null} loading={false} />
         <AgileThroughput data={null} loading={false} />
         <AgileBlockedPanel data={null} loading={false} />
-        {PLACEHOLDER_SECTIONS.map((section) => (
-          <article
-            key={section.id}
-            data-testid={section.testId}
-            className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card/40 p-4 sm:p-5"
-          >
-            <h3 className="text-sm font-semibold text-foreground">
-              {section.title}
-            </h3>
-            <p className="text-xs text-muted-foreground">{section.description}</p>
-            <div className="mt-1 h-24 rounded-lg bg-muted/40" aria-hidden />
-          </article>
-        ))}
+        <AgileCapacityHeatmap data={null} loading={false} />
       </div>
     </div>
   );
