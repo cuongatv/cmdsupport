@@ -75,6 +75,7 @@ export type Task = {
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+  is_blocked?: boolean;
   // Phase 2 Agile semantics. Always present on TaskOut; `null`/`undefined`
   // means "not set" — keep optional in the type so legacy callers that
   // accept a `Task` (e.g. unit fixtures) do not break.
@@ -362,6 +363,9 @@ export type TaskFilters = {
   due_from?: string;
   due_to?: string;
   overdue?: boolean;
+  is_blocked?: boolean;
+  completed_from?: string;
+  completed_to?: string;
   include_deleted?: boolean;
   page?: number;
   page_size?: number;

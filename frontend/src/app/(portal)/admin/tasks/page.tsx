@@ -93,6 +93,11 @@ function parseDateParam(value: string | null): string {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
 }
 
+function parseIsoDateTimeParam(value: string | null): string {
+  if (!value) return "";
+  return Number.isFinite(Date.parse(value)) ? value : "";
+}
+
 function projectMatchesScope(
   project: TaskProject,
   scope: TaskScopeFilter
@@ -107,6 +112,76 @@ function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
   if (err instanceof Error) return err.message;
   return fallback;
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+type TaskDrilldownFilters = {
+  blocked: boolean;
+  aging: boolean;
+  completed_from: string;
+  completed_to: string;
+};
+
+function parseBooleanParam(value: string | null): boolean {
+  return value === "true";
+}
+
+function taskMatchesCompletedRange(
+  task: Task,
+  completedFrom: string,
+  completedTo: string
+): boolean {
+  if (!completedFrom && !completedTo) return true;
+  if (!task.completed_at) return false;
+  const completedAt = Date.parse(task.completed_at);
+  if (!Number.isFinite(completedAt)) return false;
+  if (completedFrom) {
+    const fromAt = Date.parse(completedFrom);
+    if (Number.isFinite(fromAt) && completedAt < fromAt) return false;
+  }
+  if (completedTo) {
+    const toAt = Date.parse(completedTo);
+    if (Number.isFinite(toAt) && completedAt > toAt + MS_PER_DAY - 1) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function taskMatchesAging(
+  task: Task,
+  stateMap: Record<string, TaskState>,
+  nowMs: number
+): boolean {
+  const warningDays = stateMap[task.state_id]?.aging_warn_days;
+  if (warningDays === null || warningDays === undefined) return false;
+  const updatedAt = Date.parse(task.updated_at);
+  if (!Number.isFinite(updatedAt)) return false;
+  const ageDays = Math.floor((nowMs - updatedAt) / MS_PER_DAY);
+  return ageDays > warningDays;
+}
+
+function filterTasksByDrilldown(
+  tasks: Task[],
+  filters: TaskDrilldownFilters,
+  stateMap: Record<string, TaskState>,
+  nowMs: number
+): Task[] {
+  return tasks.filter((task) => {
+    if (filters.blocked && task.is_blocked !== true) return false;
+    if (
+      !taskMatchesCompletedRange(
+        task,
+        filters.completed_from,
+        filters.completed_to
+      )
+    ) {
+      return false;
+    }
+    if (filters.aging && !taskMatchesAging(task, stateMap, nowMs)) return false;
+    return true;
+  });
 }
 
 export default function TaskListPage() {

@@ -19,15 +19,20 @@ import { MembersTab } from "@/components/departments/hub/members-tab";
 import { KnowledgeTab } from "@/components/departments/hub/knowledge-tab";
 import { SkillsTab } from "@/components/departments/hub/skills-tab";
 import { WorkTab } from "@/components/departments/hub/work-tab";
+import { SquadCapacityPanel } from "@/components/tasks/squad-capacity-panel";
+import { FEATURE_AGILE_PHASE_3 } from "@/lib/feature-flags";
 
-type HubTab = "members" | "knowledge" | "skills" | "work";
+type HubTab = "members" | "knowledge" | "skills" | "work" | "agile";
 
-const VALID_TABS: ReadonlyArray<HubTab> = [
+const BASE_TABS: ReadonlyArray<HubTab> = [
   "members",
   "knowledge",
   "skills",
   "work",
 ];
+const VALID_TABS: ReadonlyArray<HubTab> = FEATURE_AGILE_PHASE_3
+  ? [...BASE_TABS, "agile"]
+  : BASE_TABS;
 const DEFAULT_TAB: HubTab = "members";
 
 function parseTab(value: string | null): HubTab {
@@ -39,12 +44,18 @@ function parseTab(value: string | null): HubTab {
 
 type TabConfigItem = { key: HubTab; label: string; icon: string };
 
-const TAB_CONFIG: ReadonlyArray<TabConfigItem> = [
+const BASE_TAB_CONFIG: ReadonlyArray<TabConfigItem> = [
   { key: "members", label: "Thành viên", icon: "group" },
   { key: "knowledge", label: "Tri thức", icon: "auto_stories" },
   { key: "skills", label: "Kỹ năng", icon: "psychology" },
   { key: "work", label: "Công việc", icon: "task_alt" },
 ];
+const TAB_CONFIG: ReadonlyArray<TabConfigItem> = FEATURE_AGILE_PHASE_3
+  ? [
+      ...BASE_TAB_CONFIG,
+      { key: "agile", label: "Tổng quan Agile", icon: "monitoring" },
+    ]
+  : BASE_TAB_CONFIG;
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -325,6 +336,9 @@ export default function DepartmentHubPage() {
             unitType={department.unit_type}
             departmentName={department.name}
           />
+        )}
+        {FEATURE_AGILE_PHASE_3 && currentTab === "agile" && (
+          <SquadCapacityPanel departmentId={department.id} />
         )}
       </div>
 

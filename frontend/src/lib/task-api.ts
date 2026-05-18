@@ -167,6 +167,9 @@ export function listTasks(filters: TaskFilters): Promise<PaginatedResponse<Task>
   appendQuery(params, "due_from", filters.due_from);
   appendQuery(params, "due_to", filters.due_to);
   appendQuery(params, "overdue", filters.overdue);
+  appendQuery(params, "is_blocked", filters.is_blocked);
+  appendQuery(params, "completed_from", filters.completed_from);
+  appendQuery(params, "completed_to", filters.completed_to);
   appendQuery(params, "include_deleted", filters.include_deleted);
   appendQuery(params, "page", filters.page);
   appendQuery(params, "page_size", filters.page_size);

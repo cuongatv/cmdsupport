@@ -4,12 +4,18 @@ import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { getTaskDashboard, getTaskProject } from "@/lib/task-api";
-import type { TaskDashboard, TaskProject } from "@/lib/task-types";
+import {
+  getTaskDashboard,
+  getTaskProject,
+  listSprints,
+} from "@/lib/task-api";
+import type { Sprint, TaskDashboard, TaskProject } from "@/lib/task-types";
+import { FEATURE_AGILE_PHASE_5 } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { TaskDashboardWidgets } from "@/components/tasks/task-dashboard";
+import { FlowMetricsPanel } from "@/components/tasks/flow-metrics-panel";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -32,6 +38,7 @@ export default function TaskProjectDashboardPage({ params }: PageProps) {
 
   const [project, setProject] = useState<TaskProject | null>(null);
   const [dashboard, setDashboard] = useState<TaskDashboard | null>(null);
+  const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
 
@@ -49,9 +56,24 @@ export default function TaskProjectDashboardPage({ params }: PageProps) {
       ]);
       setProject(projectData);
       setDashboard(dashboardData);
+      // Phase 5: fetch active sprint so the FlowMetricsPanel can surface
+      // the optional sprint commitment / completion cards. Failures are
+      // non-fatal — the panel hides the sprint section when null.
+      if (FEATURE_AGILE_PHASE_5) {
+        try {
+          const sprints = await listSprints(projectId);
+          const active = sprints.find((s) => s.status === "active") ?? null;
+          setActiveSprint(active);
+        } catch {
+          setActiveSprint(null);
+        }
+      } else {
+        setActiveSprint(null);
+      }
     } catch (err) {
       setProject(null);
       setDashboard(null);
+      setActiveSprint(null);
       setPageError(
         getErrorMessage(err, "Không tải được bảng điều khiển dự án")
       );
@@ -144,7 +166,16 @@ export default function TaskProjectDashboardPage({ params }: PageProps) {
             Đang tải bảng điều khiển…
           </div>
         ) : dashboard ? (
-          <TaskDashboardWidgets dashboard={dashboard} />
+          <>
+            <TaskDashboardWidgets dashboard={dashboard} />
+            {/* Phase 5 (FEATURE_AGILE_PHASE_5) — flow metrics overview.
+                The panel renders nothing when the flag is OFF, so the
+                conditional mount is harmless in legacy deployments. */}
+            <FlowMetricsPanel
+              projectId={projectId}
+              activeSprint={activeSprint}
+            />
+          </>
         ) : !pageError ? (
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
             Không có dữ liệu để hiển thị.
