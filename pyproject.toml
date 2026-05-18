@@ -1,6 +1,6 @@
 [project]
 name = "cmd-support"
-version = "0.2.0"
+version = "0.6.0"
 description = "Hệ thống Trợ lý Tư vấn Khách hàng Doanh nghiệp — Quản lý Tri thức & Kỹ năng AI"
 authors = [
     {name = "CMD Support Team"}
