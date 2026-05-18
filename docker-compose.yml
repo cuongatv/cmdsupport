@@ -130,6 +130,11 @@ services:
         # to INTERNAL_API_URL. Override only when serving the API from a
         # separate public origin (e.g. https://api.example.com).
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_FEATURE_AGILE_PHASE_1: ${NEXT_PUBLIC_FEATURE_AGILE_PHASE_1:-}
+        NEXT_PUBLIC_FEATURE_AGILE_PHASE_2: ${NEXT_PUBLIC_FEATURE_AGILE_PHASE_2:-}
+        NEXT_PUBLIC_FEATURE_AGILE_PHASE_3: ${NEXT_PUBLIC_FEATURE_AGILE_PHASE_3:-}
+        NEXT_PUBLIC_FEATURE_AGILE_PHASE_4: ${NEXT_PUBLIC_FEATURE_AGILE_PHASE_4:-}
+        NEXT_PUBLIC_FEATURE_AGILE_PHASE_5: ${NEXT_PUBLIC_FEATURE_AGILE_PHASE_5:-}
     image: cmd-support-frontend:latest
     container_name: cmd_frontend
     restart: always

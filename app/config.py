@@ -86,6 +86,22 @@ class Settings(BaseSettings):
     )
 
     # --- Feature flags ---
+    FEATURE_AGILE_PHASE_1: bool = Field(
+        default=False,
+        description="Enable the Phase 1 Agile schema/contracts foundation",
+    )
+    FEATURE_AGILE_PHASE_2: bool = Field(
+        default=False,
+        description="Enable Phase 2 Agile semantics: sprints, DoR/DoD, story points, task types",
+    )
+    FEATURE_AGILE_PHASE_3: bool = Field(
+        default=False,
+        description="Enable Phase 3 Agile capacity dashboards (squad capacity, overload signals)",
+    )
+    FEATURE_AGILE_PHASE_4: bool = Field(
+        default=False,
+        description="Enable Phase 4 Agile knowledge integration (task ↔ wiki page links)",
+    )
     FEATURE_AGILE_PHASE_5: bool = Field(
         default=False,
         description="Enable Phase 5 Agile flow metrics and throughput analytics",

@@ -18,7 +18,12 @@ from loguru import logger
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import settings
-from app.jobs.task_jobs import task_assignment_notification, task_due_soon_scan
+from app.jobs.task_jobs import (
+    capture_flow_snapshots_job,
+    scan_aging_tasks,
+    task_assignment_notification,
+    task_due_soon_scan,
+)
 from app.utils.progress import ProgressTracker
 
 
@@ -907,11 +912,18 @@ class WorkerSettings:
         ingest_refine_task,
         revise_compilation_plan_task,
         task_assignment_notification,
+        scan_aging_tasks,
+        capture_flow_snapshots_job,
     ]
     cron_jobs = [
         # Scan for tasks due in ~1 day every 15 minutes; service is idempotent
         # per (task, recipient, UTC calendar day) so multiple runs are safe.
         cron(task_due_soon_scan, minute={0, 15, 30, 45}),
+        # Scan for aging tasks every hour; service short-circuits when the
+        # Phase 1 feature flag is off, and dedupes per task within 24h.
+        cron(scan_aging_tasks, minute=5),
+        # Capture Phase 5 flow snapshots once per day at 01:00.
+        cron(capture_flow_snapshots_job, hour=1, minute=0),
     ]
     redis_settings = _get_redis_settings()
     max_jobs = settings.worker_max_jobs

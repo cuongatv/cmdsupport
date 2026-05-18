@@ -118,11 +118,13 @@ app.mount("/mcp", mcp_http_app)
 from app.routers import (  # noqa: E402
     admin_dashboard_router,
     admin_settings,
+    agile_capacity_router,
     audit,
     auth,
     cmd_support,
     consulting_rules,
     departments,
+    flow_metrics_router,
     habits,
     knowledge_types,
     notes,
@@ -133,6 +135,7 @@ from app.routers import (  # noqa: E402
     scopes_gone,
     skills,
     sources,
+    sprint_router,
     tasks,
     wiki,
     wiki_drafts,
@@ -155,13 +158,18 @@ app.include_router(skills.router, prefix="/api", tags=["skills"])
 app.include_router(cmd_support.router, prefix="/api", tags=["cmd-support"])
 app.include_router(consulting_rules.router, prefix="/api", tags=["consulting-rules"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(sprint_router.router, prefix="/api", tags=["sprints"])
+app.include_router(
+    agile_capacity_router.router, prefix="/api", tags=["agile-capacity"]
+)
+app.include_router(flow_metrics_router.router, prefix="/api", tags=["flow-metrics"])
+app.include_router(
+    admin_dashboard_router.router, prefix="/api", tags=["admin-dashboard"]
+)
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(habits.router, prefix="/api", tags=["habits"])
 
 
-app.include_router(
-    admin_dashboard_router.router, prefix="/api", tags=["admin-dashboard"]
-)
 @app.get("/")
 async def root():
     return {
