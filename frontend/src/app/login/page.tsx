@@ -89,21 +89,21 @@ export default function LoginPage() {
         {/* Layer 2 — Drifting aurora blobs */}
         <div aria-hidden className="absolute inset-0 overflow-hidden">
           <div
-            className="login-aurora-a absolute -top-32 -left-24 h-[40rem] w-[40rem] rounded-full opacity-60 blur-3xl will-change-transform"
+            className="login-aurora-a absolute -top-32 -left-24 h-[40rem] w-[40rem] rounded-full opacity-60 max-lg:opacity-30 blur-3xl will-change-transform"
             style={{
               background:
                 "radial-gradient(circle at 30% 30%, #13AE8E, transparent 70%)",
             }}
           />
           <div
-            className="login-aurora-b absolute top-1/3 -right-32 h-[36rem] w-[36rem] rounded-full opacity-55 blur-3xl will-change-transform"
+            className="login-aurora-b absolute top-1/3 -right-32 h-[36rem] w-[36rem] rounded-full opacity-55 max-lg:opacity-30 blur-3xl will-change-transform"
             style={{
               background:
                 "radial-gradient(circle at 70% 50%, #006B68, transparent 70%)",
             }}
           />
           <div
-            className="login-aurora-c absolute -bottom-40 left-1/4 h-[34rem] w-[34rem] rounded-full opacity-45 blur-3xl will-change-transform"
+            className="login-aurora-c absolute -bottom-40 left-1/4 h-[34rem] w-[34rem] rounded-full opacity-45 blur-3xl will-change-transform max-lg:hidden"
             style={{
               background:
                 "radial-gradient(circle at 50% 50%, #7BC9C0, transparent 70%)",
@@ -111,13 +111,23 @@ export default function LoginPage() {
           />
           {/* Gold accent blob — supporting brand color #FFC62F */}
           <div
-            className="login-aurora-d absolute top-10 right-1/4 h-[28rem] w-[28rem] rounded-full opacity-30 blur-3xl will-change-transform"
+            className="login-aurora-d absolute top-10 right-1/4 h-[28rem] w-[28rem] rounded-full opacity-30 blur-3xl will-change-transform max-lg:hidden"
             style={{
               background:
                 "radial-gradient(circle at 50% 50%, #FFC62F, transparent 70%)",
             }}
           />
         </div>
+
+        {/* Layer 2.5 — Mobile-only soft vignette: floats the card in airy space */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 lg:hidden"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(253,255,255,0.92) 0%, rgba(253,255,255,0) 22%, rgba(253,255,255,0) 78%, rgba(253,255,255,0.92) 100%)",
+          }}
+        />
 
         {/* Layer 3 — SVG noise / grain for subtle texture */}
         <div
@@ -212,26 +222,26 @@ export default function LoginPage() {
           </aside>
 
           {/* Login form panel */}
-          <main className="relative flex items-center justify-center p-6 sm:p-10 lg:p-12">
-            <div className="w-full max-w-md animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-500">
+          <main className="relative flex items-center justify-center px-6 py-14 sm:p-10 lg:p-12">
+            <div className="w-full max-w-md max-lg:max-w-sm animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-500">
               {/* Mobile brand (only <lg) */}
-              <div className="mb-8 flex flex-col items-center text-center lg:hidden">
-                <div className="login-logo-glow mb-3">
+              <div className="mb-10 flex flex-col items-center text-center gap-3 lg:hidden">
+                <div className="login-logo-glow">
                   <Image
                     src="/bidv-logo.webp"
                     alt="CMD Support"
-                    width={64}
-                    height={64}
+                    width={48}
+                    height={48}
                     priority
                   />
                 </div>
-                <h1 className="text-4xl font-bold tracking-tight">
+                <h1 className="text-3xl font-semibold tracking-tight">
                   <span className="text-foreground">CMD</span>{" "}
                   <span className="bg-gradient-to-br from-[#006B68] via-[#13AE8E] to-[#FFC62F] bg-clip-text text-transparent">
                     Support
                   </span>
                 </h1>
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="text-[13px] tracking-wide text-muted-foreground/80">
                   Tối ưu quản lý công việc · Trợ lý AI · Kết nối tri thức
                 </p>
               </div>
@@ -240,9 +250,9 @@ export default function LoginPage() {
               <div className="relative">
                 <div
                   aria-hidden
-                  className="absolute -inset-px rounded-2xl bg-gradient-to-br from-[#006B68]/40 via-[#13AE8E]/25 to-[#FFC62F]/35 opacity-60 blur-md"
+                  className="absolute -inset-px rounded-2xl max-lg:rounded-3xl bg-gradient-to-br from-[#006B68]/40 via-[#13AE8E]/25 to-[#FFC62F]/35 opacity-60 max-lg:opacity-40 blur-md"
                 />
-                <div className="relative overflow-hidden rounded-2xl border border-white/60 bg-white/70 p-8 shadow-[0_20px_60px_-15px_rgba(0,107,104,0.25)] backdrop-blur-xl">
+                <div className="relative overflow-hidden rounded-2xl max-lg:rounded-3xl border border-white/60 max-lg:border-white/50 bg-white/70 p-8 shadow-[0_20px_60px_-15px_rgba(0,107,104,0.25)] max-lg:shadow-[0_8px_30px_-12px_rgba(0,107,104,0.18)] backdrop-blur-xl">
                   {/* Shimmer accent on top edge */}
                   <div
                     aria-hidden
@@ -251,16 +261,16 @@ export default function LoginPage() {
                     <div className="login-shimmer h-full w-1/3 bg-gradient-to-r from-transparent via-[#FFC62F] to-transparent" />
                   </div>
 
-                  <div className="mb-6">
-                    <h2 className="text-2xl font-bold text-foreground">
+                  <div className="mb-6 max-lg:mb-7">
+                    <h2 className="text-2xl font-bold text-foreground max-lg:text-xl max-lg:font-semibold">
                       Đăng nhập
                     </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mt-1 text-sm text-muted-foreground max-lg:mt-1.5">
                       Vui lòng nhập thông tin tài khoản của bạn
                     </p>
                   </div>
 
-                  <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                  <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-lg:gap-6">
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="email" className="text-sm font-medium">
                         Email
@@ -325,11 +335,11 @@ export default function LoginPage() {
               </div>
 
               {/* Footer disclaimer */}
-              <div className="mt-6 space-y-1 text-center animate-in fade-in duration-700 delay-300">
-                <p className="text-xs text-muted-foreground">
+              <div className="mt-6 space-y-1 max-lg:mt-10 max-lg:space-y-2 text-center animate-in fade-in duration-700 delay-300">
+                <p className="text-xs text-muted-foreground max-lg:text-[10px] max-lg:uppercase max-lg:tracking-[0.22em] max-lg:text-muted-foreground/70">
                   CMD Support — Phiên bản Pilot
                 </p>
-                <p className="text-[11px] text-muted-foreground/70 lg:hidden">
+                <p className="text-[11px] text-muted-foreground/70 lg:hidden max-lg:tracking-wide">
                   Hệ thống nội bộ · Truy cập có ghi log
                 </p>
               </div>
