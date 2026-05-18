@@ -12,6 +12,7 @@ from app.config import settings
 from app.database import get_db
 from app.database.models import Employee
 from app.schemas.tasks import AdminDashboardFlowSummaryResponse
+from app.services.admin_dashboard_service import compute_admin_dashboard_summary
 from app.services.auth_service import require_permission
 
 router = APIRouter(prefix="/admin/dashboard", tags=["admin-dashboard"])
@@ -44,11 +45,19 @@ async def get_admin_dashboard_flow_summary(
     project_id: uuid.UUID | None = None,
     sprint_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
-    _user: Employee = require_permission("task:read"),
+    user: Employee = require_permission("task:read"),
 ) -> AdminDashboardFlowSummaryResponse:
     """Return the Agile Flow Command Center dashboard aggregation contract."""
     if not settings.FEATURE_AGILE_PHASE_5:
         return _empty_flow_summary(feature_enabled=False)
 
-    _ = (start_date, end_date, department_id, workspace_id, project_id, sprint_id, db)
-    return _empty_flow_summary(feature_enabled=True)
+    return await compute_admin_dashboard_summary(
+        db,
+        user,
+        start_date,
+        end_date,
+        department_id=department_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        sprint_id=sprint_id,
+    )
