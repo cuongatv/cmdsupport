@@ -11,7 +11,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -104,12 +104,14 @@ async def dashboard_seed(db_session: AsyncSession) -> SimpleNamespace:
         *,
         workspace_name: str,
         member: Employee,
-    ) -> tuple[TaskProject, TaskState, TaskState, TaskState]:
-        workspace = Project(name=f"{workspace_name} {uuid.uuid4().hex[:8]}")
-        db_session.add(workspace)
-        await db_session.flush()
-        db_session.add(ProjectMember(project_id=workspace.id, employee_id=member.id))
-        await db_session.flush()
+        workspace: Project | None = None,
+    ) -> tuple[Project, TaskProject, TaskState, TaskState, TaskState]:
+        if workspace is None:
+            workspace = Project(name=f"{workspace_name} {uuid.uuid4().hex[:8]}")
+            db_session.add(workspace)
+            await db_session.flush()
+            db_session.add(ProjectMember(project_id=workspace.id, employee_id=member.id))
+            await db_session.flush()
 
         project = TaskProject(
             name=f"{workspace_name} Tasks",
@@ -144,7 +146,7 @@ async def dashboard_seed(db_session: AsyncSession) -> SimpleNamespace:
         )
         db_session.add_all([todo, doing, done])
         await db_session.flush()
-        return project, todo, doing, done
+        return workspace, project, todo, doing, done
 
     async def _set_task_times(
         task_id: uuid.UUID,
@@ -192,11 +194,23 @@ async def dashboard_seed(db_session: AsyncSession) -> SimpleNamespace:
         custom_role=own_dept_role,
     )
 
-    admin_project, admin_todo, admin_doing, admin_done = await _project_with_states(
+    (
+        admin_workspace,
+        admin_project,
+        admin_todo,
+        admin_doing,
+        admin_done,
+    ) = await _project_with_states(
         workspace_name="Admin Workspace",
         member=admin_user,
     )
-    scoped_project, scoped_todo, scoped_doing, scoped_done = await _project_with_states(
+    (
+        scoped_workspace,
+        scoped_project,
+        scoped_todo,
+        scoped_doing,
+        scoped_done,
+    ) = await _project_with_states(
         workspace_name="Scoped Workspace",
         member=scoped_user,
     )
@@ -252,9 +266,15 @@ async def dashboard_seed(db_session: AsyncSession) -> SimpleNamespace:
         admin=admin_user,
         scoped=scoped_user,
         no_access=no_access_user,
+        admin_workspace=admin_workspace,
+        scoped_workspace=scoped_workspace,
         admin_project=admin_project,
         scoped_project=scoped_project,
+        admin_states=(admin_todo, admin_doing, admin_done),
+        scoped_states=(scoped_todo, scoped_doing, scoped_done),
         tasks=seeded_tasks,
+        create_project_with_states=_project_with_states,
+        set_task_times=_set_task_times,
     )
 
 
@@ -410,3 +430,181 @@ async def test_flow_summary_no_access_returns_empty_but_200(
     assert payload["throughput_count"] == 0
     assert payload["cycle_time_p50"] == 0.0
     assert payload["lead_time_p50"] == 0.0
+
+
+async def test_flow_summary_single_query_no_n_plus_one(
+    api_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    for index in range(3):
+        _, project, todo_state, doing_state, done_state = (
+            await dashboard_seed.create_project_with_states(
+                workspace_name=f"Extra Admin Workspace {index}",
+                member=dashboard_seed.admin,
+                workspace=dashboard_seed.admin_workspace,
+            )
+        )
+        task = Task(
+            task_project_id=project.id,
+            state_id=done_state.id,
+            title=f"{project.name} Done",
+            priority="low",
+        )
+        active_task = Task(
+            task_project_id=project.id,
+            state_id=todo_state.id,
+            title=f"{project.name} Todo",
+            priority="medium",
+        )
+        blocked_task = Task(
+            task_project_id=project.id,
+            state_id=doing_state.id,
+            title=f"{project.name} Blocked",
+            priority="high",
+            blocked_reason="Waiting on dependency",
+        )
+        db_session.add_all([task, active_task, blocked_task])
+        await db_session.flush()
+        await dashboard_seed.set_task_times(
+            task.id,
+            created_at=QUERY_NOW - timedelta(days=3),
+            updated_at=QUERY_NOW,
+        )
+        await dashboard_seed.set_task_times(
+            active_task.id,
+            created_at=QUERY_NOW - timedelta(days=1),
+            updated_at=QUERY_NOW - timedelta(hours=1),
+        )
+        await dashboard_seed.set_task_times(
+            blocked_task.id,
+            created_at=QUERY_NOW - timedelta(days=6),
+            updated_at=QUERY_NOW - timedelta(days=4),
+        )
+
+    statements: list[str] = []
+
+    def _record_statement(
+        _conn,
+        _cursor,
+        statement: str,
+        _parameters,
+        _context,
+        _executemany: bool,
+    ) -> None:
+        if not statement.lstrip().upper().startswith(("SAVEPOINT", "RELEASE")):
+            statements.append(statement)
+
+    bind = db_session.get_bind()
+    event.listen(bind, "before_cursor_execute", _record_statement)
+    try:
+        response = await _flow_summary(
+            api_client,
+            auth_headers_factory(dashboard_seed.admin),
+            workspace_id=str(dashboard_seed.admin_workspace.id),
+        )
+    finally:
+        event.remove(bind, "before_cursor_execute", _record_statement)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["scoped_project_count"] == 4
+    assert payload["throughput_count"] == 4
+    assert len(statements) < 10, statements
+
+
+async def test_flow_summary_missing_date_params_returns_422(
+    api_client: httpx.AsyncClient,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    response = await api_client.get(
+        "/api/admin/dashboard/flow-summary",
+        headers=auth_headers_factory(dashboard_seed.admin),
+    )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_flow_summary_invalid_date_format_returns_422(
+    api_client: httpx.AsyncClient,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    response = await api_client.get(
+        "/api/admin/dashboard/flow-summary",
+        headers=auth_headers_factory(dashboard_seed.admin),
+        params={"start_date": "not-a-date", "end_date": QUERY_DAY.isoformat()},
+    )
+
+    assert response.status_code == 422, response.text
+
+
+async def test_flow_summary_unauthenticated_returns_401(
+    api_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    response = await api_client.get(
+        "/api/admin/dashboard/flow-summary",
+        params={
+            "start_date": QUERY_DAY.isoformat(),
+            "end_date": QUERY_DAY.isoformat(),
+        },
+    )
+
+    assert response.status_code == 401, response.text
+
+
+async def test_flow_summary_date_range_reversed_is_handled(
+    api_client: httpx.AsyncClient,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    response = await _flow_summary(
+        api_client,
+        auth_headers_factory(dashboard_seed.admin),
+        start_date=(QUERY_DAY + timedelta(days=1)).isoformat(),
+        end_date=QUERY_DAY.isoformat(),
+        workspace_id=str(dashboard_seed.admin_workspace.id),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["feature_enabled"] is True
+    assert payload["scoped_project_count"] == 1
+    assert payload["throughput_count"] == 1
+
+
+async def test_flow_summary_approximation_used_field_present(
+    api_client: httpx.AsyncClient,
+    dashboard_seed: SimpleNamespace,
+    auth_headers_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "FEATURE_AGILE_PHASE_5", True)
+
+    response = await _flow_summary(
+        api_client,
+        auth_headers_factory(dashboard_seed.admin),
+        workspace_id=str(dashboard_seed.admin_workspace.id),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert "approximation_used" in payload
+    assert isinstance(payload["approximation_used"], bool)
