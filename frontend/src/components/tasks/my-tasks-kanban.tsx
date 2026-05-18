@@ -329,11 +329,12 @@ export default function MyTasksKanban({
     setTasks(optimistic);
 
     try {
-      const updated = await moveTask(dragged.id, {
+      const result = await moveTask(dragged.id, {
         state_id: targetStateId,
         position: newPosition,
         version: dragged.version,
       });
+      const updated = result.task;
       setTasks((prev) =>
         prev.map((t) => (t.id === updated.id ? updated : t)),
       );

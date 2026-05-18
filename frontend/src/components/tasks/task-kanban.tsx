@@ -18,10 +18,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { ApiError } from "@/lib/api";
+import { FEATURE_AGILE_PHASE_1, FEATURE_AGILE_PHASE_5 } from "@/lib/feature-flags";
 import { moveTask } from "@/lib/task-api";
-import type { Task, TaskState } from "@/lib/task-types";
+import type {
+  Task,
+  TaskGovernanceAdvisory,
+  TaskMoveAdvisory,
+  TaskState,
+} from "@/lib/task-types";
 import { translateStateName } from "@/lib/task-i18n";
 import { TaskCard } from "@/components/tasks/task-card";
+import { TaskStateSettingsDialog } from "@/components/tasks/task-state-settings-dialog";
+import { GovernanceAdvisoryToast } from "@/components/tasks/governance-advisory-toast";
 
 const POSITION_GAP = 1000;
 
@@ -49,6 +57,29 @@ export default function TaskKanban({
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [errorMessage, setErrorMessage] = useState("");
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  // Phase 1: WIP advisory toast surfaced when backend returns `warn` policy
+  // on a successful move. Distinct from `errorMessage` (which is for hard
+  // failures) so the move itself is NOT rolled back.
+  const [advisory, setAdvisory] = useState<TaskMoveAdvisory | null>(null);
+  // Phase 5: Stage A governance advisories from the same move response.
+  // Multiple advisories can fire on a single move (e.g. WIP + DoD bypass).
+  // Independent of `advisory` above so the WIP and governance toasts can
+  // coexist on the same column drop.
+  const [governanceAdvisories, setGovernanceAdvisories] = useState<
+    TaskGovernanceAdvisory[]
+  >([]);
+  // Phase 1: per-column WIP / aging settings dialog. Local mirror of the
+  // states prop so the dialog's onSaved patch sticks until the parent
+  // refetches.
+  const [localStates, setLocalStates] = useState<TaskState[]>(states);
+  const [settingsStateId, setSettingsStateId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setLocalStates(states);
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [states]);
 
   // Re-sync internal state when parent reloads tasks (filter change, post-mutation refetch).
   // Uses setTimeout pattern to avoid `react-hooks/set-state-in-effect`.
@@ -65,7 +96,7 @@ export default function TaskKanban({
     })
   );
 
-  const sortedStates = [...states].sort((a, b) => a.position - b.position);
+  const sortedStates = [...localStates].sort((a, b) => a.position - b.position);
 
   // Group tasks by state and sort by position within each column.
   const tasksByState: Record<string, Task[]> = {};
@@ -87,6 +118,8 @@ export default function TaskKanban({
     if (dragged) {
       setActiveTask(dragged);
       setErrorMessage("");
+      setAdvisory(null);
+      setGovernanceAdvisories([]);
     }
   };
 
@@ -159,14 +192,28 @@ export default function TaskKanban({
     setTasks(optimistic);
 
     try {
-      const updated = await moveTask(dragged.id, {
+      const result = await moveTask(dragged.id, {
         state_id: targetStateId,
         position: newPosition,
         version: dragged.version,
       });
       setTasks((prev) =>
-        prev.map((t) => (t.id === updated.id ? updated : t))
+        prev.map((t) => (t.id === result.task.id ? result.task : t))
       );
+      // Phase 1: surface a non-blocking advisory toast when backend returns
+      // `warn` policy. The move itself succeeded — we DO NOT roll back.
+      if (FEATURE_AGILE_PHASE_1 && result.advisory) {
+        setAdvisory(result.advisory);
+      } else {
+        setAdvisory(null);
+      }
+      // Phase 5: surface the governance advisory toast alongside the WIP
+      // one. The move succeeded; the toast is purely a permission breadcrumb.
+      if (FEATURE_AGILE_PHASE_5 && result.governance_advisories.length > 0) {
+        setGovernanceAdvisories(result.governance_advisories);
+      } else {
+        setGovernanceAdvisories([]);
+      }
     } catch (err) {
       // Rollback to snapshot, surface inline error message.
       setTasks(snapshot);
@@ -185,6 +232,17 @@ export default function TaskKanban({
     );
   }
 
+  const settingsState =
+    settingsStateId !== null
+      ? localStates.find((s) => s.id === settingsStateId) ?? null
+      : null;
+
+  const handleStateSaved = (updated: TaskState) => {
+    setLocalStates((prev) =>
+      prev.map((s) => (s.id === updated.id ? updated : s)),
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {errorMessage && (
@@ -195,6 +253,42 @@ export default function TaskKanban({
         >
           <span className="material-symbols-outlined text-base">error</span>
           {errorMessage}
+        </div>
+      )}
+
+      <GovernanceAdvisoryToast
+        advisories={governanceAdvisories}
+        onDismiss={() => setGovernanceAdvisories([])}
+      />
+
+      {FEATURE_AGILE_PHASE_1 && advisory && (
+        <div
+          className="flex items-start justify-between gap-3 rounded-lg border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/30 dark:text-amber-100"
+          role="status"
+          data-testid="agile-advisory-toast"
+        >
+          <div className="flex items-start gap-2">
+            <span className="material-symbols-outlined text-base">warning</span>
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium">
+                Cảnh báo khuyến nghị: vượt giới hạn việc đang làm
+              </span>
+              <span className="text-xs text-amber-800/90 dark:text-amber-100/80">
+                Cột hiện có {advisory.current_count} công việc, vượt giới hạn{" "}
+                {advisory.wip_limit}. Bạn vẫn có thể tiếp tục — đây chỉ là cảnh
+                báo.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdvisory(null)}
+            className="rounded-md p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
+            aria-label="Đóng cảnh báo"
+            data-testid="agile-advisory-toast-dismiss"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
         </div>
       )}
 
@@ -215,6 +309,11 @@ export default function TaskKanban({
               state={state}
               tasks={tasksByState[state.id] ?? []}
               onTaskClick={onTaskClick}
+              onOpenSettings={
+                FEATURE_AGILE_PHASE_1
+                  ? () => setSettingsStateId(state.id)
+                  : undefined
+              }
             />
           ))}
         </div>
@@ -222,6 +321,18 @@ export default function TaskKanban({
           {activeTask ? <TaskCard task={activeTask} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
+
+      {FEATURE_AGILE_PHASE_1 && settingsState && (
+        <TaskStateSettingsDialog
+          key={settingsState.id}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setSettingsStateId(null);
+          }}
+          state={settingsState}
+          onSaved={handleStateSaved}
+        />
+      )}
     </div>
   );
 }
@@ -230,9 +341,15 @@ type KanbanColumnProps = {
   state: TaskState;
   tasks: Task[];
   onTaskClick?: (task: Task) => void;
+  onOpenSettings?: () => void;
 };
 
-function KanbanColumn({ state, tasks, onTaskClick }: KanbanColumnProps) {
+function KanbanColumn({
+  state,
+  tasks,
+  onTaskClick,
+  onOpenSettings,
+}: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: state.id,
     data: { type: "column", stateId: state.id },
@@ -240,6 +357,11 @@ function KanbanColumn({ state, tasks, onTaskClick }: KanbanColumnProps) {
 
   const accent = state.color ?? undefined;
   const displayName = translateStateName(state.name);
+  // Phase 1: surface WIP usage as `count / limit` next to the column name when
+  // the column has a configured limit. Pure visual hint — enforcement happens
+  // server-side via wip_policy.
+  const wipLimit = state.wip_limit ?? null;
+  const overLimit = wipLimit !== null && wipLimit > 0 && tasks.length > wipLimit;
 
   return (
     <div
@@ -265,12 +387,36 @@ function KanbanColumn({ state, tasks, onTaskClick }: KanbanColumnProps) {
             {displayName}
           </span>
         </div>
-        <span
-          className="rounded-full bg-card px-2 py-0.5 text-[11px] font-semibold text-muted-foreground tabular-nums"
-          aria-label={`${tasks.length} công việc`}
-        >
-          {tasks.length}
-        </span>
+        <div className="flex items-center gap-1">
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
+              overLimit
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-100"
+                : "bg-card text-muted-foreground"
+            }`}
+            aria-label={`${tasks.length} công việc${
+              wipLimit !== null ? `, giới hạn ${wipLimit}` : ""
+            }`}
+          >
+            {wipLimit !== null && wipLimit > 0
+              ? `${tasks.length} / ${wipLimit}`
+              : tasks.length}
+          </span>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+              aria-label={`Cấu hình Kanban cho cột ${displayName}`}
+              title="Cấu hình Kanban"
+              data-testid="task-state-settings-btn"
+            >
+              <span className="material-symbols-outlined text-sm">
+                settings
+              </span>
+            </button>
+          )}
+        </div>
       </div>
 
       <SortableContext
