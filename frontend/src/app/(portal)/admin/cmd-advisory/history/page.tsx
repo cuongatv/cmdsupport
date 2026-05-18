@@ -40,7 +40,7 @@ const statusMap: Record<string, { label: string; variant: "secondary" | "destruc
   failed: { label: "Lỗi", variant: "destructive" },
 };
 
-export default function CmdSupportHistoryPage() {
+export default function CmdAdvisoryHistoryPage() {
   const router = useRouter();
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +76,7 @@ export default function CmdSupportHistoryPage() {
           title="Chưa có phiên tư vấn nào"
           description="Tạo phiên tư vấn mới tại trang Tư vấn KHDN."
           action={
-            <Button onClick={() => router.push("/admin/cmd-support")}>
+            <Button onClick={() => router.push("/admin/cmd-advisory")}>
               Tư vấn KHDN
             </Button>
           }
@@ -103,7 +103,7 @@ export default function CmdSupportHistoryPage() {
                     <TableRow
                       key={item.id}
                       className="cursor-pointer"
-                      onClick={() => router.push(`/admin/cmd-support/${item.id}`)}
+                      onClick={() => router.push(`/admin/cmd-advisory/${item.id}`)}
                     >
                       <TableCell className="font-medium">{item.customer_name}</TableCell>
                       <TableCell className="hidden sm:table-cell text-muted-foreground">

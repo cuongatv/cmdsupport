@@ -10,7 +10,7 @@ components/
 ├── layout/              # sidebar.tsx, header, app shell
 ├── shared/              # cross-feature reusables (modals, empty states, ...)
 ├── audit/               # /admin/audit page
-├── cmd-support/         # /admin/cmd-support pages
+├── cmd-support/         # /admin/cmd-advisory + /cmd-advisory pages (folder name kept legacy; component lib reused)
 ├── dashboard/           # /admin (root) page widgets
 ├── departments/         # /admin/departments
 ├── employees/           # /admin/employees

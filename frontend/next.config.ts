@@ -30,9 +30,17 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: '/cmd-support', destination: '/', permanent: false },
-      { source: '/cmd-support/history', destination: '/admin/cmd-support/history', permanent: false },
-      { source: '/cmd-support/:id', destination: '/admin/cmd-support/:id', permanent: false },
+      // Legacy public/admin "cmd-support" URLs → new "cmd-advisory" routes.
+      // Public advisory form moved from `/` to `/cmd-advisory`; root `/` is now
+      // an auth-aware redirect handled in (public)/page.tsx.
+      { source: '/cmd-support', destination: '/cmd-advisory', permanent: false },
+      { source: '/cmd-support/history', destination: '/admin/cmd-advisory/history', permanent: false },
+      { source: '/cmd-support/rules', destination: '/admin/cmd-advisory/rules', permanent: false },
+      { source: '/cmd-support/:id', destination: '/admin/cmd-advisory/:id', permanent: false },
+      { source: '/admin/cmd-support', destination: '/admin/cmd-advisory', permanent: false },
+      { source: '/admin/cmd-support/history', destination: '/admin/cmd-advisory/history', permanent: false },
+      { source: '/admin/cmd-support/rules', destination: '/admin/cmd-advisory/rules', permanent: false },
+      { source: '/admin/cmd-support/:id', destination: '/admin/cmd-advisory/:id', permanent: false },
     ];
   },
   async rewrites() {

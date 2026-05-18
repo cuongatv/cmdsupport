@@ -10,14 +10,16 @@ src/app/
 ├── login/page.tsx                   # /login — outside both route groups
 ├── (public)/
 │   ├── layout.tsx                   # Public shell (no sidebar)
-│   └── page.tsx                     # /  (landing)
+│   ├── page.tsx                     # /  (auth-aware redirect → /login | /admin | /me)
+│   └── cmd-advisory/page.tsx        # /cmd-advisory  (public advisory form)
 └── (portal)/admin/
     ├── layout.tsx                   # Portal shell + auth redirect to /login
     ├── page.tsx                     # /admin (dashboard)
     ├── audit/page.tsx               # /admin/audit
-    ├── cmd-support/
-    │   ├── page.tsx                 # /admin/cmd-support
+    ├── cmd-advisory/
+    │   ├── page.tsx                 # /admin/cmd-advisory
     │   ├── history/page.tsx
+    │   ├── rules/page.tsx
     │   └── [id]/page.tsx
     ├── departments/page.tsx
     ├── employees/page.tsx
@@ -44,7 +46,8 @@ src/app/
 ## ROUTING CONVENTIONS
 - **Route groups `()`** are URL-invisible — `(portal)/admin/page.tsx` serves `/admin`, NOT `/portal/admin`.
 - **Catch-all `[...slug]`** is used only for wiki nested paths. New deep-tree routes should follow that pattern.
-- **`next.config.ts` redirects** quietly forward `/cmd-support*` → `/admin/cmd-support*`. Don't link to `/cmd-support` directly in new code; use the canonical `/admin/cmd-support` URL.
+- **`next.config.ts` redirects** quietly forward legacy `/cmd-support*` and `/admin/cmd-support*` URLs to the new `/cmd-advisory` and `/admin/cmd-advisory*` routes. Don't link to `/cmd-support` directly in new code; use the canonical `/admin/cmd-advisory` URL.
+- **Root `/` is an auth-aware redirect** (in `(public)/page.tsx`): unauthenticated → `/login`, admin → `/admin`, others → `/me`. The public advisory form lives at `/cmd-advisory` (under `(public)/cmd-advisory/`).
 - **Auth gate in `(portal)/admin/layout.tsx`**: it reads `useAuth()` and pushes to `/login` if no session. There is no Next.js `middleware.ts`.
 
 ## ANTI-PATTERNS

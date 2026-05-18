@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AdvisoryResult, type AdviceDetail } from "@/components/cmd-support/advisory-result";
 import { SEGMENT_SHORT_LABEL } from "@/components/cmd-support/segment-select";
 
-export default function CmdSupportDetailPage() {
+export default function CmdAdvisoryDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
@@ -32,7 +32,7 @@ export default function CmdSupportDetailPage() {
         title={detail?.customer_name ?? "Chi tiết tư vấn"}
         description={detail ? `Tạo bởi ${detail.created_by_name} · ${new Date(detail.created_at).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : undefined}
         action={
-          <Button variant="outline" onClick={() => router.push("/admin/cmd-support/history")}>
+          <Button variant="outline" onClick={() => router.push("/admin/cmd-advisory/history")}>
             <span className="material-symbols-outlined text-sm mr-1">arrow_back</span>
             Quay lại
           </Button>

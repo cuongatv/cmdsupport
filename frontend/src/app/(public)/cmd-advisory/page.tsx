@@ -1,30 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import { CmdSupportBanner } from "@/components/cmd-support/banner";
 import { AdvisoryResult, type AdviceDetail } from "@/components/cmd-support/advisory-result";
 import { SegmentSelect } from "@/components/cmd-support/segment-select";
 import { ProvinceSelect } from "@/components/cmd-support/province-select";
 import { IndustrySelect } from "@/components/cmd-support/industry-select";
 
-type AdviceLanguage = "vi" | "en";
-
-export default function CmdSupportPage() {
+export default function PublicCmdAdvisoryPage() {
+  const { user } = useAuth();
   const [customerName, setCustomerName] = useState("");
   const [segment, setSegment] = useState("sme");
   const [provinceCode, setProvinceCode] = useState("");
   const [industryCode, setIndustryCode] = useState("");
   const [needs, setNeeds] = useState("");
   const [additionalContext, setAdditionalContext] = useState("");
-  const [adviceLanguage, setAdviceLanguage] = useState<AdviceLanguage>("vi");
   const [formErrors, setFormErrors] = useState<{ customer_name?: string; needs?: string }>({});
-
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdviceDetail | null>(null);
@@ -53,7 +51,8 @@ export default function CmdSupportPage() {
           industry_code: industryCode || undefined,
           needs: needs.trim(),
           additional_context: additionalContext.trim() || undefined,
-          advice_language: adviceLanguage,
+          // W1-T5: anonymous parity — same advice_language default as portal
+          advice_language: "vi",
         },
         // 5 phút: cover LLM ~60s + backoff retry chain 15+45+120s khi gateway 504
         // (xem app/ai/providers/openai_provider.py:_create_chat backoffs).
@@ -62,7 +61,11 @@ export default function CmdSupportPage() {
       setResult(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 503) {
-        setError("Chưa cấu hình AI provider. Vui lòng mở Cài đặt (/admin/settings) để cấu hình.");
+        setError(
+          user
+            ? 'Dịch vụ AI tạm thời chưa sẵn sàng. Chưa cấu hình AI provider. Vui lòng mở Cài đặt (/admin/settings) để cấu hình.'
+            : "Dịch vụ AI tạm thời chưa sẵn sàng. Vui lòng quay lại sau."
+        );
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -79,18 +82,25 @@ export default function CmdSupportPage() {
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
         <div className="flex items-start gap-2">
           <span className="material-symbols-outlined text-destructive text-lg mt-0.5">error</span>
-          <p className="text-sm text-destructive">{error}</p>
+          <div className="flex-1">
+            <p className="text-sm text-destructive">{error}</p>
+            {user && error.includes("Cài đặt") && (
+              <Link href="/admin/settings" className="text-sm text-primary hover:underline mt-1 inline-block">
+                Mở Cài đặt
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     );
   };
 
   return (
-    <>
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-6 sm:py-8 flex flex-col gap-6 flex-1">
       <CmdSupportBanner />
 
       {/* Disclaimer banner */}
-      <div className="rounded-lg border border-primary/20 bg-secondary px-4 py-3 mb-4 mt-6">
+      <div className="rounded-lg border border-primary/20 bg-secondary px-4 py-3">
         <div className="flex items-start gap-2">
           <span className="material-symbols-outlined text-primary text-lg mt-0.5">gavel</span>
           <p className="text-sm text-foreground">
@@ -171,32 +181,6 @@ export default function CmdSupportPage() {
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label>Ngôn ngữ tư vấn</Label>
-              <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-background p-1">
-                {([
-                  ["vi", "Tiếng Việt"],
-                  ["en", "English"],
-                ] as const).map(([value, label]) => (
-                  <Button
-                    key={value}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={submitting}
-                    onClick={() => setAdviceLanguage(value)}
-                    className={cn(
-                      "h-9 justify-center text-sm",
-                      adviceLanguage === value && "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground",
-                    )}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">Kết quả tư vấn sẽ hiển thị theo ngôn ngữ đã chọn.</p>
-            </div>
-
             <Button
               className="w-full min-h-[44px] text-base hidden lg:flex"
               disabled={submitting}
@@ -244,6 +228,6 @@ export default function CmdSupportPage() {
           )}
         </Button>
       </div>
-    </>
+    </div>
   );
 }
