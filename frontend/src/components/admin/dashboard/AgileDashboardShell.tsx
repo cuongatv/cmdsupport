@@ -7,6 +7,7 @@ import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
 import { AgileAgingWip } from "@/components/admin/dashboard/AgileAgingWip";
 import { AgileThroughput } from "@/components/admin/dashboard/AgileThroughput";
+import { AgileBlockedPanel } from "@/components/admin/dashboard/AgileBlockedPanel";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -19,25 +20,18 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section cards that occupy the slots filled in T12–T13 by the
-// blocked panel and capacity heatmap. The KPI slot (T8) is backed by
-// <AgileKpiStrip>, the CFD slot (T9) by <AgileCfd>, the aging slot (T10) by
-// <AgileAgingWip>, and the throughput slot (T11) by <AgileThroughput>;
-// data wiring still lives in T14, so all receive `data={null}` for now and
-// self-render skeletons.
+// Placeholder section card for the capacity slot still pending in T13. The
+// KPI slot (T8) is backed by <AgileKpiStrip>, the CFD slot (T9) by
+// <AgileCfd>, the aging slot (T10) by <AgileAgingWip>, the throughput slot
+// (T11) by <AgileThroughput>, and the blocked slot (T12) by
+// <AgileBlockedPanel>; data wiring still lives in T14, so all receive
+// `data={null}` for now and self-render skeletons.
 const PLACEHOLDER_SECTIONS: {
   id: string;
   title: string;
   description: string;
   testId: string;
 }[] = [
-  {
-    id: "blocked",
-    title: "Công việc đang bị chặn",
-    description:
-      "Tổng hợp blocker với lý do và người phụ trách — sẽ hiển thị ở Wave 2 (T12).",
-    testId: "agile-section-blocked-placeholder",
-  },
   {
     id: "capacity",
     title: "Tải trọng đội ngũ",
@@ -177,6 +171,7 @@ export function AgileDashboardShell() {
         <AgileCfd data={null} loading={false} />
         <AgileAgingWip data={null} loading={false} />
         <AgileThroughput data={null} loading={false} />
+        <AgileBlockedPanel data={null} loading={false} />
         {PLACEHOLDER_SECTIONS.map((section) => (
           <article
             key={section.id}
