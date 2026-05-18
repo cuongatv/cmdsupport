@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.database.models import (
     Employee,
@@ -19,8 +20,11 @@ from app.database.models import (
     TaskAssignee,
     TaskAttachment,
     TaskComment,
+    TaskDependency,
+    TaskKnowledgeLink,
     TaskLabel,
     TaskProject,
+    TaskProjectTemplate,
     TaskState,
 )
 from app.schemas.tasks import (
@@ -33,13 +37,19 @@ from app.schemas.tasks import (
     TaskCommentOut,
     TaskCommentUpdate,
     TaskCreate,
+    TaskDependencyCreate,
+    TaskDependencyOut,
     TaskForwardRequest,
+    TaskKnowledgeLinkCreate,
+    TaskKnowledgeLinkOut,
     TaskLabelCreate,
     TaskLabelOut,
     TaskMoveRequest,
     TaskOut,
     TaskProjectCreate,
     TaskProjectOut,
+    TaskProjectTemplateOut,
+    TaskProjectTemplateUpdate,
     TaskProjectUpdate,
     TaskStateCreate,
     TaskStateOut,
@@ -79,7 +89,10 @@ from app.services.task_comment_service import (
 from app.services.task_comment_service import (
     update_comment as update_task_comment,
 )
-from app.services.task_constants import PRIORITY_LEVELS
+from app.services.task_constants import (
+    FEATURE_DISABLED_ERROR_CODE,
+    PRIORITY_LEVELS,
+)
 from app.services.task_dashboard_service import get_dashboard
 from app.services.task_filter_service import (
     TaskFilters,
@@ -92,9 +105,11 @@ from app.services.task_notification_service import (
 )
 from app.services.task_project_service import (
     archive_task_project,
+    get_or_create_template,
     list_task_projects,
     resolve_default_task_project,
     update_task_project,
+    update_template,
 )
 from app.services.task_project_service import (
     create_label as create_task_label,
@@ -121,6 +136,19 @@ from app.services.task_project_service import (
     update_state as update_task_state,
 )
 from app.services.task_service import (
+    BLOCKED_CYCLE_ERROR_CODE,
+    DUPLICATE_DEPENDENCY_ERROR_CODE,
+    DUPLICATE_KNOWLEDGE_LINK_ERROR_CODE,
+    WipExceededError,
+    add_knowledge_link,
+    add_task_dependency,
+    list_knowledge_links,
+    list_task_dependencies,
+    remove_knowledge_link,
+    remove_task_dependency,
+    soft_delete_task,
+)
+from app.services.task_service import (
     create_task as create_task_record,
 )
 from app.services.task_service import (
@@ -130,13 +158,62 @@ from app.services.task_service import (
     get_task as get_task_record,
 )
 from app.services.task_service import (
-    soft_delete_task,
-)
-from app.services.task_service import (
     update_task as update_task_record,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+# Phase 1 agile fields (TaskStateCreate / TaskStateUpdate). When the feature
+# flag is off, mutation payloads carrying any of these must fail closed so
+# rollouts stay reversible — see decisions.md (agile-upgrade-phases-1-5).
+_PHASE_1_WIP_STATE_FIELDS: tuple[str, ...] = (
+    "wip_limit",
+    "wip_policy",
+    "aging_warn_days",
+)
+
+# Phase 2 agile fields on TaskCreate / TaskUpdate. Same rationale as Phase 1:
+# fail closed when the flag is off so the rollout stays reversible.
+_PHASE_2_TASK_FIELDS: tuple[str, ...] = (
+    "task_type",
+    "estimate",
+    "story_points",
+    "acceptance_criteria",
+    "dor_checklist",
+    "dod_checklist",
+    "blocked_reason",
+    "blocked_by_id",
+    "sprint_id",
+)
+
+
+def _reject_wip_fields_when_phase_1_disabled(body: BaseModel) -> None:
+    """Return 403 FEATURE_DISABLED when a state mutation carries Phase 1 fields
+    while the feature flag is off. Legacy callers that omit these fields stay
+    fully transparent (Pydantic ``exclude_unset`` ignores defaulted ``None``)."""
+    if settings.FEATURE_AGILE_PHASE_1:
+        return
+    provided = body.model_dump(exclude_unset=True)
+    if any(field in provided for field in _PHASE_1_WIP_STATE_FIELDS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": FEATURE_DISABLED_ERROR_CODE},
+        )
+
+
+def _reject_phase_2_fields_when_phase_2_disabled(body: BaseModel) -> None:
+    """Return 403 FEATURE_DISABLED when a task mutation carries Phase 2 fields
+    while the feature flag is off. Same ``exclude_unset`` semantics as Phase 1
+    keep legacy callers transparent — only explicitly provided Phase 2 fields
+    trip the gate."""
+    if settings.FEATURE_AGILE_PHASE_2:
+        return
+    provided = body.model_dump(exclude_unset=True)
+    if any(field in provided for field in _PHASE_2_TASK_FIELDS):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": FEATURE_DISABLED_ERROR_CODE},
+        )
 
 
 class TaskLabelUpdate(BaseModel):
@@ -306,6 +383,7 @@ async def create_state_endpoint(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task_project:manage"),
 ) -> TaskState:
+    _reject_wip_fields_when_phase_1_disabled(body)
     await _ensure_project_access(db, project_id, user)
     state_row = await _call_service(create_task_state(db, project_id, body, user))
     await db.commit()
@@ -321,6 +399,7 @@ async def update_state_endpoint(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task_project:manage"),
 ) -> TaskState:
+    _reject_wip_fields_when_phase_1_disabled(body)
     await _ensure_project_access(db, project_id, user)
     state_row = await _get_project_state(db, project_id, state_id)
     state_row = await _call_service(update_task_state(db, state_row.id, body, user))
@@ -421,6 +500,7 @@ async def create_task_endpoint(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task:create"),
 ) -> Task:
+    _reject_phase_2_fields_when_phase_2_disabled(body)
     project = await _resolve_target_project(
         db,
         user,
@@ -546,6 +626,10 @@ async def update_task_endpoint(
     db: AsyncSession = Depends(get_db),
     user: Employee = require_permission("task:edit"),
 ) -> Task:
+    _reject_phase_2_fields_when_phase_2_disabled(body)
+    provided = body.model_dump(exclude_unset=True)
+    if "task_project_id" in provided and body.task_project_id is not None:
+        await _get_accessible_project(db, body.task_project_id, user)
     await _get_accessible_task(db, task_id, user)
     task = await _call_service(update_task_record(db, task_id, body, user))
     await db.commit()
@@ -700,6 +784,253 @@ async def remove_assignee_endpoint(
     await log_audit(db, user, "unassign", "task", str(task_id))
     await db.flush()
     await db.commit()
+
+
+def _require_phase_2_enabled_dep() -> None:
+    """Short-circuit dependency writes with 403 FEATURE_DISABLED when Phase 2 is off.
+
+    Mirrors the gate used by the sprint router and the field-level helper
+    ``_reject_phase_2_fields_when_phase_2_disabled``. Dependency edges are
+    a Phase-2-exclusive concept so write paths must fail closed under the
+    OFF flag; reads stay open so a partial rollout doesn't flood
+    observability with 403s.
+    """
+    if not settings.FEATURE_AGILE_PHASE_2:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": FEATURE_DISABLED_ERROR_CODE},
+        )
+
+
+@router.post(
+    "/{task_id}/dependencies",
+    response_model=TaskDependencyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_task_dependency_endpoint(
+    task_id: uuid.UUID,
+    body: TaskDependencyCreate,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:edit"),
+) -> TaskDependency:
+    """Create a ``(from_task_id → to_task_id)`` blocks-edge between two tasks.
+
+    Returns ``409 BLOCKED_CYCLE`` when the new edge would close a cycle in
+    the existing graph and ``409 DUPLICATE_DEPENDENCY`` when the pair is
+    already present. Both endpoints must be accessible to the actor;
+    cross-department deps are allowed only when the task access check
+    passes for both sides — this prevents using the dependency surface to
+    leak metadata about tasks the actor cannot otherwise read.
+    """
+    _require_phase_2_enabled_dep()
+    if body.from_task_id != task_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="path task_id must match body from_task_id",
+        )
+    # Access check both endpoints BEFORE touching the dependency graph so a
+    # caller without read access to either side cannot probe for the
+    # other's existence via 404 vs 403 timing.
+    await _get_accessible_task(db, body.from_task_id, user)
+    await _get_accessible_task(db, body.to_task_id, user)
+    dep = await _call_service(
+        add_task_dependency(
+            db,
+            body.from_task_id,
+            body.to_task_id,
+            body.dep_type,
+            actor=user,
+        )
+    )
+    await db.commit()
+    await db.refresh(dep)
+    return dep
+
+
+@router.delete(
+    "/{task_id}/dependencies/{to_task_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_task_dependency_endpoint(
+    task_id: uuid.UUID,
+    to_task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:edit"),
+) -> None:
+    """Delete the ``(task_id → to_task_id)`` dependency edge."""
+    _require_phase_2_enabled_dep()
+    await _get_accessible_task(db, task_id, user)
+    await _get_accessible_task(db, to_task_id, user)
+    await _call_service(
+        remove_task_dependency(db, task_id, to_task_id, actor=user)
+    )
+    await db.commit()
+
+
+@router.get(
+    "/{task_id}/dependencies",
+    response_model=list[TaskDependencyOut],
+)
+async def list_task_dependencies_endpoint(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:read"),
+) -> list[TaskDependency]:
+    """List outgoing dependencies for a task (read-only, no Phase 2 gate).
+
+    Read access stays open under the OFF flag so existing dashboards that
+    pre-fetch the dep set don't 403 during a partial rollout; the actor
+    must still have access to the parent task itself.
+    """
+    await _get_accessible_task(db, task_id, user)
+    return await list_task_dependencies(db, task_id)
+
+
+def _require_phase_4_enabled() -> None:
+    """Short-circuit knowledge-link writes with 403 FEATURE_DISABLED when Phase 4 is off.
+
+    Mirrors :func:`_require_phase_2_enabled_dep`. Reads of the link set stay
+    open under the OFF flag so existing dashboards that pre-fetch the link
+    list during a partial rollout do not flood observability with 403s.
+    """
+    if not settings.FEATURE_AGILE_PHASE_4:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": FEATURE_DISABLED_ERROR_CODE},
+        )
+
+
+@router.post(
+    "/{task_id}/knowledge-links",
+    response_model=TaskKnowledgeLinkOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_task_knowledge_link_endpoint(
+    task_id: uuid.UUID,
+    body: TaskKnowledgeLinkCreate,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:edit"),
+) -> TaskKnowledgeLink:
+    """Attach a wiki page to a task (Phase 4 knowledge integration).
+
+    Returns ``409 DUPLICATE_KNOWLEDGE_LINK`` when the ``(task, wiki_page)``
+    pair is already present. The actor must have access to the task; the
+    wiki page is referenced by id only (no content leaks through the
+    response payload), so no extra wiki-page access check is performed
+    here — the link is metadata, not a content read.
+    """
+    _require_phase_4_enabled()
+    await _get_accessible_task(db, task_id, user)
+    link = await _call_service(
+        add_knowledge_link(
+            db,
+            task_id,
+            body.wiki_page_id,
+            body.link_type,
+            actor=user,
+            source_id=body.source_id,
+        )
+    )
+    await db.commit()
+    await db.refresh(link)
+    return link
+
+
+@router.delete(
+    "/{task_id}/knowledge-links/{wiki_page_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_task_knowledge_link_endpoint(
+    task_id: uuid.UUID,
+    wiki_page_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:edit"),
+) -> None:
+    """Detach a wiki page from a task."""
+    _require_phase_4_enabled()
+    await _get_accessible_task(db, task_id, user)
+    await _call_service(
+        remove_knowledge_link(db, task_id, wiki_page_id, actor=user)
+    )
+    await db.commit()
+
+
+@router.get(
+    "/{task_id}/knowledge-links",
+    response_model=list[TaskKnowledgeLinkOut],
+)
+async def list_task_knowledge_links_endpoint(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:read"),
+) -> list[TaskKnowledgeLink]:
+    """List knowledge links for a task (read-only, no Phase 4 gate).
+
+    Read access stays open under the OFF flag so existing dashboards that
+    pre-fetch the link set don't 403 during a partial rollout; the actor
+    must still have access to the parent task itself.
+    """
+    await _get_accessible_task(db, task_id, user)
+    return await list_knowledge_links(db, task_id)
+
+
+@router.get(
+    "/projects/{project_id}/template",
+    response_model=TaskProjectTemplateOut,
+)
+async def get_task_project_template_endpoint(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task:read"),
+) -> TaskProjectTemplate:
+    """Return the DoR/DoD template for a task project (Phase 4 Agile).
+
+    Always accessible — the read surface stays open even when
+    ``FEATURE_AGILE_PHASE_4`` is off so the UI can render the editor in a
+    disabled state without flooding observability with 403s. The actor must
+    still have access to the project itself. A fresh template row is
+    materialised on first read so callers never see ``null`` JSONB arrays.
+    """
+    await _ensure_project_access(db, project_id, user)
+    template = await _call_service(get_or_create_template(db, project_id))
+    await db.commit()
+    await db.refresh(template)
+    return template
+
+
+@router.put(
+    "/projects/{project_id}/template",
+    response_model=TaskProjectTemplateOut,
+)
+async def update_task_project_template_endpoint(
+    project_id: uuid.UUID,
+    body: TaskProjectTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: Employee = require_permission("task_project:manage"),
+) -> TaskProjectTemplate:
+    """Replace the DoR/DoD template arrays for a task project (Phase 4 Agile).
+
+    Gated on ``FEATURE_AGILE_PHASE_4`` → 403 FEATURE_DISABLED when off.
+    Updating the template snapshot does NOT retroactively touch existing
+    ``Task.dor_checklist`` / ``Task.dod_checklist`` rows — DoR/DoD on tasks
+    is a one-time snapshot taken at task-create time. Body fields are
+    optional: omit ``dor_template`` or ``dod_template`` to leave that side
+    unchanged.
+    """
+    _require_phase_4_enabled()
+    await _ensure_project_access(db, project_id, user)
+    template = await _call_service(
+        update_template(
+            db,
+            project_id,
+            dor_template=body.dor_template,
+            dod_template=body.dod_template,
+            actor=user,
+        )
+    )
+    await db.commit()
+    await db.refresh(template)
+    return template
 
 
 @router.post("/{task_id}/forward", response_model=TaskOut)
@@ -1059,10 +1390,58 @@ async def _default_state_for_project(
 async def _call_service(coro: Any) -> Any:
     try:
         return await coro
+    except WipExceededError as exc:
+        # Phase 1 ``enforce`` policy: translate to HTTP 409 with a stable code
+        # plus the contextual info callers need to render a useful message.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": exc.code,
+                "state_id": str(exc.state_id),
+                "wip_limit": exc.limit,
+                "current_count": exc.current_count,
+            },
+        ) from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        message = str(exc)
+        # Service-layer feature-flag short-circuits raise PermissionError
+        # carrying the stable code; surface it as 403 with the structured
+        # payload so callers can share the FEATURE_DISABLED handler.
+        if message == FEATURE_DISABLED_ERROR_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"code": FEATURE_DISABLED_ERROR_CODE},
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=message) from exc
     except ValueError as exc:
         message = str(exc)
+        # Phase 2 dependency-domain stable error codes map straight to 409
+        # with a structured detail. They short-circuit the message-prefix
+        # heuristic below so the code-shaped payload is what reaches the UI.
+        if message == BLOCKED_CYCLE_ERROR_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": BLOCKED_CYCLE_ERROR_CODE},
+            ) from exc
+        if message == DUPLICATE_DEPENDENCY_ERROR_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": DUPLICATE_DEPENDENCY_ERROR_CODE},
+            ) from exc
+        if message == DUPLICATE_KNOWLEDGE_LINK_ERROR_CODE:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": DUPLICATE_KNOWLEDGE_LINK_ERROR_CODE},
+            ) from exc
+        # Phase 2 sprint-domain SPRINT_CLOSED leaks into task_service when a
+        # task tries to attach to a closed sprint; surface it as a 409 with
+        # the same code the sprint router emits so clients can share the
+        # handler.
+        if message == "SPRINT_CLOSED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": "SPRINT_CLOSED"},
+            ) from exc
         if "version conflict" in message:
             code = status.HTTP_409_CONFLICT
             detail = "version conflict"

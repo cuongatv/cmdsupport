@@ -6,14 +6,17 @@ Implements audit_read capability from AccessControl.md.
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.database.models import AuditLog, Employee
+from app.services.agile_governance import PERMISSION_ADVISORY_AUDIT_ACTION
 from app.services.auth_service import require_permission
+from app.services.task_constants import FEATURE_DISABLED_ERROR_CODE
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -62,6 +65,12 @@ async def get_audit_log(
     Query audit log with pagination and filters.
     Admin-only endpoint.
     """
+    if action == PERMISSION_ADVISORY_AUDIT_ACTION and not settings.FEATURE_AGILE_PHASE_5:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": FEATURE_DISABLED_ERROR_CODE},
+        )
+
     stmt = select(AuditLog)
 
     if principal_id:
