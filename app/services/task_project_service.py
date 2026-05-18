@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database.models import (
     Department,
     Employee,
@@ -16,7 +19,9 @@ from app.database.models import (
     Task,
     TaskLabel,
     TaskProject,
+    TaskProjectTemplate,
     TaskState,
+    UnitType,
 )
 from app.schemas.tasks import (
     TaskLabelCreate,
@@ -31,6 +36,7 @@ from app.services.permissions import EMPLOYEE_DEFAULT_PERMISSIONS
 from app.services.task_constants import (
     DEFAULT_STATE_GROUPS,
     DEFAULT_STATE_NAMES,
+    FEATURE_DISABLED_ERROR_CODE,
     POSITION_GAP,
 )
 
@@ -328,6 +334,184 @@ async def get_task_project(
     return await db.get(TaskProject, project_id)
 
 
+async def get_project_template(
+    db: AsyncSession, project_id: uuid.UUID
+) -> TaskProjectTemplate | None:
+    """Return the DoR/DoD template for a project, or None if none exists.
+
+    Phase 2: used by ``task_service.create_task`` to snapshot ``dor_template``
+    and ``dod_template`` into the new task. Later template edits do NOT
+    retroactively touch existing tasks — the snapshot is one-time-only.
+    """
+    result = await db.execute(
+        select(TaskProjectTemplate).where(
+            TaskProjectTemplate.task_project_id == project_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Vietnamese DoR/DoD defaults per unit type (Agile templates)
+# ---------------------------------------------------------------------------
+
+# Default Definition-of-Ready / Definition-of-Done checklist items in
+# Vietnamese, keyed by department ``unit_type``. The squad/team flavour gets
+# the full Agile checklist; the generic business-group flavour gets a leaner
+# set that suits SOP/operations work. Items are returned as lightweight dicts
+# so the wire shape matches ``Task.dor_checklist`` / ``Task.dod_checklist``
+# (``[{"label": "...", "done": false}]``) without further mapping.
+
+_DEFAULT_DOR_BY_UNIT_TYPE: dict[str, list[str]] = {
+    UnitType.SQUAD_TEAM.value: [
+        "Yêu cầu đã được xác nhận",
+        "Tiêu chí chấp nhận rõ ràng",
+        "Ước lượng đã hoàn thành",
+        "Phụ thuộc đã được xác định",
+        "Thiết kế kỹ thuật đã được thống nhất",
+    ],
+    UnitType.BUSINESS_GROUP.value: [
+        "Yêu cầu đã được xác nhận",
+        "Tiêu chí chấp nhận rõ ràng",
+        "Người phụ trách đã được phân công",
+    ],
+}
+
+_DEFAULT_DOD_BY_UNIT_TYPE: dict[str, list[str]] = {
+    UnitType.SQUAD_TEAM.value: [
+        "Đã kiểm thử",
+        "Đã review code",
+        "Đã cập nhật tài liệu",
+        "Đã triển khai lên môi trường staging",
+        "Đã được Product Owner xác nhận",
+    ],
+    UnitType.BUSINESS_GROUP.value: [
+        "Đã kiểm tra chất lượng",
+        "Đã cập nhật tài liệu",
+        "Đã được phê duyệt",
+    ],
+}
+
+
+def get_default_dor_template(unit_type: str | UnitType | None = None) -> list[str]:
+    """Return the default Vietnamese DoR checklist labels for a unit type.
+
+    Accepts either the ``UnitType`` enum or its raw string value. Unknown or
+    missing types fall back to the generic ``business_group`` flavour so
+    callers always get a non-empty list of opinionated defaults.
+    """
+    key = unit_type.value if isinstance(unit_type, UnitType) else unit_type
+    return list(
+        _DEFAULT_DOR_BY_UNIT_TYPE.get(
+            key or "",
+            _DEFAULT_DOR_BY_UNIT_TYPE[UnitType.BUSINESS_GROUP.value],
+        )
+    )
+
+
+def get_default_dod_template(unit_type: str | UnitType | None = None) -> list[str]:
+    """Return the default Vietnamese DoD checklist labels for a unit type.
+
+    Mirrors :func:`get_default_dor_template`: ``squad_team`` callers get the
+    full Agile completion bar, everyone else falls back to the
+    ``business_group`` flavour.
+    """
+    key = unit_type.value if isinstance(unit_type, UnitType) else unit_type
+    return list(
+        _DEFAULT_DOD_BY_UNIT_TYPE.get(
+            key or "",
+            _DEFAULT_DOD_BY_UNIT_TYPE[UnitType.BUSINESS_GROUP.value],
+        )
+    )
+
+
+async def get_or_create_template(
+    db: AsyncSession,
+    task_project_id: uuid.UUID,
+) -> TaskProjectTemplate:
+    """Return the project's DoR/DoD template, creating an empty row on first read.
+
+    Phase 4: the template surface is always readable, even when
+    ``FEATURE_AGILE_PHASE_4`` is off, so dashboards that pre-fetch the
+    template during a partial rollout do not flood observability with 403s.
+    Writes still go through :func:`update_template` which enforces the gate.
+
+    The row is created with empty ``dor_template`` / ``dod_template`` arrays
+    so callers never see ``None`` for the JSONB columns. Race condition
+    between two concurrent first-reads is translated via a SAVEPOINT-guarded
+    flush + unique-constraint retry — same pattern Phase 2 sprint creation
+    uses for the active-sprint uniqueness check. Does NOT commit.
+    """
+    project = await db.get(TaskProject, task_project_id)
+    if project is None:
+        raise ValueError("task project not found")
+
+    existing = await db.scalar(
+        select(TaskProjectTemplate).where(
+            TaskProjectTemplate.task_project_id == task_project_id
+        )
+    )
+    if existing is not None:
+        return existing
+
+    template = TaskProjectTemplate(
+        task_project_id=task_project_id,
+        dor_template=[],
+        dod_template=[],
+    )
+    db.add(template)
+    try:
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError:
+        # Another transaction won the race; re-read the persisted row so the
+        # caller always observes a consistent template instance.
+        await db.rollback()
+        existing = await db.scalar(
+            select(TaskProjectTemplate).where(
+                TaskProjectTemplate.task_project_id == task_project_id
+            )
+        )
+        if existing is None:  # pragma: no cover - extremely unlikely
+            raise
+        return existing
+    return template
+
+
+async def update_template(
+    db: AsyncSession,
+    task_project_id: uuid.UUID,
+    *,
+    dor_template: list[Any] | None = None,
+    dod_template: list[Any] | None = None,
+    actor: Employee,
+) -> TaskProjectTemplate:
+    """Persist DoR/DoD template arrays for a project (Phase 4 Agile).
+
+    Gated on :data:`settings.FEATURE_AGILE_PHASE_4`; raises
+    :class:`PermissionError` carrying the ``FEATURE_DISABLED`` code when the
+    flag is off so the router can translate it to 403. Updating the template
+    does NOT retroactively touch existing tasks — DoR/DoD snapshots taken
+    during ``create_task`` (T6) remain frozen on the task rows. Does NOT
+    commit; the caller (router) owns the transaction boundary.
+    """
+    if not settings.FEATURE_AGILE_PHASE_4:
+        raise PermissionError(FEATURE_DISABLED_ERROR_CODE)
+
+    template = await get_or_create_template(db, task_project_id)
+
+    if dor_template is not None:
+        template.dor_template = list(dor_template)
+    if dod_template is not None:
+        template.dod_template = list(dod_template)
+
+    await log_audit(
+        db, actor, "update", "task_project_template", str(template.id)
+    )
+    await db.flush()
+    return template
+
+
 async def create_label(
     db: AsyncSession,
     project_id: uuid.UUID,
@@ -394,7 +578,12 @@ async def create_state(
     data: TaskStateCreate,
     actor: Employee,
 ) -> TaskState:
-    """Create a task state at the next position without committing."""
+    """Create a task state at the next position without committing.
+
+    Phase 1 agile fields (``wip_limit``, ``wip_policy``, ``aging_warn_days``)
+    are persisted when supplied; the model defaults (``wip_policy='off'``)
+    keep legacy callers fully backward compatible.
+    """
     project = await _get_existing_project(db, project_id)
     _ensure_project_mutable(project, actor)
 
@@ -403,16 +592,24 @@ async def create_state(
             TaskState.task_project_id == project_id
         )
     )
-    state = TaskState(
-        task_project_id=project_id,
-        name=data.name,
-        group=data.group,
-        color=data.color,
-        position=(max_position + POSITION_GAP)
+    state_kwargs: dict[str, object] = {
+        "task_project_id": project_id,
+        "name": data.name,
+        "group": data.group,
+        "color": data.color,
+        "position": (max_position + POSITION_GAP)
         if max_position is not None
         else data.position,
-        is_default=False,
-    )
+        "is_default": False,
+    }
+    if data.wip_limit is not None:
+        state_kwargs["wip_limit"] = data.wip_limit
+    if data.wip_policy is not None:
+        state_kwargs["wip_policy"] = data.wip_policy
+    if data.aging_warn_days is not None:
+        state_kwargs["aging_warn_days"] = data.aging_warn_days
+
+    state = TaskState(**state_kwargs)
     db.add(state)
     await log_audit(db, actor, "create", "task_state", str(state.id))
     await db.flush()

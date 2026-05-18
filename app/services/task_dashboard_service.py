@@ -13,11 +13,15 @@ membership, with all counts produced server-side via ``func.count(...)``.
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database.models import (
     Department,
     Employee,
@@ -42,6 +46,15 @@ from app.services.task_project_service import get_or_create_personal_project
 
 _DUE_SOON_LIMIT: int = 20
 _TERMINAL_GROUPS: tuple[str, ...] = ("done", "cancelled")
+
+# Phase 3 capacity advisory thresholds. The heuristic is intentionally
+# conservative: we only flag overload when the membership row carries an
+# explicit reduced capacity (`< _CAPACITY_OVERLOAD_PCT`) AND the user is
+# carrying more than `_CAPACITY_OVERLOAD_TASKS` open tasks. The thresholds
+# are not derived from timesheets — Phase 3 deliberately stays away from
+# hourly planning (see plan §11).
+_CAPACITY_OVERLOAD_TASKS: int = 10
+_CAPACITY_OVERLOAD_PCT: int = 75
 
 
 async def get_dashboard(
@@ -338,3 +351,132 @@ def _enum_str(value: object) -> str:
     """Return the ``.value`` of an Enum, or ``str(value)`` for plain strings."""
     raw = getattr(value, "value", value)
     return str(raw)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — squad capacity (drives the squad overview API + UI)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SquadMemberCapacity:
+    """Per (employee, squad) capacity snapshot used by Phase 3 dashboards.
+
+    A user who belongs to two squads (departments) appears as TWO independent
+    rows — one per ``get_squad_capacity(department_id=...)`` call. Capacity is
+    NOT aggregated across squads on purpose: each squad's planning view stays
+    scoped to its own membership and its own backlog.
+    """
+
+    employee_id: uuid.UUID
+    employee_name: str
+    department_id: uuid.UUID
+    squad_name: str
+    capacity_percent: Optional[int]
+    open_task_count: int
+    story_points_sum: Optional[int]
+    is_overloaded: bool
+
+
+async def get_squad_capacity(
+    db: AsyncSession,
+    department_id: uuid.UUID,
+    *,
+    include_done: bool = False,
+) -> list[SquadMemberCapacity]:
+    """Return one ``SquadMemberCapacity`` per active membership in ``department_id``.
+
+    The task counts only consider tasks whose ``TaskProject.department_id``
+    matches ``department_id`` so multi-squad users (members of more than one
+    department) yield independent rows per squad — never an aggregated total.
+
+    By default, tasks in terminal state groups (``done``/``cancelled``) are
+    excluded; pass ``include_done=True`` to include them. Soft-deleted tasks
+    are always excluded.
+
+    Returns an empty list when ``FEATURE_AGILE_PHASE_3`` is disabled, mirroring
+    the Phase-1/Phase-2 short-circuit pattern.
+    """
+    if not settings.FEATURE_AGILE_PHASE_3:
+        return []
+
+    # Per-employee task aggregates scoped to the squad's projects. The
+    # subquery uses INNER joins on the task graph so an employee with zero
+    # matching tasks simply does not appear here — the outer LEFT JOIN below
+    # then surfaces them with a zero count via COALESCE.
+    task_agg_stmt = (
+        select(
+            TaskAssignee.employee_id.label("employee_id"),
+            func.count(Task.id).label("task_count"),
+            func.sum(Task.story_points).label("sp_sum"),
+        )
+        .select_from(TaskAssignee)
+        .join(Task, Task.id == TaskAssignee.task_id)
+        .join(TaskProject, TaskProject.id == Task.task_project_id)
+        .join(TaskState, TaskState.id == Task.state_id)
+        .where(
+            TaskProject.department_id == department_id,
+            Task.deleted_at.is_(None),
+        )
+    )
+    if not include_done:
+        task_agg_stmt = task_agg_stmt.where(
+            TaskState.group.not_in(_TERMINAL_GROUPS)
+        )
+    task_agg = task_agg_stmt.group_by(TaskAssignee.employee_id).subquery(
+        "squad_task_agg"
+    )
+
+    stmt = (
+        select(
+            EmployeeDepartmentMembership.employee_id,
+            Employee.name,
+            EmployeeDepartmentMembership.department_id,
+            Department.name,
+            EmployeeDepartmentMembership.capacity_percent,
+            func.coalesce(task_agg.c.task_count, 0),
+            task_agg.c.sp_sum,
+        )
+        .select_from(EmployeeDepartmentMembership)
+        .join(Employee, Employee.id == EmployeeDepartmentMembership.employee_id)
+        .join(
+            Department, Department.id == EmployeeDepartmentMembership.department_id
+        )
+        .outerjoin(
+            task_agg,
+            task_agg.c.employee_id == EmployeeDepartmentMembership.employee_id,
+        )
+        .where(
+            EmployeeDepartmentMembership.department_id == department_id,
+            EmployeeDepartmentMembership.is_active.is_(True),
+        )
+        .order_by(Employee.name, EmployeeDepartmentMembership.employee_id)
+    )
+
+    result = await db.execute(stmt)
+    rows: list[SquadMemberCapacity] = []
+    for row in result.all():
+        capacity_percent = row[4]
+        open_task_count = int(row[5] or 0)
+        story_points_sum_raw = row[6]
+        story_points_sum = (
+            int(story_points_sum_raw) if story_points_sum_raw is not None else None
+        )
+        is_overloaded = (
+            open_task_count > _CAPACITY_OVERLOAD_TASKS
+            and capacity_percent is not None
+            and capacity_percent < _CAPACITY_OVERLOAD_PCT
+        )
+        rows.append(
+            SquadMemberCapacity(
+                employee_id=row[0],
+                employee_name=row[1],
+                department_id=row[2],
+                squad_name=row[3],
+                capacity_percent=capacity_percent,
+                open_task_count=open_task_count,
+                story_points_sum=story_points_sum,
+                is_overloaded=is_overloaded,
+            )
+        )
+    return rows
