@@ -5,6 +5,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
+import { AgileAgingWip } from "@/components/admin/dashboard/AgileAgingWip";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -17,24 +18,17 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section cards that occupy the slots filled in T10–T13 by the
-// aging table, throughput chart, blocked panel, and capacity heatmap. The
-// KPI slot (T8) is backed by <AgileKpiStrip> and the CFD slot (T9) by
-// <AgileCfd>; data wiring still lives in T14, so both receive `data={null}`
-// for now and self-render skeletons.
+// Placeholder section cards that occupy the slots filled in T11–T13 by the
+// throughput chart, blocked panel, and capacity heatmap. The KPI slot (T8)
+// is backed by <AgileKpiStrip>, the CFD slot (T9) by <AgileCfd>, and the
+// aging slot (T10) by <AgileAgingWip>; data wiring still lives in T14, so
+// all receive `data={null}` for now and self-render skeletons.
 const PLACEHOLDER_SECTIONS: {
   id: string;
   title: string;
   description: string;
   testId: string;
 }[] = [
-  {
-    id: "aging",
-    title: "Công việc tồn lâu",
-    description:
-      "Danh sách task aging theo trạng thái — sẽ hiển thị ở Wave 2 (T10).",
-    testId: "agile-section-aging-placeholder",
-  },
   {
     id: "throughput",
     title: "Throughput",
@@ -186,6 +180,7 @@ export function AgileDashboardShell() {
         data-testid="agile-dashboard-sections"
       >
         <AgileCfd data={null} loading={false} />
+        <AgileAgingWip data={null} loading={false} />
         {PLACEHOLDER_SECTIONS.map((section) => (
           <article
             key={section.id}
