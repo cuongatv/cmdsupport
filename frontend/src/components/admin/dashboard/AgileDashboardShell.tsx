@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
+import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -16,24 +17,17 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section cards that occupy the slots filled in T9–T13 by the
-// CFD chart, aging table, throughput chart, blocked panel, and capacity
-// heatmap. The KPI slot (T8) is now backed by <AgileKpiStrip> above the
-// grid; data wiring still lives in T14 so the strip receives `data={null}`
-// for now and self-renders a skeleton row.
+// Placeholder section cards that occupy the slots filled in T10–T13 by the
+// aging table, throughput chart, blocked panel, and capacity heatmap. The
+// KPI slot (T8) is backed by <AgileKpiStrip> and the CFD slot (T9) by
+// <AgileCfd>; data wiring still lives in T14, so both receive `data={null}`
+// for now and self-render skeletons.
 const PLACEHOLDER_SECTIONS: {
   id: string;
   title: string;
   description: string;
   testId: string;
 }[] = [
-  {
-    id: "cfd",
-    title: "Cumulative Flow Diagram",
-    description:
-      "Biểu đồ tích lũy theo trạng thái — sẽ hiển thị ở Wave 2 (T9).",
-    testId: "agile-section-cfd-placeholder",
-  },
   {
     id: "aging",
     title: "Công việc tồn lâu",
@@ -191,6 +185,7 @@ export function AgileDashboardShell() {
         className="grid grid-cols-1 gap-4 lg:grid-cols-2"
         data-testid="agile-dashboard-sections"
       >
+        <AgileCfd data={null} loading={false} />
         {PLACEHOLDER_SECTIONS.map((section) => (
           <article
             key={section.id}
