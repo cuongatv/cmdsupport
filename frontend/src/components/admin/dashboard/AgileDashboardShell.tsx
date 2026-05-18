@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
@@ -9,29 +9,85 @@ import { AgileAgingWip } from "@/components/admin/dashboard/AgileAgingWip";
 import { AgileThroughput } from "@/components/admin/dashboard/AgileThroughput";
 import { AgileBlockedPanel } from "@/components/admin/dashboard/AgileBlockedPanel";
 import { AgileCapacityHeatmap } from "@/components/admin/dashboard/AgileCapacityHeatmap";
-import type { AdminDashboardQueryParams } from "@/lib/task-api";
+import {
+  getAdminDashboardFlowSummary,
+  type AdminDashboardQueryParams,
+} from "@/lib/task-api";
+import type { AdminDashboardFlowSummaryResponse } from "@/lib/task-types";
+
+type RangeDays = 7 | 14 | 30 | 90;
 
 // Date range presets surfaced by the range filter pill group. Values are
-// expressed in days; the data wiring task (T14) translates the active value
-// into `start_date` / `end_date` ISO strings before calling the API.
-const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
+// expressed in days; the shell translates the active value into
+// `start_date` / `end_date` ISO strings before calling the API.
+const RANGE_OPTIONS: { value: RangeDays; label: string }[] = [
   { value: 7, label: "7 ngày" },
   { value: 14, label: "14 ngày" },
   { value: 30, label: "30 ngày" },
   { value: 90, label: "90 ngày" },
 ];
 
+function toISODate(value: Date): string {
+  return value.toISOString().split("T")[0];
+}
+
+function getDateRangeParams(rangeDays: RangeDays): Pick<
+  AdminDashboardQueryParams,
+  "start_date" | "end_date"
+> {
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - rangeDays);
+  return {
+    start_date: toISODate(start),
+    end_date: toISODate(today),
+  };
+}
+
+function cleanFilterParams(
+  filters: AdminDashboardQueryParams,
+): Omit<
+  AdminDashboardQueryParams,
+  "start_date" | "end_date"
+> {
+  const params: Omit<
+    AdminDashboardQueryParams,
+    "start_date" | "end_date"
+  > = {};
+  if (filters.department_id) params.department_id = filters.department_id;
+  if (filters.workspace_id) params.workspace_id = filters.workspace_id;
+  if (filters.project_id) params.project_id = filters.project_id;
+  if (filters.sprint_id) params.sprint_id = filters.sprint_id;
+  return params;
+}
+
+function formatAsOf(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 // AgileDashboardShell — Agile view that hosts the filters and the section
-// grid. All six section slots (T8–T13) are now backed by real components:
-// KPIs (<AgileKpiStrip>), CFD (<AgileCfd>), aging WIP (<AgileAgingWip>),
-// throughput (<AgileThroughput>), blocker/risk (<AgileBlockedPanel>), and
-// capacity (<AgileCapacityHeatmap>). Data wiring still lives in T14, so all
-// receive `data={null}` for now and self-render skeletons.
-// Filter state is intentionally local: this task only renders the controls;
-// `getAdminDashboardFlowSummary` is not called yet (deferred to T14).
+// grid. All six section slots (T8–T13) are backed by real API data from the
+// admin flow summary endpoint.
 export function AgileDashboardShell() {
-  const [rangeDays, setRangeDays] = useState<7 | 14 | 30 | 90>(14);
+  const [rangeDays, setRangeDays] = useState<RangeDays>(14);
   const [filters, setFilters] = useState<AdminDashboardQueryParams>({});
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [dashboardData, setDashboardData] =
+    useState<AdminDashboardFlowSummaryResponse | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState(false);
+
+  const dashboardParams = useMemo<AdminDashboardQueryParams>(() => {
+    return {
+      ...getDateRangeParams(rangeDays),
+      ...cleanFilterParams(filters),
+    };
+  }, [rangeDays, filters]);
 
   const handleSelectChange =
     (key: keyof AdminDashboardQueryParams) =>
@@ -42,6 +98,39 @@ export function AgileDashboardShell() {
         [key]: value === "" ? null : value,
       }));
     };
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadDashboard() {
+      setDashboardLoading(true);
+      setDashboardError(false);
+      try {
+        const data = await getAdminDashboardFlowSummary(dashboardParams);
+        if (!ignore) {
+          setDashboardData(data);
+        }
+      } catch {
+        if (!ignore) {
+          setDashboardError(true);
+        }
+      } finally {
+        if (!ignore) {
+          setDashboardLoading(false);
+        }
+      }
+    }
+
+    loadDashboard();
+
+    return () => {
+      ignore = true;
+    };
+  }, [dashboardParams, refreshKey]);
+
+  const handleRefresh = () => {
+    setRefreshKey((current) => current + 1);
+  };
 
   return (
     <div
@@ -64,32 +153,47 @@ export function AgileDashboardShell() {
           </p>
         </div>
 
-        <div
-          className="flex flex-wrap items-center gap-2"
-          data-testid="dashboard-range-filter"
-          role="group"
-          aria-label="Khoảng thời gian"
-        >
-          {RANGE_OPTIONS.map((option) => {
-            const isActive = option.value === rangeDays;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setRangeDays(option.value)}
-                data-testid={`dashboard-range-${option.value}d`}
-                aria-pressed={isActive}
-                className={
-                  "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
-                  (isActive
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
-                }
-              >
-                {option.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="dashboard-range-filter"
+            role="group"
+            aria-label="Khoảng thời gian"
+          >
+            {RANGE_OPTIONS.map((option) => {
+              const isActive = option.value === rangeDays;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRangeDays(option.value)}
+                  data-testid={`dashboard-range-${option.value}d`}
+                  aria-pressed={isActive}
+                  className={
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors " +
+                    (isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
+                  }
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            data-testid="dashboard-refresh"
+            disabled={dashboardLoading}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span aria-hidden className="material-symbols-outlined text-base">
+              refresh
+            </span>
+            Làm mới
+          </button>
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -115,6 +219,15 @@ export function AgileDashboardShell() {
             placeholder="Tất cả dự án"
           />
         </div>
+
+        {dashboardData?.as_of && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="dashboard-as-of"
+          >
+            Cập nhật lúc: {formatAsOf(dashboardData.as_of)}
+          </p>
+        )}
       </section>
 
       <Link
@@ -146,18 +259,57 @@ export function AgileDashboardShell() {
         </span>
       </Link>
 
-      <AgileKpiStrip data={null} loading={false} />
+      {dashboardError && !dashboardLoading ? (
+        <section
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
+          data-testid="dashboard-error"
+        >
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden
+              className="material-symbols-outlined text-xl text-destructive"
+            >
+              error
+            </span>
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-foreground">
+                Không thể tải dữ liệu. Vui lòng thử lại.
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Kết nối tới bảng điều khiển luồng công việc chưa thành công.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <span aria-hidden className="material-symbols-outlined text-base">
+              refresh
+            </span>
+            Thử lại
+          </button>
+        </section>
+      ) : (
+        <>
+          <AgileKpiStrip data={dashboardData} loading={dashboardLoading} />
 
-      <div
-        className="grid grid-cols-1 gap-4 lg:grid-cols-2"
-        data-testid="agile-dashboard-sections"
-      >
-        <AgileCfd data={null} loading={false} />
-        <AgileAgingWip data={null} loading={false} />
-        <AgileThroughput data={null} loading={false} />
-        <AgileBlockedPanel data={null} loading={false} />
-        <AgileCapacityHeatmap data={null} loading={false} />
-      </div>
+          <div
+            className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+            data-testid="agile-dashboard-sections"
+          >
+            <AgileCfd data={dashboardData} loading={dashboardLoading} />
+            <AgileAgingWip data={dashboardData} loading={dashboardLoading} />
+            <AgileThroughput data={dashboardData} loading={dashboardLoading} />
+            <AgileBlockedPanel data={dashboardData} loading={dashboardLoading} />
+            <AgileCapacityHeatmap
+              data={dashboardData}
+              loading={dashboardLoading}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -170,6 +322,9 @@ type FilterSelectProps = {
   placeholder: string;
 };
 
+// Scope option lists are populated in a future task; keep the selects disabled
+// while still preserving their state so typed filters flow into the API once
+// options are available.
 function FilterSelect({
   label,
   testId,
