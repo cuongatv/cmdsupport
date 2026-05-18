@@ -120,7 +120,7 @@ export function AgileBlockedPanel({
   if (showError) {
     return (
       <article
-        data-testid="blocked-risk-panel"
+        data-testid="risk-panel"
         className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
       >
         <header className="flex flex-col gap-0.5">
@@ -169,7 +169,7 @@ export function AgileBlockedPanel({
   if (loading || data === null) {
     return (
       <article
-        data-testid="blocked-risk-panel"
+        data-testid="risk-panel"
         className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5"
         aria-busy="true"
         aria-label="Đang tải danh sách blocker và rủi ro"
@@ -201,7 +201,7 @@ export function AgileBlockedPanel({
   if (!data.feature_enabled) {
     return (
       <article
-        data-testid="blocked-risk-panel"
+        data-testid="risk-panel"
         className="flex flex-col gap-2 rounded-xl border border-dashed border-border bg-card/40 p-4 sm:p-5"
       >
         <h3 className="text-sm font-semibold text-foreground">
@@ -223,7 +223,7 @@ export function AgileBlockedPanel({
 
   return (
     <article
-      data-testid="blocked-risk-panel"
+      data-testid="risk-panel"
       className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:p-5"
     >
       <header className="flex flex-wrap items-start justify-between gap-2">
