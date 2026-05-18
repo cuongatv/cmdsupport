@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -334,3 +334,65 @@ class DashboardOut(BaseModel):
 
 TaskCreate = TaskCreate
 TaskUpdate = TaskUpdate
+
+
+class AdminDashboardCfdPoint(BaseModel):
+    snapshot_date: date
+    state_counts: dict[str, int] = Field(default_factory=dict)
+    blocked_count: int = 0
+
+
+class AdminDashboardAgingTaskItem(BaseModel):
+    task_id: Optional[uuid.UUID] = None
+    title: str
+    state_name: str
+    aging_days: int
+    priority: Optional[str] = None
+    assignee_names: list[str] = Field(default_factory=list)
+
+
+class AdminDashboardThroughputPoint(BaseModel):
+    period_start: date
+    period_end: date
+    tasks_completed: int = 0
+    story_points_completed: int = 0
+
+
+class AdminDashboardChartSeries(BaseModel):
+    cfd_series: list[AdminDashboardCfdPoint] = Field(default_factory=list)
+    aging_tasks: list[AdminDashboardAgingTaskItem] = Field(default_factory=list)
+    throughput_series: list[AdminDashboardThroughputPoint] = Field(default_factory=list)
+
+
+class AdminDashboardRiskItem(BaseModel):
+    id: str
+    title: str
+    severity: str
+    count: int = 0
+    description: Optional[str] = None
+
+
+class AdminDashboardCapacityItem(BaseModel):
+    id: str
+    label: str
+    capacity_percent: Optional[int] = None
+    open_task_count: int = 0
+    story_points_sum: Optional[int] = None
+    is_overloaded: bool = False
+
+
+class AdminDashboardFlowSummaryResponse(BaseModel):
+    feature_enabled: bool
+    as_of: datetime
+    approximation_used: bool
+    scoped_project_count: int
+    wip_count: int
+    blocked_count: int
+    aging_count: int
+    throughput_count: int
+    cycle_time_p50: float
+    lead_time_p50: float
+    chart_series: AdminDashboardChartSeries = Field(
+        default_factory=AdminDashboardChartSeries
+    )
+    risk_items: list[AdminDashboardRiskItem] = Field(default_factory=list)

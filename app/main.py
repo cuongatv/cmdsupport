@@ -116,6 +116,7 @@ app.mount("/mcp", mcp_http_app)
 
 # --- REST API Routers ---
 from app.routers import (  # noqa: E402
+    admin_dashboard_router,
     admin_settings,
     audit,
     auth,
@@ -158,6 +159,9 @@ app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(habits.router, prefix="/api", tags=["habits"])
 
 
+app.include_router(
+    admin_dashboard_router.router, prefix="/api", tags=["admin-dashboard"]
+)
 @app.get("/")
 async def root():
     return {

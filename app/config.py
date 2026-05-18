@@ -85,6 +85,12 @@ class Settings(BaseSettings):
         description="Auto-approve MRP ingestion plans; default keeps human review required",
     )
 
+    # --- Feature flags ---
+    FEATURE_AGILE_PHASE_5: bool = Field(
+        default=False,
+        description="Enable Phase 5 Agile flow metrics and throughput analytics",
+    )
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     @property
