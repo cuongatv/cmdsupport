@@ -1598,6 +1598,9 @@ class TaskProject(Base):
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="task_project", cascade="all, delete-orphan"
     )
+    flow_snapshots: Mapped[list["TaskFlowSnapshot"]] = relationship(
+        back_populates="task_project", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -1633,6 +1636,18 @@ class TaskState(Base):
     )
     color: Mapped[Optional[str]] = mapped_column(String(20))
     position: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    wip_limit: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    wip_policy: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="off",
+        server_default=text("'off'"),
+        comment="off|warn|enforce",
+    )
+    aging_warn_days: Mapped[Optional[int]] = mapped_column(
+        SmallInteger,
+        nullable=True,
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -1642,8 +1657,72 @@ class TaskState(Base):
     )
 
     task_project: Mapped["TaskProject"] = relationship(back_populates="states")
+    flow_snapshots: Mapped[list["TaskFlowSnapshot"]] = relationship(
+        back_populates="state"
+    )
 
     __table_args__ = (Index("ix_task_states_project_id", "task_project_id"),)
+
+
+class TaskFlowSnapshot(Base):
+    """Daily Phase 5 flow-metric aggregate for one task project/state."""
+
+    __tablename__ = "task_flow_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    task_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("task_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    state_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("task_states.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    task_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    story_points_sum: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    blocked_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    task_project: Mapped["TaskProject"] = relationship(
+        back_populates="flow_snapshots", foreign_keys=[task_project_id]
+    )
+    state: Mapped[Optional["TaskState"]] = relationship(
+        back_populates="flow_snapshots", foreign_keys=[state_id]
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "task_project_id",
+            "snapshot_date",
+            "state_id",
+            name="uq_task_flow_snapshot_project_date_state",
+        ),
+        Index(
+            "ix_task_flow_snapshots_project_date_desc",
+            "task_project_id",
+            snapshot_date.desc(),
+        ),
+    )
 
 
 class Task(Base):
@@ -1701,6 +1780,34 @@ class Task(Base):
     schedule_locked: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    # --- Phase 2 Agile semantics (additive, all nullable). ---
+    # Set via Phase-2-aware clients; gated at the router by FEATURE_AGILE_PHASE_2.
+    task_type: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, comment="story|task|bug|epic|spike"
+    )
+    estimate: Mapped[Optional[str]] = mapped_column(
+        String(5), nullable=True, comment="xs|s|m|l|xl T-shirt sizing"
+    )
+    story_points: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    acceptance_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Snapshotted from TaskProjectTemplate at create time; later template
+    # edits do NOT retroactively touch this row.
+    dor_checklist: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    dod_checklist: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    blocked_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    blocked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    blocked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    sprint_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sprints.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
@@ -1714,6 +1821,10 @@ class Task(Base):
         back_populates="tasks", foreign_keys=[task_project_id]
     )
     state: Mapped["TaskState"] = relationship(foreign_keys=[state_id])
+    sprint: Mapped[Optional["Sprint"]] = relationship(
+        back_populates="tasks", foreign_keys=[sprint_id]
+    )
+    blocked_by: Mapped[Optional["Employee"]] = relationship(foreign_keys=[blocked_by_id])
     parent_task: Mapped[Optional["Task"]] = relationship(
         back_populates="subtasks", remote_side="Task.id", foreign_keys=[parent_task_id]
     )
@@ -1749,6 +1860,11 @@ class Task(Base):
         Index("ix_tasks_scheduled_start_at", "scheduled_start_at"),
         Index("ix_tasks_deleted_at", "deleted_at"),
         Index("ix_tasks_priority", "priority"),
+        Index("ix_tasks_sprint_id", "sprint_id"),
+        CheckConstraint(
+            "story_points IS NULL OR story_points >= 0",
+            name="ck_tasks_story_points_non_negative",
+        ),
     )
 
 
@@ -1925,6 +2041,236 @@ class TaskActivity(Base):
     __table_args__ = (
         Index("ix_task_activities_task_id", "task_id"),
         Index("ix_task_activities_created_at", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Agile — Sprints + DoR/DoD templates
+# ---------------------------------------------------------------------------
+
+
+class Sprint(Base):
+    """A lightweight sprint container scoped to one task project.
+
+    Status drives the project-level invariant "at most one active sprint per
+    task project" (enforced via a partial unique index in migration 030).
+    """
+
+    __tablename__ = "sprints"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    task_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("task_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="planned",
+        server_default=text("'planned'"),
+        comment="planned|active|completed|cancelled",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    task_project: Mapped["TaskProject"] = relationship(foreign_keys=[task_project_id])
+    tasks: Mapped[list["Task"]] = relationship(
+        back_populates="sprint", foreign_keys="Task.sprint_id"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned','active','completed','cancelled')",
+            name="ck_sprints_status_valid",
+        ),
+        Index("ix_sprints_task_project_id", "task_project_id"),
+    )
+
+
+class TaskProjectTemplate(Base):
+    """Per-project DoR/DoD template (one row per task project).
+
+    ``dor_template`` / ``dod_template`` are JSON arrays of checklist items
+    (typically ``[{"label": "...", "done": false}]``). Snapshotted into
+    ``Task.dor_checklist`` / ``Task.dod_checklist`` on task creation.
+    """
+
+    __tablename__ = "task_project_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    task_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("task_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    dor_template: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    dod_template: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    task_project: Mapped["TaskProject"] = relationship(foreign_keys=[task_project_id])
+
+
+class TaskDependency(Base):
+    """Directed dependency between two tasks (Phase 2 Agile).
+
+    Semantics: ``from_task_id`` depends on ``to_task_id`` with ``dep_type``
+    describing the relationship (``blocks`` is the only verb in scope for
+    Phase 2; future phases may add ``relates_to`` / ``duplicates``).
+
+    The pair is enforced unique at the DB layer (``uq_task_dep_pair``) so
+    duplicate inserts surface as ``IntegrityError`` even if the application
+    pre-check races. Cycles are rejected by the service layer via a recursive
+    CTE walk over existing ``blocks`` edges before the insert.
+
+    ``ON DELETE CASCADE`` on both FK ends means deleting either endpoint
+    silently sweeps the edge — there is no orphan-dependency state to clean up.
+    """
+
+    __tablename__ = "task_dependencies"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    from_task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    to_task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dep_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="blocks",
+        server_default=text("'blocks'"),
+        comment="blocks (Phase 2 only; relates_to/duplicates reserved)",
+    )
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    from_task: Mapped["Task"] = relationship(foreign_keys=[from_task_id])
+    to_task: Mapped["Task"] = relationship(foreign_keys=[to_task_id])
+    created_by: Mapped[Optional["Employee"]] = relationship(
+        foreign_keys=[created_by_id]
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "from_task_id", "to_task_id", name="uq_task_dep_pair"
+        ),
+        Index("ix_task_dependencies_from", "from_task_id"),
+        Index("ix_task_dependencies_to", "to_task_id"),
+        CheckConstraint(
+            "from_task_id <> to_task_id",
+            name="ck_task_dep_no_self_edge",
+        ),
+    )
+
+
+class TaskKnowledgeLink(Base):
+    """Link from a task to a wiki page or source document (Phase 4 Agile).
+
+    A task can reference compiled wiki pages or raw source documents with a
+    typed relationship (``reference`` / ``solution`` / ``blocker`` /
+    ``related``). Knowledge targets are nullable with ``ON DELETE SET NULL``
+    so deleting a page/source keeps the task link audit row as an orphan marker.
+    """
+
+    __tablename__ = "task_knowledge_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    wiki_page_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wiki_pages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("sources.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    link_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="reference",
+        server_default=text("'reference'"),
+        comment="reference | solution | blocker | related",
+    )
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "task_id", "wiki_page_id", name="uq_task_knowledge_link_pair"
+        ),
+        CheckConstraint(
+            "wiki_page_id IS NOT NULL OR source_id IS NOT NULL",
+            name="ck_task_knowledge_links_has_target",
+        ),
+        CheckConstraint(
+            "link_type IN ('reference', 'solution', 'blocker', 'related')",
+            name="ck_task_knowledge_links_link_type",
+        ),
+        Index("ix_task_knowledge_links_task_id", "task_id"),
+        Index("ix_task_knowledge_links_wiki_page_id", "wiki_page_id"),
+        Index("ix_task_knowledge_links_source_id", "source_id"),
     )
 
 
