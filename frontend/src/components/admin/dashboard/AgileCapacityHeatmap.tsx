@@ -24,6 +24,8 @@ import type {
 type AgileCapacityHeatmapProps = {
   data: AdminDashboardFlowSummaryResponse | null;
   loading: boolean;
+  error?: boolean;
+  onRetry?: () => void;
 };
 
 function clampPercent(value: number | null): number {
@@ -57,10 +59,61 @@ function sortByOverloadThenCapacity(
 export function AgileCapacityHeatmap({
   data,
   loading,
+  error = false,
+  onRetry,
 }: AgileCapacityHeatmapProps) {
-  const showSkeleton = loading || data === null;
+  const showError = error && data === null && !loading;
 
-  if (showSkeleton) {
+  if (showError) {
+    return (
+      <article
+        data-testid="capacity-heatmap"
+        className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
+      >
+        <header className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold text-foreground">
+            Tải trọng đội ngũ
+          </h3>
+        </header>
+        <div
+          className="flex flex-col gap-3 rounded-lg bg-destructive/5 p-3"
+          data-testid="capacity-heatmap-error"
+        >
+          <div className="flex items-start gap-2">
+            <span
+              aria-hidden
+              className="material-symbols-outlined text-lg text-destructive"
+            >
+              error
+            </span>
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium text-foreground">
+                Không thể tải dữ liệu
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Vui lòng thử lại sau giây lát.
+              </p>
+            </div>
+          </div>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              data-testid="capacity-heatmap-retry"
+              className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            >
+              <span aria-hidden className="material-symbols-outlined text-base">
+                refresh
+              </span>
+              Thử lại
+            </button>
+          )}
+        </div>
+      </article>
+    );
+  }
+
+  if (loading || data === null) {
     return (
       <article
         data-testid="capacity-heatmap"

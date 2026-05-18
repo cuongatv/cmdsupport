@@ -17,6 +17,8 @@ import type { AdminDashboardFlowSummaryResponse } from "@/lib/task-types";
 type AgileKpiStripProps = {
   data: AdminDashboardFlowSummaryResponse | null;
   loading: boolean;
+  error?: boolean;
+  onRetry?: () => void;
 };
 
 type KpiEntry = {
@@ -39,10 +41,54 @@ function formatDays(value: number): string {
   return `${value.toFixed(1)} ngày`;
 }
 
-export function AgileKpiStrip({ data, loading }: AgileKpiStripProps) {
-  const showSkeleton = loading || data === null;
+export function AgileKpiStrip({
+  data,
+  loading,
+  error = false,
+  onRetry,
+}: AgileKpiStripProps) {
+  const showError = error && data === null && !loading;
 
-  if (showSkeleton) {
+  if (showError) {
+    return (
+      <section
+        className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
+        data-testid="agile-kpi-strip-error"
+      >
+        <div className="flex items-start gap-3">
+          <span
+            aria-hidden
+            className="material-symbols-outlined text-xl text-destructive"
+          >
+            error
+          </span>
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold text-foreground">
+              Không thể tải dữ liệu
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Vui lòng thử lại sau giây lát.
+            </p>
+          </div>
+        </div>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            data-testid="agile-kpi-strip-retry"
+            className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <span aria-hidden className="material-symbols-outlined text-base">
+              refresh
+            </span>
+            Thử lại
+          </button>
+        )}
+      </section>
+    );
+  }
+
+  if (loading || data === null) {
     return (
       <section
         className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"

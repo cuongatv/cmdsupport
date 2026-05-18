@@ -70,6 +70,18 @@ function formatAsOf(value: string): string {
   }).format(date);
 }
 
+// Snapshot freshness threshold shared across the dashboard. Mirrors the
+// per-widget stale badges in AgileCfd / AgileThroughput so the shell-level
+// banner fires on the same boundary.
+const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+function isStale(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return Date.now() - date.getTime() > STALE_THRESHOLD_MS;
+}
+
 // AgileDashboardShell — Agile view that hosts the filters and the section
 // grid. All six section slots (T8–T13) are backed by real API data from the
 // admin flow summary endpoint.
@@ -259,57 +271,85 @@ export function AgileDashboardShell() {
         </span>
       </Link>
 
-      {dashboardError && !dashboardLoading ? (
+      {dashboardData && isStale(dashboardData.as_of) && (
         <section
-          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-card p-4 sm:p-5"
-          data-testid="dashboard-error"
+          data-testid="stale-data-warning"
+          role="status"
+          className="flex flex-wrap items-start gap-3 rounded-xl border border-amber-400/60 bg-amber-50 p-3 sm:p-4"
         >
-          <div className="flex items-start gap-3">
-            <span
-              aria-hidden
-              className="material-symbols-outlined text-xl text-destructive"
-            >
-              error
-            </span>
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-semibold text-foreground">
-                Không thể tải dữ liệu. Vui lòng thử lại.
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Kết nối tới bảng điều khiển luồng công việc chưa thành công.
-              </p>
-            </div>
+          <span
+            aria-hidden
+            className="material-symbols-outlined text-lg text-amber-700"
+          >
+            warning
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <p className="text-sm font-semibold text-amber-900">
+              Dữ liệu có thể đã cũ
+            </p>
+            <p className="text-xs text-amber-800">
+              Ảnh chụp gần nhất đã quá 24 giờ. Cập nhật lúc:{" "}
+              <span data-testid="stale-data-warning-as-of">
+                {formatAsOf(dashboardData.as_of)}
+              </span>
+            </p>
           </div>
           <button
             type="button"
             onClick={handleRefresh}
-            className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+            data-testid="stale-data-warning-refresh"
+            className="inline-flex h-8 w-fit items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100"
           >
-            <span aria-hidden className="material-symbols-outlined text-base">
+            <span aria-hidden className="material-symbols-outlined text-sm">
               refresh
             </span>
-            Thử lại
+            Làm mới
           </button>
         </section>
-      ) : (
-        <>
-          <AgileKpiStrip data={dashboardData} loading={dashboardLoading} />
-
-          <div
-            className="grid grid-cols-1 gap-4 lg:grid-cols-2"
-            data-testid="agile-dashboard-sections"
-          >
-            <AgileCfd data={dashboardData} loading={dashboardLoading} />
-            <AgileAgingWip data={dashboardData} loading={dashboardLoading} />
-            <AgileThroughput data={dashboardData} loading={dashboardLoading} />
-            <AgileBlockedPanel data={dashboardData} loading={dashboardLoading} />
-            <AgileCapacityHeatmap
-              data={dashboardData}
-              loading={dashboardLoading}
-            />
-          </div>
-        </>
       )}
+
+      <AgileKpiStrip
+        data={dashboardData}
+        loading={dashboardLoading}
+        error={dashboardError}
+        onRetry={handleRefresh}
+      />
+
+      <div
+        className="grid grid-cols-1 gap-4 lg:grid-cols-2"
+        data-testid="agile-dashboard-sections"
+      >
+        <AgileCfd
+          data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={handleRefresh}
+        />
+        <AgileAgingWip
+          data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={handleRefresh}
+        />
+        <AgileThroughput
+          data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={handleRefresh}
+        />
+        <AgileBlockedPanel
+          data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={handleRefresh}
+        />
+        <AgileCapacityHeatmap
+          data={dashboardData}
+          loading={dashboardLoading}
+          error={dashboardError}
+          onRetry={handleRefresh}
+        />
+      </div>
     </div>
   );
 }
