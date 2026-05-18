@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
 import { AgileAgingWip } from "@/components/admin/dashboard/AgileAgingWip";
+import { AgileThroughput } from "@/components/admin/dashboard/AgileThroughput";
 import type { AdminDashboardQueryParams } from "@/lib/task-api";
 
 // Date range presets surfaced by the range filter pill group. Values are
@@ -18,24 +19,18 @@ const RANGE_OPTIONS: { value: 7 | 14 | 30 | 90; label: string }[] = [
   { value: 90, label: "90 ngày" },
 ];
 
-// Placeholder section cards that occupy the slots filled in T11–T13 by the
-// throughput chart, blocked panel, and capacity heatmap. The KPI slot (T8)
-// is backed by <AgileKpiStrip>, the CFD slot (T9) by <AgileCfd>, and the
-// aging slot (T10) by <AgileAgingWip>; data wiring still lives in T14, so
-// all receive `data={null}` for now and self-render skeletons.
+// Placeholder section cards that occupy the slots filled in T12–T13 by the
+// blocked panel and capacity heatmap. The KPI slot (T8) is backed by
+// <AgileKpiStrip>, the CFD slot (T9) by <AgileCfd>, the aging slot (T10) by
+// <AgileAgingWip>, and the throughput slot (T11) by <AgileThroughput>;
+// data wiring still lives in T14, so all receive `data={null}` for now and
+// self-render skeletons.
 const PLACEHOLDER_SECTIONS: {
   id: string;
   title: string;
   description: string;
   testId: string;
 }[] = [
-  {
-    id: "throughput",
-    title: "Throughput",
-    description:
-      "Nhịp hoàn thành theo tuần — sẽ hiển thị ở Wave 2 (T11).",
-    testId: "agile-section-throughput-placeholder",
-  },
   {
     id: "blocked",
     title: "Công việc đang bị chặn",
@@ -181,6 +176,7 @@ export function AgileDashboardShell() {
       >
         <AgileCfd data={null} loading={false} />
         <AgileAgingWip data={null} loading={false} />
+        <AgileThroughput data={null} loading={false} />
         {PLACEHOLDER_SECTIONS.map((section) => (
           <article
             key={section.id}
