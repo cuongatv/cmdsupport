@@ -185,16 +185,16 @@ test.describe('admin agile dashboard', () => {
   test('toggle-classic-agile switches dashboard view', async ({ page }) => {
     await page.goto('/admin');
 
-    // Classic is the default view.
-    await expect(page.getByTestId('classic-dashboard-root')).toBeVisible();
-    await expect(page.getByTestId('agile-dashboard-root')).toHaveCount(0);
-
-    await page.getByTestId('dashboard-view-agile').click();
+    // Agile is the default view.
     await expect(page.getByTestId('agile-dashboard-root')).toBeVisible();
+    await expect(page.getByTestId('classic-dashboard-root')).toHaveCount(0);
 
     await page.getByTestId('dashboard-view-classic').click();
     await expect(page.getByTestId('classic-dashboard-root')).toBeVisible();
-    await expect(page.getByTestId('agile-dashboard-root')).toHaveCount(0);
+
+    await page.getByTestId('dashboard-view-agile').click();
+    await expect(page.getByTestId('agile-dashboard-root')).toBeVisible();
+    await expect(page.getByTestId('classic-dashboard-root')).toHaveCount(0);
   });
 
   test('kpi-strip-renders shows all six KPI cards', async ({ page }) => {

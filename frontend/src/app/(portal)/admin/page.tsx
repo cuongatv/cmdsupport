@@ -14,19 +14,19 @@ type DashboardView = "classic" | "agile";
 
 const VIEW_OPTIONS: { value: DashboardView; label: string; testId: string }[] = [
   {
-    value: "classic",
-    label: "Theo dõi công việc thông thường",
-    testId: "dashboard-view-classic",
-  },
-  {
     value: "agile",
     label: "Theo dõi công việc Agile",
     testId: "dashboard-view-agile",
   },
+  {
+    value: "classic",
+    label: "Theo dõi công việc thông thường",
+    testId: "dashboard-view-classic",
+  },
 ];
 
 function parseView(value: string | null): DashboardView {
-  return value === "agile" ? "agile" : "classic";
+  return value === "classic" ? "classic" : "agile";
 }
 
 export default function DashboardPage() {
@@ -42,8 +42,8 @@ export default function DashboardPage() {
     (next: DashboardView) => {
       if (next === view) return;
       const params = new URLSearchParams(searchParams.toString());
-      if (next === "classic") {
-        // `classic` is the default — keep the URL clean.
+      if (next === "agile") {
+        // `agile` is the default — keep the URL clean.
         params.delete("view");
       } else {
         params.set("view", next);
