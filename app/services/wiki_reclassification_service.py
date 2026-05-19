@@ -7,10 +7,12 @@ import uuid
 from collections.abc import Sequence
 from typing import cast
 
+from loguru import logger
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import ConsultingRuleProduct, WikiPage
+from app.services import wiki_service
 from app.services.wiki_taxonomy_classifier import (
     CLASSIFIER_VERSION,
     classify_page_candidate,
@@ -61,6 +63,73 @@ def _result_string(result: dict[str, object], key: str, fallback: str = "") -> s
 
 def _result_bool(result: dict[str, object], key: str) -> bool:
     return bool(result.get(key))
+
+
+def _preview_pages(preview: dict[str, object]) -> list[dict[str, object]]:
+    raw_pages = preview.get("pages")
+    if not isinstance(raw_pages, list):
+        return []
+    return [page for page in raw_pages if isinstance(page, dict)]
+
+
+def _preview_string(preview: dict[str, object], key: str, fallback: str = "") -> str:
+    value = preview.get(key)
+    if isinstance(value, str):
+        return value
+    return fallback
+
+
+def _preview_item_string(item: dict[str, object], key: str, fallback: str = "") -> str:
+    value = item.get(key)
+    if isinstance(value, str):
+        return value
+    return fallback
+
+
+def _preview_item_bool(item: dict[str, object], key: str) -> bool:
+    return bool(item.get(key))
+
+
+def _preview_item_float(item: dict[str, object], key: str) -> float | None:
+    value = item.get(key)
+    if value is None:
+        return None
+    if isinstance(value, int | float | str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _preview_item_slugs(item: dict[str, object], key: str) -> list[str]:
+    value = item.get(key)
+    if not isinstance(value, list):
+        return []
+    return [slug for slug in value if isinstance(slug, str)]
+
+
+def _preview_item_flags(item: dict[str, object]) -> list[str]:
+    value = item.get("impact_flags")
+    if not isinstance(value, list):
+        return []
+    return [flag for flag in value if isinstance(flag, str)]
+
+
+def _audit_matches_page(
+    page: WikiPage,
+    *,
+    confidence: float | None,
+    rationale: str,
+    needs_review: bool,
+    classifier_version: str,
+) -> bool:
+    return (
+        page.taxonomy_confidence == confidence
+        and (page.taxonomy_rationale or "") == rationale
+        and bool(page.taxonomy_needs_review) is needs_review
+        and (page.taxonomy_classifier_version or "") == classifier_version
+    )
 
 
 def _has_tier(slugs: Sequence[str], prefix: str) -> bool:
@@ -251,3 +320,114 @@ async def preview_reclassification(
         "flagged_count": sum(1 for page in preview_pages if page["impact_flags"]),
         "pages": preview_pages,
     }
+
+
+async def apply_reclassification(
+    session: AsyncSession,
+    *,
+    preview: dict[str, object],
+    force_rule_linked_tier_change: bool = False,
+    actor: object | None = None,
+) -> dict[str, object]:
+    """Apply taxonomy-only changes from a reclassification preview.
+
+    The function is intentionally conservative: it re-loads every page by
+    ``wiki_page_id`` and compares the desired taxonomy state to the current DB
+    row before mutating. Writes go through ``wiki_service.apply_update`` so page
+    ids, source ids, consulting rule links, wikilinks, and revisions keep using
+    the normal wiki service path.
+    """
+    del actor  # Reserved for router/audit wiring in a later task.
+
+    pages = _preview_pages(preview)
+    result: dict[str, object] = {
+        "preview_id": _preview_string(preview, "preview_id"),
+        "applied_count": 0,
+        "skipped_count": 0,
+        "flagged_count": 0,
+        "unchanged_count": 0,
+        "applied_page_ids": [],
+        "skipped_reasons": {},
+    }
+    applied_page_ids = cast(list[str], result["applied_page_ids"])
+    skipped_reasons = cast(dict[str, list[str]], result["skipped_reasons"])
+    applied_count = 0
+    skipped_count = 0
+    flagged_count = 0
+    unchanged_count = 0
+
+    for item in pages:
+        page_id = _preview_item_string(item, "wiki_page_id")
+        if not page_id:
+            skipped_count += 1
+            skipped_reasons.setdefault("<missing>", []).append("missing_wiki_page_id")
+            continue
+
+        reasons: list[str] = []
+        flags = _preview_item_flags(item)
+        if flags:
+            flagged_count += 1
+        if _preview_item_bool(item, "needs_review") and not force_rule_linked_tier_change:
+            reasons.append("needs_review")
+        if "rule_linked_tier_change" in flags and not force_rule_linked_tier_change:
+            reasons.append("rule_linked_tier_change")
+        if reasons:
+            skipped_count += 1
+            skipped_reasons[page_id] = reasons
+            continue
+
+        try:
+            page_uuid = _coerce_uuid(page_id)
+            page = await session.get(WikiPage, page_uuid)
+            if page is None:
+                skipped_count += 1
+                skipped_reasons.setdefault(page_id, []).append("page_not_found")
+                continue
+
+            new_slugs = _preview_item_slugs(item, "new_slugs")
+            confidence = _preview_item_float(item, "confidence")
+            rationale = _preview_item_string(item, "rationale")
+            needs_review = _preview_item_bool(item, "needs_review")
+            classifier_version = _preview_item_string(
+                item,
+                "classifier_version",
+                CLASSIFIER_VERSION,
+            )
+
+            if list(page.knowledge_type_slugs or []) == new_slugs and _audit_matches_page(
+                page,
+                confidence=confidence,
+                rationale=rationale,
+                needs_review=needs_review,
+                classifier_version=classifier_version,
+            ):
+                unchanged_count += 1
+                continue
+
+            updated = await wiki_service.apply_update(
+                session,
+                slug=page.slug,
+                new_content_md=page.content_md or "",
+                scope_type=page.scope_type,
+                scope_id=page.scope_id,
+                knowledge_type_slugs=new_slugs,
+                taxonomy_confidence=confidence,
+                taxonomy_rationale=rationale,
+                taxonomy_needs_review=needs_review,
+                taxonomy_classifier_version=classifier_version,
+            )
+            if updated is None:
+                skipped_count += 1
+                skipped_reasons.setdefault(page_id, []).append("page_not_found")
+                continue
+            applied_count += 1
+            applied_page_ids.append(page_id)
+        except Exception:
+            logger.exception("apply_reclassification failed for wiki_page_id={}", page_id)
+            raise
+
+    result["applied_count"] = applied_count
+    result["skipped_count"] = skipped_count
+    result["flagged_count"] = flagged_count
+    result["unchanged_count"] = unchanged_count
+    return result

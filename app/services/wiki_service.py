@@ -341,6 +341,7 @@ async def apply_update(
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
     *,
+    knowledge_type_slugs: Optional[list[str]] = None,
     taxonomy_confidence: Optional[float] = None,
     taxonomy_rationale: Optional[str] = None,
     taxonomy_needs_review: Optional[bool] = None,
@@ -350,7 +351,8 @@ async def apply_update(
     Update an existing page atomically within the given scope:
       - Replace content_md with new_content_md.
       - Optionally update title/summary.
-      - Union add_knowledge_type_slug into knowledge_type_slugs.
+      - Replace knowledge_type_slugs when explicitly supplied, otherwise union
+        add_knowledge_type_slug into knowledge_type_slugs.
       - Append add_source_id to source_ids if not present.
       - Bump version, refresh updated_at, refresh embedding if supplied.
       - Persist taxonomy audit kwargs when supplied (None = leave existing
@@ -368,7 +370,9 @@ async def apply_update(
         page.title = title
     if summary is not None:
         page.summary = summary
-    if add_knowledge_type_slug and add_knowledge_type_slug not in (page.knowledge_type_slugs or []):
+    if knowledge_type_slugs is not None:
+        page.knowledge_type_slugs = list(knowledge_type_slugs)
+    elif add_knowledge_type_slug and add_knowledge_type_slug not in (page.knowledge_type_slugs or []):
         page.knowledge_type_slugs = [*(page.knowledge_type_slugs or []), add_knowledge_type_slug]
     if add_source_id and add_source_id not in (page.source_ids or []):
         page.source_ids = [*(page.source_ids or []), add_source_id]
