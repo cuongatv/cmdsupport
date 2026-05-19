@@ -48,21 +48,27 @@ class ReclassifyPreviewRequest(BaseModel):
     """
 
     source_id: Optional[uuid.UUID] = None
-    page_ids: Optional[list[uuid.UUID]] = Field(default=None, max_length=MAX_PREVIEW_LIMIT)
+    page_ids: Optional[list[uuid.UUID]] = Field(
+        default=None, max_length=MAX_PREVIEW_LIMIT
+    )
     scope_type: Literal["global", "workspace", "project"] = "global"
     scope_id: Optional[uuid.UUID] = None
     model_config: ConfigDict = ConfigDict(extra="forbid")
 
-    limit: int = Field(default=DEFAULT_PREVIEW_LIMIT, ge=1)
+    limit: int = Field(
+        default=DEFAULT_PREVIEW_LIMIT, ge=1, le=MAX_PREVIEW_LIMIT
+    )
 
     @field_validator("limit", mode="before")
     @classmethod
     def cap_limit(cls, value: object) -> object:
         if value is None:
             return DEFAULT_PREVIEW_LIMIT
-        if isinstance(value, int) and value > MAX_PREVIEW_LIMIT:
-            return MAX_PREVIEW_LIMIT
-        return value
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return value
+        return min(max(1, limit), MAX_PREVIEW_LIMIT)
 
 
 class ReclassifyApplyRequest(BaseModel):

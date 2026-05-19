@@ -242,6 +242,53 @@ async def test_preview_limit_caps_at_max(
     assert calls[0]["limit"] == router_module.MAX_PREVIEW_LIMIT
 
 
+async def test_preview_limit_string_bypass_rejected(
+    client_with_admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """String/int limit bypass attempts stay bounded, and page_ids overflows
+    are rejected or capped before the service layer.
+    """
+    import app.routers.wiki_reclassify as router_module
+
+    calls: list[dict] = []
+
+    async def _stub_preview(_session, **kwargs):
+        calls.append(kwargs)
+        return {
+            "preview_id": str(uuid.uuid4()),
+            "page_count": 0,
+            "flagged_count": 0,
+            "pages": [],
+        }
+
+    monkeypatch.setattr(router_module, "preview_reclassification", _stub_preview)
+
+    string_resp = await client_with_admin.post(
+        "/api/wiki/reclassify/preview",
+        json={"limit": "1000000"},
+    )
+    assert string_resp.status_code in (200, 422), string_resp.text
+    if string_resp.status_code == 200:
+        assert calls[-1]["limit"] <= router_module.MAX_PREVIEW_LIMIT
+
+    int_resp = await client_with_admin.post(
+        "/api/wiki/reclassify/preview",
+        json={"limit": 1000000},
+    )
+    assert int_resp.status_code in (200, 422), int_resp.text
+    if int_resp.status_code == 200:
+        assert calls[-1]["limit"] <= router_module.MAX_PREVIEW_LIMIT
+
+    overlong_page_ids = [str(uuid.uuid4()) for _ in range(router_module.MAX_PREVIEW_LIMIT + 1)]
+    page_ids_resp = await client_with_admin.post(
+        "/api/wiki/reclassify/preview",
+        json={"page_ids": overlong_page_ids},
+    )
+    assert page_ids_resp.status_code in (200, 422), page_ids_resp.text
+    if page_ids_resp.status_code == 200:
+        assert len(calls[-1]["page_ids"]) <= router_module.MAX_PREVIEW_LIMIT
+
+
 async def test_apply_api_rejects_unauthorized_user(
     client_no_auth: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ):
