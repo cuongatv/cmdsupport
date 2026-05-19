@@ -143,6 +143,7 @@ from app.routers import (  # noqa: E402
     tasks,
     wiki,
     wiki_drafts,
+    wiki_reclassify,
 )
 
 app.include_router(auth.router, prefix="/api", tags=["auth"])
@@ -150,6 +151,7 @@ app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
 app.include_router(wiki_drafts.router, prefix="/api", tags=["wiki-drafts"])
 app.include_router(wiki.router, prefix="/api", tags=["wiki"])
+app.include_router(wiki_reclassify.router, prefix="/api", tags=["wiki-reclassify"])
 app.include_router(admin_settings.router, prefix="/api", tags=["settings"])
 app.include_router(rbac.router, prefix="/api", tags=["rbac"])
 app.include_router(departments.router, prefix="/api", tags=["departments"])
