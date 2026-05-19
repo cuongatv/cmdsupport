@@ -7,13 +7,14 @@ returned as {"error": "..."} so the agent loop can recover without crashing.
 """
 
 import re
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import Source
 from app.services import wiki_service
+from app.services.wiki_taxonomy_classifier import classify_page_candidate
 
 # ---------------------------------------------------------------------------
 # JSON Schema definitions (OpenAI function-calling format)
@@ -373,6 +374,21 @@ def build_tool_handlers(
 
         embedding = await _embed(f"{title}\n\n{summary}\n\n{content_md}")
 
+        classification = await classify_page_candidate(
+            session,
+            title=title,
+            summary=summary,
+            page_type=page_type,
+            body_excerpt=content_md,
+            source_taxonomy_slugs=[kt_slug] if kt_slug else None,
+            source_ids=[str(source.id)] if source and source.id else None,
+            existing_slugs=None,
+            rule_linked=False,
+        )
+        taxonomy_slugs = list(cast(list[str], classification.get("slugs") or []))
+        if kt_slug and kt_slug not in taxonomy_slugs:
+            taxonomy_slugs.append(kt_slug)
+
         await wiki_service.apply_create(
             session,
             slug=clean,
@@ -380,11 +396,17 @@ def build_tool_handlers(
             page_type=page_type,
             content_md=content_md,
             summary=summary,
-            knowledge_type_slugs=[kt_slug] if kt_slug else [],
+            knowledge_type_slugs=taxonomy_slugs,
             source_ids=[source.id],
             embedding=embedding,
             scope_type=_scope_type,
             scope_id=_scope_id,
+            taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+            taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+            taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+            taxonomy_classifier_version=cast(
+                Optional[str], classification.get("classifier_version")
+            ),
         )
         await session.flush()
         state.pages_created.append(clean)
@@ -410,6 +432,27 @@ def build_tool_handlers(
         embed_summary = summary or existing.summary or ""
         embedding = await _embed(f"{embed_title}\n\n{embed_summary}\n\n{new_content_md}")
 
+        classification = await classify_page_candidate(
+            session,
+            title=embed_title,
+            summary=embed_summary,
+            page_type=existing.page_type or "concept",
+            body_excerpt=new_content_md,
+            source_taxonomy_slugs=[kt_slug] if kt_slug else None,
+            source_ids=[str(source.id)] if source and source.id else None,
+            existing_slugs=list(existing.knowledge_type_slugs or []),
+            rule_linked=False,
+        )
+        new_slugs = list(cast(list[str], classification.get("slugs") or []))
+        existing_slugs_list = list(existing.knowledge_type_slugs or [])
+        merged_slugs = list(new_slugs)
+        for slug_value in existing_slugs_list:
+            if slug_value not in merged_slugs:
+                merged_slugs.append(slug_value)
+        if kt_slug and kt_slug not in merged_slugs:
+            merged_slugs.append(kt_slug)
+        existing.knowledge_type_slugs = merged_slugs
+
         await wiki_service.apply_update(
             session,
             slug=clean,
@@ -421,6 +464,12 @@ def build_tool_handlers(
             embedding=embedding,
             scope_type=_scope_type,
             scope_id=_scope_id,
+            taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+            taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+            taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+            taxonomy_classifier_version=cast(
+                Optional[str], classification.get("classifier_version")
+            ),
         )
         await session.flush()
         state.pages_updated.append(clean)

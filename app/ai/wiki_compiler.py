@@ -20,7 +20,7 @@ the configured LLM and embedding providers from app_config at runtime.
 import json
 import re
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from loguru import logger
 from sqlalchemy import select
@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.registry import ProviderRegistry
 from app.database.models import Source, WikiPage
 from app.services import wiki_service
+from app.services.wiki_taxonomy_classifier import classify_page_candidate
 
 # Slug must be a-z 0-9 and `/_-` only — kept narrow so they're URL-safe and stable.
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_/-]*[a-z0-9]$")
@@ -352,19 +353,54 @@ async def compile_source_into_wiki(
                     updated += 1
                 else:
                     try:
+                        title_value = str(op.get("title") or slug.split("/")[-1])
+                        page_type_value = str(op.get("page_type") or "concept")
+                        content_value = str(op.get("content_md") or "")
+                        summary_value = str(op.get("summary") or "")
+                        classification = await classify_page_candidate(
+                            session,
+                            title=title_value,
+                            summary=summary_value,
+                            page_type=page_type_value,
+                            body_excerpt=content_value,
+                            source_taxonomy_slugs=(
+                                [knowledge_type_slug] if knowledge_type_slug else None
+                            ),
+                            source_ids=[str(source.id)] if source and source.id else None,
+                            existing_slugs=None,
+                            rule_linked=False,
+                        )
+                        taxonomy_slugs = list(
+                            cast(list[str], classification.get("slugs") or [])
+                        )
+                        if knowledge_type_slug and knowledge_type_slug not in taxonomy_slugs:
+                            taxonomy_slugs.append(knowledge_type_slug)
                         # Use a savepoint so IntegrityError doesn't poison the session
                         async with session.begin_nested():
                             await wiki_service.apply_create(
                                 session,
                                 slug=slug,
-                                title=str(op.get("title") or slug.split("/")[-1]),
-                                page_type=str(op.get("page_type") or "concept"),
-                                content_md=str(op.get("content_md") or ""),
-                                summary=str(op.get("summary") or ""),
-                                knowledge_type_slugs=[knowledge_type_slug] if knowledge_type_slug else [],
+                                title=title_value,
+                                page_type=page_type_value,
+                                content_md=content_value,
+                                summary=summary_value,
+                                knowledge_type_slugs=taxonomy_slugs,
                                 source_ids=[source.id],
                                 scope_type=src_scope_type,
                                 scope_id=src_scope_id,
+                                taxonomy_confidence=cast(
+                                    Optional[float], classification.get("confidence")
+                                ),
+                                taxonomy_rationale=cast(
+                                    Optional[str], classification.get("rationale")
+                                ),
+                                taxonomy_needs_review=cast(
+                                    Optional[bool], classification.get("needs_review")
+                                ),
+                                taxonomy_classifier_version=cast(
+                                    Optional[str],
+                                    classification.get("classifier_version"),
+                                ),
                             )
                         created += 1
                     except IntegrityError:
@@ -436,17 +472,63 @@ async def _apply_update(
     slug = _validate_slug(op.get("slug"))
     if not slug:
         return None
-    new_content = op.get("new_content_md") or op.get("content_md") or ""
+    new_content = str(op.get("new_content_md") or op.get("content_md") or "")
+    summary_value = (
+        str(op["summary"]) if op.get("summary") is not None else None
+    )
+    title_value = str(op["title"]) if op.get("title") is not None else None
+
+    existing = await wiki_service.get_page_by_slug(
+        session, slug, scope_type=scope_type, scope_id=scope_id
+    )
+    classify_title = title_value or (existing.title if existing else slug)
+    classify_summary = summary_value or (
+        (existing.summary if existing else "") or ""
+    )
+    classify_page_type = (
+        existing.page_type if existing and existing.page_type else "concept"
+    )
+    existing_slug_list = (
+        list(existing.knowledge_type_slugs or []) if existing else []
+    )
+
+    classification = await classify_page_candidate(
+        session,
+        title=classify_title or "",
+        summary=classify_summary,
+        page_type=classify_page_type,
+        body_excerpt=new_content,
+        source_taxonomy_slugs=[knowledge_type_slug] if knowledge_type_slug else None,
+        source_ids=[str(source.id)] if source and source.id else None,
+        existing_slugs=existing_slug_list or None,
+        rule_linked=False,
+    )
+    new_slugs = list(cast(list[str], classification.get("slugs") or []))
+    merged_slugs = list(new_slugs)
+    for slug_value in existing_slug_list:
+        if slug_value not in merged_slugs:
+            merged_slugs.append(slug_value)
+    if knowledge_type_slug and knowledge_type_slug not in merged_slugs:
+        merged_slugs.append(knowledge_type_slug)
+    if existing is not None:
+        existing.knowledge_type_slugs = merged_slugs
+
     return await wiki_service.apply_update(
         session,
         slug=slug,
-        new_content_md=str(new_content),
-        summary=str(op["summary"]) if op.get("summary") is not None else None,
-        title=str(op["title"]) if op.get("title") is not None else None,
+        new_content_md=new_content,
+        summary=summary_value,
+        title=title_value,
         add_knowledge_type_slug=knowledge_type_slug,
         add_source_id=source.id,
         scope_type=scope_type,
         scope_id=scope_id,
+        taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+        taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+        taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+        taxonomy_classifier_version=cast(
+            Optional[str], classification.get("classifier_version")
+        ),
     )
 
 
