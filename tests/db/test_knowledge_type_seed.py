@@ -111,14 +111,16 @@ async def test_knowledge_type_seed_roundtrip(db_session: AsyncSession):
         assert rows_after_upgrade[slug][0] == expected_name
         assert rows_after_upgrade[slug][1]
 
-    downgrade = await _run_alembic('downgrade', '036')
-    rows_after_downgrade = await _fetch_taxonomy_rows()
+    try:
+        downgrade = await _run_alembic('downgrade', '036')
+        rows_after_downgrade = await _fetch_taxonomy_rows()
 
-    assert rows_after_downgrade[SENTINEL_SLUG][0] == 'Sentinel Knowledge Type'
-    assert rows_after_downgrade[SENTINEL_SLUG][1] == 'Seed row for migration roundtrip verification.'
-    assert set(EXPECTED_TAXONOMY).isdisjoint(rows_after_downgrade)
+        assert rows_after_downgrade[SENTINEL_SLUG][0] == 'Sentinel Knowledge Type'
+        assert rows_after_downgrade[SENTINEL_SLUG][1] == 'Seed row for migration roundtrip verification.'
+        assert set(EXPECTED_TAXONOMY).isdisjoint(rows_after_downgrade)
+    finally:
+        upgrade_2 = await _run_alembic('upgrade', 'head')
 
-    upgrade_2 = await _run_alembic('upgrade', 'head')
     rows_after_second_upgrade = await _fetch_taxonomy_rows()
 
     assert rows_after_second_upgrade[SENTINEL_SLUG][0] == 'Sentinel Knowledge Type'

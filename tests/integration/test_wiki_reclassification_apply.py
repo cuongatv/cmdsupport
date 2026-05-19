@@ -140,3 +140,51 @@ async def test_apply_blocks_risky_rule_linked_move_to_other(
     assert second_apply["applied_count"] == 0
     assert second_apply["skipped_count"] == 1
     assert second_apply["unchanged_count"] == 0
+
+
+async def test_force_does_not_bypass_needs_review(
+    db_session: AsyncSession,
+) -> None:
+    employee = await create_sentinel_employee(db_session)
+    page, _rule = await create_rule_linked_page(db_session, employee.id)
+    await db_session.flush()
+
+    page_id = page.id
+    old_slugs = list(page.knowledge_type_slugs or [])
+    classifier_payload = {
+        "slugs": ["supporting_knowledge.other"],
+        "confidence": 0.55,
+        "rationale": "low-confidence fallback requires review",
+        "needs_review": True,
+        "classifier_version": "taxonomy-v1",
+    }
+
+    with patch(
+        "app.services.wiki_reclassification_service.classify_page_candidate",
+        new_callable=AsyncMock,
+        return_value=classifier_payload,
+    ):
+        preview = await preview_reclassification(db_session, page_ids=[page_id])
+
+    preview_pages = cast(list[dict[str, object]], preview["pages"])
+    assert preview_pages[0]["needs_review"] is True
+    assert "rule_linked_tier_change" in cast(list[str], preview_pages[0]["impact_flags"])
+
+    apply_result = await apply_reclassification(
+        db_session,
+        preview=preview,
+        force_rule_linked_tier_change=True,
+    )
+
+    assert apply_result["applied_count"] == 0
+    assert apply_result["skipped_count"] == 1
+    assert apply_result["unchanged_count"] == 0
+    assert str(page_id) not in cast(list[str], apply_result["applied_page_ids"])
+    skipped_reasons = cast(dict[str, list[str]], apply_result["skipped_reasons"])
+    assert skipped_reasons[str(page_id)] == ["needs_review"]
+
+    db_session.expire_all()
+    stored_page = (
+        await db_session.execute(select(WikiPage).where(WikiPage.id == page_id))
+    ).scalar_one()
+    assert stored_page.knowledge_type_slugs == old_slugs

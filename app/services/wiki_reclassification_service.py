@@ -459,7 +459,7 @@ async def apply_reclassification(
         flags = _preview_item_flags(item)
         if flags:
             flagged_count += 1
-        if _preview_item_bool(item, "needs_review") and not force_rule_linked_tier_change:
+        if _preview_item_bool(item, "needs_review"):
             reasons.append("needs_review")
         if "rule_linked_tier_change" in flags and not force_rule_linked_tier_change:
             reasons.append("rule_linked_tier_change")
