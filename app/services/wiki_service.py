@@ -287,8 +287,19 @@ async def apply_create(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    *,
+    taxonomy_confidence: Optional[float] = None,
+    taxonomy_rationale: Optional[str] = None,
+    taxonomy_needs_review: Optional[bool] = None,
+    taxonomy_classifier_version: Optional[str] = None,
 ) -> WikiPage:
-    """Insert a new page in the given scope. Conflicts raise — caller should use update."""
+    """Insert a new page in the given scope. Conflicts raise — caller should use update.
+
+    Optional taxonomy audit kwargs persist classifier metadata alongside the
+    page. They are keyword-only and default to ``None`` so existing callers
+    that do not pass them keep working unchanged. ``taxonomy_rationale`` MUST
+    be content-free (no body excerpts).
+    """
     page = WikiPage(
         slug=slug,
         title=title,
@@ -301,6 +312,12 @@ async def apply_create(
         scope_type=scope_type,
         scope_id=scope_id,
         version=1,
+        taxonomy_confidence=taxonomy_confidence,
+        taxonomy_rationale=taxonomy_rationale,
+        taxonomy_needs_review=(
+            bool(taxonomy_needs_review) if taxonomy_needs_review is not None else False
+        ),
+        taxonomy_classifier_version=taxonomy_classifier_version,
     )
     session.add(page)
     await session.flush()
@@ -323,6 +340,11 @@ async def apply_update(
     embedding: Optional[list[float]] = None,
     scope_type: str = "global",
     scope_id: Optional[uuid.UUID] = None,
+    *,
+    taxonomy_confidence: Optional[float] = None,
+    taxonomy_rationale: Optional[str] = None,
+    taxonomy_needs_review: Optional[bool] = None,
+    taxonomy_classifier_version: Optional[str] = None,
 ) -> Optional[WikiPage]:
     """
     Update an existing page atomically within the given scope:
@@ -331,6 +353,10 @@ async def apply_update(
       - Union add_knowledge_type_slug into knowledge_type_slugs.
       - Append add_source_id to source_ids if not present.
       - Bump version, refresh updated_at, refresh embedding if supplied.
+      - Persist taxonomy audit kwargs when supplied (None = leave existing
+        value untouched, so callers that don't classify don't clobber audit
+        history).
+
     Returns None if the page does not exist.
     """
     page = await get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
@@ -348,6 +374,14 @@ async def apply_update(
         page.source_ids = [*(page.source_ids or []), add_source_id]
     if embedding is not None:
         page.embedding = embedding
+    if taxonomy_confidence is not None:
+        page.taxonomy_confidence = taxonomy_confidence
+    if taxonomy_rationale is not None:
+        page.taxonomy_rationale = taxonomy_rationale
+    if taxonomy_needs_review is not None:
+        page.taxonomy_needs_review = bool(taxonomy_needs_review)
+    if taxonomy_classifier_version is not None:
+        page.taxonomy_classifier_version = taxonomy_classifier_version
     page.version = (page.version or 1) + 1
     await session.flush()
     await refresh_links(session, slug, new_content_md)

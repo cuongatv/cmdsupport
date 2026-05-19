@@ -462,6 +462,32 @@ class WikiPage(Base):
         nullable=False,
         default=list,
     )
+    # --- Taxonomy classification audit metadata (T3) ---
+    # Slugs themselves live in `knowledge_type_slugs` above; the columns below
+    # describe HOW the classifier arrived at them. Content-free by design:
+    # `taxonomy_rationale` MUST NOT carry any wiki body excerpt.
+    taxonomy_confidence: Mapped[Optional[float]] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Classifier confidence in [0.0, 1.0]. Null = not yet classified.",
+    )
+    taxonomy_rationale: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Short content-free rationale. No body excerpts.",
+    )
+    taxonomy_needs_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment="True when classification requires human review.",
+    )
+    taxonomy_classifier_version: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Classifier version tag (e.g. 'v1').",
+    )
     source_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(UUID(as_uuid=True)),
         nullable=False,
