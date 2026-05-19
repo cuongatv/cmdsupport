@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional, cast
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -12,6 +12,7 @@ from app.ai.mrp.mapper import run_map_phase
 from app.ai.mrp.reducer import run_reduce_phase
 from app.ai.mrp.verifier import run_verify_phase
 from app.ai.mrp.writer import PageWriteResult, run_refine_phase
+from app.services.wiki_taxonomy_classifier import ClassifierResult, classify_page_candidate
 from app.utils.progress import ProgressTracker
 
 DEFAULT_INGESTION_PIPELINE = "mrp"
@@ -67,7 +68,7 @@ async def run_commit_phase(
     registry,
     kt_slug: Optional[str],
     tracker: ProgressTracker,
-) -> dict:
+) -> dict[str, int]:
     """Commit generated pages to the scoped wiki."""
     from app.ai.mrp.merger import merge_page_content
     from app.database.models import Source
@@ -106,6 +107,20 @@ async def run_commit_phase(
                         page_result.summary,
                         page_result.content_md,
                     )
+                    classification: ClassifierResult = await classify_page_candidate(
+                        session,
+                        title=page_result.title,
+                        summary=page_result.summary,
+                        page_type=page_result.page_type,
+                        body_excerpt=page_result.content_md,
+                        source_taxonomy_slugs=[kt_slug] if kt_slug else None,
+                        source_ids=[str(source.id)] if source and source.id else None,
+                        existing_slugs=None,
+                        rule_linked=False,
+                    )
+                    taxonomy_slugs = list(cast(list[str], classification.get("slugs") or []))
+                    if kt_slug and kt_slug not in taxonomy_slugs:
+                        taxonomy_slugs.append(kt_slug)
                     await wiki_service.apply_create(
                         session,
                         slug=page_result.slug,
@@ -113,11 +128,17 @@ async def run_commit_phase(
                         page_type=page_result.page_type,
                         content_md=page_result.content_md,
                         summary=page_result.summary,
-                        knowledge_type_slugs=[kt_slug] if kt_slug else [],
+                        knowledge_type_slugs=taxonomy_slugs,
                         source_ids=[source.id],
                         embedding=embedding,
                         scope_type=scope_type,
                         scope_id=scope_id,
+                        taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+                        taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+                        taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+                        taxonomy_classifier_version=cast(
+                            Optional[str], classification.get("classifier_version")
+                        ),
                     )
                     pages_created += 1
 
@@ -144,6 +165,26 @@ async def run_commit_phase(
                     page_result.summary,
                     final_content,
                 )
+                existing_slugs = list(existing_page.knowledge_type_slugs or []) if existing_page else []
+                classification: ClassifierResult = await classify_page_candidate(
+                    session,
+                    title=page_result.title,
+                    summary=page_result.summary,
+                    page_type=(existing_page.page_type if existing_page else page_result.page_type) or "concept",
+                    body_excerpt=final_content,
+                    source_taxonomy_slugs=[kt_slug] if kt_slug else None,
+                    source_ids=[str(source.id)] if source and source.id else None,
+                    existing_slugs=existing_slugs or None,
+                    rule_linked=False,
+                )
+                taxonomy_slugs = list(cast(list[str], classification.get("slugs") or []))
+                for slug_value in existing_slugs:
+                    if slug_value not in taxonomy_slugs:
+                        taxonomy_slugs.append(slug_value)
+                if kt_slug and kt_slug not in taxonomy_slugs:
+                    taxonomy_slugs.append(kt_slug)
+                if existing_page:
+                    existing_page.knowledge_type_slugs = taxonomy_slugs
                 page = await wiki_service.apply_update(
                     session,
                     slug=page_result.slug,
@@ -155,6 +196,12 @@ async def run_commit_phase(
                     embedding=embedding,
                     scope_type=scope_type,
                     scope_id=scope_id,
+                    taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+                    taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+                    taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+                    taxonomy_classifier_version=cast(
+                        Optional[str], classification.get("classifier_version")
+                    ),
                 )
                 if page is None:
                     await wiki_service.apply_create(
@@ -164,11 +211,17 @@ async def run_commit_phase(
                         page_type=page_result.page_type,
                         content_md=page_result.content_md,
                         summary=page_result.summary,
-                        knowledge_type_slugs=[kt_slug] if kt_slug else [],
+                        knowledge_type_slugs=taxonomy_slugs,
                         source_ids=[source.id],
                         embedding=embedding,
                         scope_type=scope_type,
                         scope_id=scope_id,
+                        taxonomy_confidence=cast(Optional[float], classification.get("confidence")),
+                        taxonomy_rationale=cast(Optional[str], classification.get("rationale")),
+                        taxonomy_needs_review=cast(Optional[bool], classification.get("needs_review")),
+                        taxonomy_classifier_version=cast(
+                            Optional[str], classification.get("classifier_version")
+                        ),
                     )
                     pages_created += 1
                 else:
@@ -206,7 +259,7 @@ async def _load_plan(session: AsyncSession, source_id: uuid.UUID):
     )).scalar_one_or_none()
 
 
-async def _load_chunk_extracts(session: AsyncSession, source_id: uuid.UUID) -> list:
+async def _load_chunk_extracts(session: AsyncSession, source_id: uuid.UUID) -> list[Any]:
     from app.database.models import SourceChunkExtract
 
     rows = (await session.execute(
@@ -218,7 +271,7 @@ async def _load_chunk_extracts(session: AsyncSession, source_id: uuid.UUID) -> l
     return list(rows)
 
 
-async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict:
+async def _auto_trigger_refine(source_id: uuid.UUID, plan) -> dict[str, Any]:
     from app.database import async_session_factory
     from app.database.models import Source, SourceCompilationPlan
     from app.worker import get_arq_pool
@@ -249,7 +302,7 @@ async def run_mrp_pipeline(
     kt_slug: Optional[str],
     kt_name: Optional[str],
     kt_desc: Optional[str],
-) -> dict:
+) -> dict[str, Any]:
     """Run Phase 0-2 and stop at human plan review unless auto-approved."""
     from app.config import settings
     from app.database.models import Source
@@ -314,7 +367,7 @@ async def run_refine_pipeline(
     kt_slug: Optional[str],
     kt_name: Optional[str],
     kt_desc: Optional[str],
-) -> dict:
+) -> dict[str, int]:
     """Run Phase 3-5 after plan approval."""
     del kt_name, kt_desc
     from app.database.models import Source
