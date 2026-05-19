@@ -1,17 +1,5 @@
 # pyright: reportMissingImports=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false
-"""T19 — Existing Wiki reclassification QA with rule-linked pages.
-
-End-to-end safety net for the preview → apply workflow, verifying that:
-  1. Unlinked pages reclassify safely without losing identity.
-  2. Rule-linked pages risky tier changes (e.g. business → supporting_knowledge.other)
-     are flagged and skipped without ``force`` so consulting rule links survive.
-  3. Same-tier reclassification on a rule-linked page preserves every cross-cutting
-     invariant: wiki_page_id, source_ids, consulting rule link count, and the
-     WikiPageRevision history grows monotonically.
-
-All assertions re-read the database via raw SELECT after ``session.expire_all()``
-to prove invariants from persisted rows rather than ORM identity cache state.
-"""
+"""T19 — Existing Wiki reclassification QA with rule-linked pages."""
 
 from __future__ import annotations
 
@@ -62,11 +50,7 @@ async def _revision_count(session: AsyncSession, page_id: uuid.UUID) -> int:
 async def test_existing_unlinked_page_reclassifies_safely(
     db_session: AsyncSession,
 ) -> None:
-    """Unlinked page with legacy slug should preview + apply cleanly.
-
-    Page identity (id, source_ids) is preserved; only knowledge_type_slugs and
-    audit columns change.
-    """
+    employee = await create_sentinel_employee(db_session)
     slug = f"t19-unlinked-{uuid.uuid4().hex[:8]}"
     page = await wiki_service.apply_create(
         db_session,
@@ -91,7 +75,6 @@ async def test_existing_unlinked_page_reclassifies_safely(
     page_id = page.id
     original_source_ids = list(page.source_ids or [])
     original_slugs = list(page.knowledge_type_slugs or [])
-
     classifier_payload = {
         "slugs": ["business_object.product_service"],
         "confidence": 0.91,
@@ -105,18 +88,21 @@ async def test_existing_unlinked_page_reclassifies_safely(
         new_callable=AsyncMock,
         return_value=classifier_payload,
     ):
-        preview = await preview_reclassification(db_session, page_ids=[page_id])
+        preview = await preview_reclassification(db_session, page_ids=[page_id], actor=employee)
 
     preview_pages = cast(list[dict[str, object]], preview["pages"])
     assert preview["page_count"] == 1
     assert preview_pages[0]["wiki_page_id"] == str(page_id)
     assert preview_pages[0]["old_slugs"] == original_slugs
     assert preview_pages[0]["new_slugs"] == ["business_object.product_service"]
-    # Unlinked page must NOT raise the rule-linked-tier-change flag.
     impact_flags = cast(list[str], preview_pages[0]["impact_flags"])
     assert "rule_linked_tier_change" not in impact_flags
 
-    apply_result = await apply_reclassification(db_session, preview=preview)
+    apply_result = await apply_reclassification(
+        db_session,
+        preview_id=preview["preview_id"],
+        actor=employee,
+    )
     assert apply_result["applied_count"] == 1
     assert apply_result["skipped_count"] == 0
     assert apply_result["unchanged_count"] == 0
@@ -138,12 +124,6 @@ async def test_existing_unlinked_page_reclassifies_safely(
 async def test_existing_rule_linked_page_warns_before_risky_apply(
     db_session: AsyncSession,
 ) -> None:
-    """Rule-linked business→supporting_knowledge.other move must be blocked.
-
-    Preview surfaces ``rule_link_count=1`` and ``rule_linked_tier_change``.
-    Apply without ``force_rule_linked_tier_change`` skips the page; the DB-side
-    slugs and consulting rule linkage are untouched.
-    """
     employee = await create_sentinel_employee(db_session)
     page, _rule = await create_rule_linked_page(db_session, employee.id)
     await db_session.flush()
@@ -170,7 +150,7 @@ async def test_existing_rule_linked_page_warns_before_risky_apply(
         new_callable=AsyncMock,
         return_value=classifier_payload,
     ):
-        preview = await preview_reclassification(db_session, page_ids=[page_id])
+        preview = await preview_reclassification(db_session, page_ids=[page_id], actor=employee)
 
     preview_pages = cast(list[dict[str, object]], preview["pages"])
     assert preview["page_count"] == 1
@@ -179,7 +159,11 @@ async def test_existing_rule_linked_page_warns_before_risky_apply(
     assert "rule_linked_tier_change" in impact_flags
     assert "to_other" in impact_flags
 
-    apply_result = await apply_reclassification(db_session, preview=preview)
+    apply_result = await apply_reclassification(
+        db_session,
+        preview_id=preview["preview_id"],
+        actor=employee,
+    )
     assert apply_result["applied_count"] == 0
     assert apply_result["skipped_count"] == 1
     assert apply_result["unchanged_count"] == 0
@@ -201,15 +185,6 @@ async def test_existing_rule_linked_page_warns_before_risky_apply(
 async def test_full_invariants_preserved_after_apply(
     db_session: AsyncSession,
 ) -> None:
-    """Same-tier reclassification on a rule-linked page keeps every invariant.
-
-    business → business apply path proves:
-      * ``wiki_page_id`` unchanged (no row delete/recreate).
-      * ``source_ids`` unchanged.
-      * ``ConsultingRuleProduct.wiki_page_id`` row count unchanged (no broken links).
-      * ``WikiPageRevision`` count never decreases — apply_update appends a new
-        revision, so the count grows by at least one.
-    """
     employee = await create_sentinel_employee(db_session)
     page, rule = await create_rule_linked_page(db_session, employee.id)
     await db_session.flush()
@@ -218,16 +193,11 @@ async def test_full_invariants_preserved_after_apply(
     rule_id = rule.id
     original_source_ids = list(page.source_ids or [])
     original_slugs = list(page.knowledge_type_slugs or [])
-    # Sanity check: fixture starts on the business tier with a real slug.
+    original_version = page.version
     assert original_slugs == ["business_object.product_service"]
     rule_count_before = await _rule_link_count(db_session, page_id)
     revision_count_before = await _revision_count(db_session, page_id)
     assert rule_count_before == 1
-    # No precondition on revision_count_before: the rule-linked fixture rekeys
-    # the wiki_page_id via raw SQL after apply_create which can leave the
-    # initial revision attached to a different id depending on flush timing.
-    # The invariant we care about is "apply never resets revisions", asserted
-    # below as revision_count_after >= revision_count_before.
 
     classifier_payload = {
         "slugs": ["business_object.policy_mechanism"],
@@ -242,35 +212,36 @@ async def test_full_invariants_preserved_after_apply(
         new_callable=AsyncMock,
         return_value=classifier_payload,
     ):
-        preview = await preview_reclassification(db_session, page_ids=[page_id])
+        preview = await preview_reclassification(db_session, page_ids=[page_id], actor=employee)
 
     preview_pages = cast(list[dict[str, object]], preview["pages"])
     impact_flags = cast(list[str], preview_pages[0]["impact_flags"])
-    # Same-tier business → business must NOT flag a rule-linked tier change.
     assert "rule_linked_tier_change" not in impact_flags
     assert preview_pages[0]["rule_link_count"] == 1
 
-    apply_result = await apply_reclassification(db_session, preview=preview)
+    apply_result = await apply_reclassification(
+        db_session,
+        preview_id=preview["preview_id"],
+        actor=employee,
+    )
     assert apply_result["applied_count"] == 1
     assert apply_result["skipped_count"] == 0
     assert apply_result["unchanged_count"] == 0
     assert apply_result["applied_page_ids"] == [str(page_id)]
 
     db_session.expire_all()
-
-    # Page identity preserved end-to-end.
     stored = (
         await db_session.execute(select(WikiPage).where(WikiPage.id == page_id))
     ).scalar_one()
     assert stored.id == page_id
     assert stored.source_ids == original_source_ids
+    assert stored.version == original_version
     assert stored.knowledge_type_slugs == ["business_object.policy_mechanism"]
     assert stored.taxonomy_confidence == pytest.approx(0.88)
     assert stored.taxonomy_rationale == "same-tier policy mechanism reclassification"
     assert stored.taxonomy_needs_review is False
     assert stored.taxonomy_classifier_version == "taxonomy-v1"
 
-    # Consulting rule link survives, pointing to the same wiki_page_id.
     rule_count_after = await _rule_link_count(db_session, page_id)
     assert rule_count_after == rule_count_before
     stored_rule = (
@@ -280,6 +251,5 @@ async def test_full_invariants_preserved_after_apply(
     ).scalar_one()
     assert stored_rule.wiki_page_id == page_id
 
-    # Revision history is append-only and never reset by apply.
     revision_count_after = await _revision_count(db_session, page_id)
-    assert revision_count_after >= revision_count_before
+    assert revision_count_after == revision_count_before

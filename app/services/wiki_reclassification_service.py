@@ -5,21 +5,26 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Sequence
+from datetime import datetime, timedelta, timezone
 from typing import cast
 
 from loguru import logger
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import ConsultingRuleProduct, WikiPage
+from app.database.models import (
+    ConsultingRuleProduct,
+    Employee,
+    WikiPage,
+    WikiReclassificationPreview,
+)
 from app.services import wiki_service
 from app.services.wiki_taxonomy_classifier import (
     CLASSIFIER_VERSION,
     classify_page_candidate,
 )
 
-PREVIEW_NAMESPACE = uuid.UUID("8c2ec3ce-3e3b-4ca0-a64e-b0d08e2f99c5")
-PREVIEW_TIMESTAMP_BUCKET = "static-v1"
+PREVIEW_TTL = timedelta(hours=1)
 BUSINESS_PREFIX = "business_object."
 SUPPORTING_PREFIX = "supporting_knowledge."
 OTHER_SUFFIX = ".other"
@@ -70,13 +75,6 @@ def _preview_pages(preview: dict[str, object]) -> list[dict[str, object]]:
     if not isinstance(raw_pages, list):
         return []
     return [page for page in raw_pages if isinstance(page, dict)]
-
-
-def _preview_string(preview: dict[str, object], key: str, fallback: str = "") -> str:
-    value = preview.get(key)
-    if isinstance(value, str):
-        return value
-    return fallback
 
 
 def _preview_item_string(item: dict[str, object], key: str, fallback: str = "") -> str:
@@ -169,19 +167,6 @@ def _impact_flags(
     if _rule_linked_tier_change(old_slugs, new_slugs, rule_link_count):
         flags.append("rule_linked_tier_change")
     return flags
-
-
-def _preview_id(page_ids: Sequence[uuid.UUID], classifier_version: str) -> str:
-    """Stable uuid5 over sorted page ids, classifier version, and a static bucket.
-
-    The bucket is intentionally static for T9 so repeated previews of the same
-    page set/classifier version reuse the same id until the classifier contract
-    changes. A future apply/orchestration layer can replace this with a time
-    window bucket if previews need scheduled expiry semantics.
-    """
-    sorted_ids = ",".join(str(page_id) for page_id in sorted(page_ids, key=str))
-    seed = f"{sorted_ids}|{classifier_version}|{PREVIEW_TIMESTAMP_BUCKET}"
-    return str(uuid.uuid5(PREVIEW_NAMESPACE, seed))
 
 
 async def _rule_link_counts(
@@ -286,6 +271,7 @@ async def preview_reclassification(
     limit: int | None = None,
     page_size: int | None = None,
     page: int = 1,
+    actor: Employee | None = None,
 ) -> dict[str, object]:
     """Compute a dry-run taxonomy reclassification diff for existing wiki pages.
 
@@ -365,9 +351,9 @@ async def preview_reclassification(
             }
         )
 
-    version_seed = ",".join(sorted(classifier_versions)) or CLASSIFIER_VERSION
+    preview_id = uuid.uuid4()
     result: dict[str, object] = {
-        "preview_id": _preview_id([page.id for page in pages], version_seed),
+        "preview_id": str(preview_id),
         "page_count": len(preview_pages),
         "flagged_count": sum(1 for page in preview_pages if page["impact_flags"]),
         "pages": preview_pages,
@@ -383,6 +369,18 @@ async def preview_reclassification(
         result["total_pages"] = total_pages
         result["total_pages_estimated"] = False
         result["has_more"] = normalized_page < total_pages
+
+    if actor is not None:
+        now = datetime.now(timezone.utc)
+        session.add(
+            WikiReclassificationPreview(
+                id=preview_id,
+                preview_payload=result,
+                created_by_id=actor.id,
+                expires_at=now + PREVIEW_TTL,
+            )
+        )
+        await session.flush()
     return result
 
 
@@ -417,23 +415,37 @@ async def iter_preview_pages(
 async def apply_reclassification(
     session: AsyncSession,
     *,
-    preview: dict[str, object],
+    preview_id: uuid.UUID | str,
     force_rule_linked_tier_change: bool = False,
-    actor: object | None = None,
+    actor: Employee | None = None,
 ) -> dict[str, object]:
-    """Apply taxonomy-only changes from a reclassification preview.
+    """Apply taxonomy-only changes from a persisted reclassification preview.
 
-    The function is intentionally conservative: it re-loads every page by
-    ``wiki_page_id`` and compares the desired taxonomy state to the current DB
-    row before mutating. Writes go through ``wiki_service.apply_update`` so page
-    ids, source ids, consulting rule links, wikilinks, and revisions keep using
-    the normal wiki service path.
+    The client only supplies ``preview_id``. The canonical preview is loaded from
+    ``wiki_reclassification_previews``, checked for owner and expiry, then each
+    page is re-read under a row lock before its taxonomy fields are updated.
     """
-    del actor  # Reserved for router/audit wiring in a later task.
+    if actor is None:
+        raise ValueError("actor is required to apply a reclassification preview")
 
+    canonical_preview_id = _coerce_uuid(preview_id)
+    preview_row = await session.get(WikiReclassificationPreview, canonical_preview_id)
+    if preview_row is None:
+        raise FileNotFoundError("reclassification preview not found")
+    if preview_row.created_by_id != actor.id:
+        raise PermissionError("reclassification preview belongs to another user")
+
+    now = datetime.now(timezone.utc)
+    expires_at = preview_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= now:
+        raise TimeoutError("reclassification preview expired")
+
+    preview = cast(dict[str, object], preview_row.preview_payload)
     pages = _preview_pages(preview)
     result: dict[str, object] = {
-        "preview_id": _preview_string(preview, "preview_id"),
+        "preview_id": str(canonical_preview_id),
         "applied_count": 0,
         "skipped_count": 0,
         "flagged_count": 0,
@@ -470,7 +482,11 @@ async def apply_reclassification(
 
         try:
             page_uuid = _coerce_uuid(page_id)
-            page = await session.get(WikiPage, page_uuid)
+            page = (
+                await session.execute(
+                    select(WikiPage).where(WikiPage.id == page_uuid).with_for_update()
+                )
+            ).scalar_one_or_none()
             if page is None:
                 skipped_count += 1
                 skipped_reasons.setdefault(page_id, []).append("page_not_found")
@@ -500,7 +516,7 @@ async def apply_reclassification(
             updated = await wiki_service.apply_update(
                 session,
                 slug=page.slug,
-                new_content_md=page.content_md or "",
+                new_content_md="",
                 scope_type=page.scope_type,
                 scope_id=page.scope_id,
                 knowledge_type_slugs=new_slugs,
@@ -508,6 +524,7 @@ async def apply_reclassification(
                 taxonomy_rationale=rationale,
                 taxonomy_needs_review=needs_review,
                 taxonomy_classifier_version=classifier_version,
+                metadata_only=True,
             )
             if updated is None:
                 skipped_count += 1

@@ -97,10 +97,9 @@ export function WikiReclassificationDialog({ open, onOpenChange }: Props) {
     setError(null);
     setApplyResult(null);
     try {
-      // Empty body → service falls back to scope_type="global" default.
       const data = await api<PreviewResponse>("/api/wiki/reclassify/preview", {
         method: "POST",
-        body: {},
+        body: { limit: 25 },
       });
       setPreviewResult(data);
     } catch (err) {
@@ -118,7 +117,7 @@ export function WikiReclassificationDialog({ open, onOpenChange }: Props) {
       const data = await api<ApplyResponse>("/api/wiki/reclassify/apply", {
         method: "POST",
         body: {
-          preview: previewResult,
+          preview_id: previewResult.preview_id,
           force_rule_linked_tier_change: forceRuleLinked,
         },
       });

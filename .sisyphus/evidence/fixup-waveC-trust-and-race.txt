@@ -1,0 +1,34 @@
+Wave C trust/race verification evidence
+=======================================
+
+Changed gates run on 2026-05-19:
+
+Backend static gate:
+- Command: ruff check app\services\wiki_reclassification_service.py app\services\wiki_service.py app\routers\wiki_reclassify.py app\database\models.py tests\integration\test_wiki_reclassification_apply.py tests\integration\test_wiki_reclassification.py tests\integration\test_wiki_bulk_reclassification.py tests\api\test_wiki_reclassification_api.py alembic\versions\039_wiki_reclassification_preview.py
+- Result: PASS (All checks passed!)
+
+LSP diagnostics:
+- app/services/wiki_reclassification_service.py: warning only before cleanup (_preview_string unused); cleaned and ruff passed.
+- app/services/wiki_service.py and app/routers/wiki_reclassify.py: workspace LSP reports missing installed third-party imports (loguru/sqlalchemy/fastapi/pydantic), not code errors. TypeScript LSP unavailable: typescript-language-server not installed.
+
+Backend pytest taxonomy batch:
+- Command attempted: pytest tests\integration\test_wiki_reclassification_preview.py tests\integration\test_wiki_reclassification_apply.py tests\integration\test_wiki_bulk_reclassification.py tests\integration\test_wiki_reclassification.py tests\api\test_wiki_reclassification_api.py -v
+- Result: BLOCKED in this host: pytest executable not found.
+
+Migration roundtrip:
+- Command attempted: alembic downgrade 038; if ($?) { alembic upgrade head }
+- Result: BLOCKED in this host: alembic executable not found.
+
+Python compile gate:
+- Commands attempted: python -m compileall ... and py -3 -m compileall ...
+- Result: BLOCKED in this host: only Windows Store python alias exists; py launcher not installed.
+
+Frontend gates:
+- Command: cd frontend && npx tsc --noEmit
+- Result: PASS (no output)
+- Command: cd frontend && npm run lint
+- Result: PASS with existing warnings (0 errors, 89 warnings). No new errors from wiki-reclassification-dialog.tsx.
+
+Notes:
+- Full backend runtime gates could not be executed because this checkout lacks Python/pytest/alembic executables on PATH.
+- Implemented migration 039_wiki_reclassification_preview.py with revision=039 and down_revision=038; downgrade drops indexes/table and upgrade recreates them.

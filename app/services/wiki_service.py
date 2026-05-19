@@ -346,6 +346,7 @@ async def apply_update(
     taxonomy_rationale: Optional[str] = None,
     taxonomy_needs_review: Optional[bool] = None,
     taxonomy_classifier_version: Optional[str] = None,
+    metadata_only: bool = False,
 ) -> Optional[WikiPage]:
     """
     Update an existing page atomically within the given scope:
@@ -359,11 +360,32 @@ async def apply_update(
         value untouched, so callers that don't classify don't clobber audit
         history).
 
+    When ``metadata_only`` is true, only taxonomy columns and ``updated_at`` are
+    touched; content, title, summary, source_ids, version, embedding, links, and
+    revisions are left unchanged.
+
     Returns None if the page does not exist.
     """
     page = await get_page_by_slug(session, slug, scope_type=scope_type, scope_id=scope_id)
     if page is None:
         return None
+
+    if metadata_only:
+        if knowledge_type_slugs is not None:
+            page.knowledge_type_slugs = list(knowledge_type_slugs)
+        elif add_knowledge_type_slug and add_knowledge_type_slug not in (page.knowledge_type_slugs or []):
+            page.knowledge_type_slugs = [*(page.knowledge_type_slugs or []), add_knowledge_type_slug]
+        if taxonomy_confidence is not None:
+            page.taxonomy_confidence = taxonomy_confidence
+        if taxonomy_rationale is not None:
+            page.taxonomy_rationale = taxonomy_rationale
+        if taxonomy_needs_review is not None:
+            page.taxonomy_needs_review = bool(taxonomy_needs_review)
+        if taxonomy_classifier_version is not None:
+            page.taxonomy_classifier_version = taxonomy_classifier_version
+        page.updated_at = datetime.now(timezone.utc)
+        await session.flush()
+        return page
 
     page.content_md = new_content_md
     if title is not None:

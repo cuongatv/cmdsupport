@@ -16,7 +16,10 @@ from app.services.wiki_reclassification_service import (
     apply_reclassification,
     preview_reclassification,
 )
-from tests.fixtures.wiki_taxonomy import create_bulk_taxonomy_pages
+from tests.fixtures.wiki_taxonomy import (
+    create_bulk_taxonomy_pages,
+    create_sentinel_employee,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -82,6 +85,7 @@ async def test_bulk_preview_paginates_without_mutation(
 
 
 async def test_bulk_apply_is_idempotent(db_session: AsyncSession) -> None:
+    employee = await create_sentinel_employee(db_session)
     pages = await create_bulk_taxonomy_pages(
         db_session,
         count=10,
@@ -95,7 +99,7 @@ async def test_bulk_apply_is_idempotent(db_session: AsyncSession) -> None:
         new_callable=AsyncMock,
         return_value=_bulk_classifier_payload("business_object.customer_segment"),
     ):
-        preview = await preview_reclassification(db_session, page_ids=page_ids)
+        preview = await preview_reclassification(db_session, page_ids=page_ids, actor=employee)
 
     preview_pages = cast(list[dict[str, object]], preview["pages"])
     assert len(preview_pages) == 10
@@ -104,7 +108,7 @@ async def test_bulk_apply_is_idempotent(db_session: AsyncSession) -> None:
         for item in preview_pages
     )
 
-    first_apply = await apply_reclassification(db_session, preview=preview)
+    first_apply = await apply_reclassification(db_session, preview_id=preview["preview_id"], actor=employee)
     assert first_apply["applied_count"] == 10
     assert first_apply["skipped_count"] == 0
     assert first_apply["unchanged_count"] == 0
@@ -112,7 +116,7 @@ async def test_bulk_apply_is_idempotent(db_session: AsyncSession) -> None:
         str(page_id) for page_id in page_ids
     )
 
-    second_apply = await apply_reclassification(db_session, preview=preview)
+    second_apply = await apply_reclassification(db_session, preview_id=preview["preview_id"], actor=employee)
     assert second_apply["applied_count"] == 0
     assert second_apply["skipped_count"] == 0
     assert second_apply["unchanged_count"] == 10

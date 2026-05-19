@@ -44,6 +44,9 @@ class _StubSession:
     async def commit(self) -> None:
         return None
 
+    async def flush(self) -> None:
+        return None
+
     async def execute(self, *_args, **_kwargs):
         class _Scalars:
             def all(self):
@@ -144,8 +147,9 @@ async def test_preview_api_returns_diff_contract(
     source_id = uuid.uuid4()
     wiki_page_id = uuid.uuid4()
 
+    preview_id = uuid.uuid4()
     canned_preview = {
-        "preview_id": "preview-fixture-123",
+        "preview_id": str(preview_id),
         "page_count": 1,
         "flagged_count": 1,
         "pages": [
@@ -183,7 +187,7 @@ async def test_preview_api_returns_diff_contract(
     body = resp.json()
 
     # Envelope
-    assert body["preview_id"] == "preview-fixture-123"
+    assert body["preview_id"] == str(preview_id)
     assert body["page_count"] == 1
     assert body["flagged_count"] == 1
     assert isinstance(body["pages"], list) and len(body["pages"]) == 1
@@ -200,11 +204,42 @@ async def test_preview_api_returns_diff_contract(
     assert len(calls) == 1
     assert calls[0]["source_id"] == source_id
     assert calls[0]["scope_type"] == "global"
+    assert calls[0]["limit"] == 25
+    assert calls[0]["actor"] is _ADMIN
 
 
 # ---------------------------------------------------------------------------
 # test_apply_api_rejects_unauthorized_user
 # ---------------------------------------------------------------------------
+
+
+async def test_preview_limit_caps_at_max(
+    client_with_admin: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """POST /api/wiki/reclassify/preview caps oversized limits at 100."""
+    import app.routers.wiki_reclassify as router_module
+
+    preview_id = uuid.uuid4()
+    calls: list[dict] = []
+
+    async def _stub_preview(_session, **kwargs):
+        calls.append(kwargs)
+        return {
+            "preview_id": str(preview_id),
+            "page_count": 0,
+            "flagged_count": 0,
+            "pages": [],
+        }
+
+    monkeypatch.setattr(router_module, "preview_reclassification", _stub_preview)
+
+    resp = await client_with_admin.post(
+        "/api/wiki/reclassify/preview",
+        json={"limit": 999},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert calls[0]["limit"] == router_module.MAX_PREVIEW_LIMIT
 
 
 async def test_apply_api_rejects_unauthorized_user(
@@ -238,12 +273,7 @@ async def test_apply_api_rejects_unauthorized_user(
     resp = await client_no_auth.post(
         "/api/wiki/reclassify/apply",
         json={
-            "preview": {
-                "preview_id": "p-1",
-                "page_count": 0,
-                "flagged_count": 0,
-                "pages": [],
-            },
+            "preview_id": str(uuid.uuid4()),
             "force_rule_linked_tier_change": False,
         },
     )

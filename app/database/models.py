@@ -506,6 +506,33 @@ class WikiPage(Base):
     __table_args__ = (Index("ix_wiki_pages_page_type", "page_type"),)
 
 
+class WikiReclassificationPreview(Base):
+    """Server-side canonical copy of a wiki reclassification preview."""
+
+    __tablename__ = "wiki_reclassification_previews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    preview_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    created_by: Mapped["Employee"] = relationship("Employee")
+
+    __table_args__ = (
+        Index("ix_wiki_reclassification_previews_created_by", "created_by_id"),
+        Index("ix_wiki_reclassification_previews_expires_at", "expires_at"),
+    )
+
+
 class WikiLink(Base):
     """
     Derived edge between two wiki pages, parsed from `[[slug]]` patterns in content_md.

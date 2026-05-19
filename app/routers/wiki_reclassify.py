@@ -18,7 +18,7 @@ import uuid
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -31,6 +31,9 @@ from app.services.wiki_reclassification_service import (
 )
 
 router = APIRouter()
+
+DEFAULT_PREVIEW_LIMIT = 25
+MAX_PREVIEW_LIMIT = 100
 
 
 # ---------------------------------------------------------------------------
@@ -45,21 +48,33 @@ class ReclassifyPreviewRequest(BaseModel):
     """
 
     source_id: Optional[uuid.UUID] = None
-    page_ids: Optional[list[uuid.UUID]] = None
+    page_ids: Optional[list[uuid.UUID]] = Field(default=None, max_length=MAX_PREVIEW_LIMIT)
     scope_type: Literal["global", "workspace", "project"] = "global"
     scope_id: Optional[uuid.UUID] = None
-    limit: Optional[int] = Field(default=None, ge=1, le=500)
+    model_config: ConfigDict = ConfigDict(extra="forbid")
+
+    limit: int = Field(default=DEFAULT_PREVIEW_LIMIT, ge=1)
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def cap_limit(cls, value: object) -> object:
+        if value is None:
+            return DEFAULT_PREVIEW_LIMIT
+        if isinstance(value, int) and value > MAX_PREVIEW_LIMIT:
+            return MAX_PREVIEW_LIMIT
+        return value
 
 
 class ReclassifyApplyRequest(BaseModel):
     """Body for the apply endpoint.
 
-    ``preview`` is the dict returned verbatim by the preview endpoint; the
-    service re-validates structure and re-loads each page by id, so callers do
-    not get to bypass safety just by handing us a malformed dict.
+    Callers may only submit the server-persisted ``preview_id``; the service
+    loads the canonical preview payload and verifies ownership plus freshness.
     """
 
-    preview: dict
+    model_config: ConfigDict = ConfigDict(extra="forbid")
+
+    preview_id: uuid.UUID
     force_rule_linked_tier_change: bool = False
 
 
@@ -72,11 +87,13 @@ class ReclassifyApplyRequest(BaseModel):
 async def reclassify_preview(
     body: ReclassifyPreviewRequest,
     db: AsyncSession = Depends(get_db),
-    _user: Employee = require_permission("wiki:write:all"),
+    user: Employee = require_permission("wiki:write:all"),
 ) -> dict:
-    """Dry-run reclassification — returns the preview diff from T9.
+    """Dry-run reclassification — returns and persists a bounded preview diff.
 
-    The service is SELECT-only; no taxonomy mutations occur here.
+    Preview scope is always bounded: ``limit`` defaults to 25 and is capped at
+    ``MAX_PREVIEW_LIMIT`` (100), and explicit ``page_ids`` cannot exceed 100.
+    The canonical preview payload is stored server-side for the apply step.
     """
     # T9 expects ``scope_type`` to be ``"global"`` or ``"workspace"``. Accept the
     # legacy ``"project"`` alias from older clients by collapsing it to
@@ -84,14 +101,17 @@ async def reclassify_preview(
     # values handled by the service.
     scope_type = "workspace" if body.scope_type == "project" else body.scope_type
     try:
-        return await preview_reclassification(
+        result = await preview_reclassification(
             db,
             source_id=body.source_id,
             page_ids=body.page_ids,
             scope_type=scope_type,
             scope_id=body.scope_id,
             limit=body.limit,
+            actor=user,
         )
+        await db.commit()
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -112,10 +132,16 @@ async def reclassify_apply(
     try:
         result = await apply_reclassification(
             db,
-            preview=body.preview,
+            preview_id=body.preview_id,
             force_rule_linked_tier_change=body.force_rule_linked_tier_change,
             actor=user,
         )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
