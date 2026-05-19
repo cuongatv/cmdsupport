@@ -308,6 +308,9 @@ async def create_rule_linked_page(
             customer_persona="SME relationship manager",
         )
     rule = await _rekey_rule(session, old_rule_id=rule.id, new_rule_id=rule_id)
+    page = (
+        await session.execute(select(WikiPage).where(WikiPage.id == page.id))
+    ).scalar_one()
     return page, rule
 
 

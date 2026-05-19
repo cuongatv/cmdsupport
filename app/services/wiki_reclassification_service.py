@@ -482,15 +482,20 @@ async def apply_reclassification(
 
         try:
             page_uuid = _coerce_uuid(page_id)
+            await session.flush()
             page = (
                 await session.execute(
-                    select(WikiPage).where(WikiPage.id == page_uuid).with_for_update()
+                    select(WikiPage)
+                    .where(WikiPage.id == page_uuid)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
                 )
             ).scalar_one_or_none()
             if page is None:
                 skipped_count += 1
                 skipped_reasons.setdefault(page_id, []).append("page_not_found")
                 continue
+            await session.refresh(page)
 
             new_slugs = _preview_item_slugs(item, "new_slugs")
             confidence = _preview_item_float(item, "confidence")
@@ -516,7 +521,7 @@ async def apply_reclassification(
             updated = await wiki_service.apply_update(
                 session,
                 slug=page.slug,
-                new_content_md="",
+                new_content_md=page.content_md or "",
                 scope_type=page.scope_type,
                 scope_id=page.scope_id,
                 knowledge_type_slugs=new_slugs,
