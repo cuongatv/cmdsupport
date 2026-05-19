@@ -12,7 +12,10 @@ from app.ai.mrp.mapper import run_map_phase
 from app.ai.mrp.reducer import run_reduce_phase
 from app.ai.mrp.verifier import run_verify_phase
 from app.ai.mrp.writer import PageWriteResult, run_refine_phase
-from app.services.wiki_taxonomy_classifier import ClassifierResult, classify_page_candidate
+from app.services.wiki_taxonomy_classifier import (
+    ClassifierResult,
+    classify_page_candidate,
+)
 from app.utils.progress import ProgressTracker
 
 DEFAULT_INGESTION_PIPELINE = "mrp"
