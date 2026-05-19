@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KnowledgeTable } from "@/components/knowledge/knowledge-table";
 import { KnowledgeFilters } from "@/components/knowledge/knowledge-filters";
 import { UploadDialog } from "@/components/knowledge/upload-dialog";
+import { WikiReclassificationDialog } from "@/components/knowledge/wiki-reclassification-dialog";
 import { KnowledgeTypeCards } from "@/components/types/knowledge-type-cards";
 import { KnowledgeTypeDialog } from "@/components/types/knowledge-type-dialog";
 
@@ -74,6 +75,7 @@ export default function KnowledgePage() {
   
   const [typeDialogOpen, setTypeDialogOpen] = useState(false);
   const [editType, setEditType] = useState<KnowledgeType | null>(null);
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
 
   const loadSources = useCallback(async (silent = false, p = 1, s = "") => {
     if (!silent) setLoading(true);
@@ -155,13 +157,23 @@ export default function KnowledgePage() {
         description="Quản lý và tổ chức tài liệu, phân loại của tổ chức."
         action={
           activeTab === "documents" ? (
-            <Button
-              onClick={() => setUploadOpen(true)}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <span className="material-symbols-outlined text-base mr-1">add</span>
-              Tải lên tài liệu
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                data-testid="open-reclassify-dialog"
+                variant="outline"
+                onClick={() => setReclassifyOpen(true)}
+              >
+                <span className="material-symbols-outlined text-base mr-1">rule</span>
+                Phân loại lại Wiki
+              </Button>
+              <Button
+                onClick={() => setUploadOpen(true)}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <span className="material-symbols-outlined text-base mr-1">add</span>
+                Tải lên tài liệu
+              </Button>
+            </div>
           ) : (
             <Button
               onClick={() => { setEditType(null); setTypeDialogOpen(true); }}
@@ -248,6 +260,11 @@ export default function KnowledgePage() {
         onOpenChange={setTypeDialogOpen}
         knowledgeType={editType}
         onSaved={loadMeta}
+      />
+
+      <WikiReclassificationDialog
+        open={reclassifyOpen}
+        onOpenChange={setReclassifyOpen}
       />
     </>
   );
