@@ -126,6 +126,7 @@ from app.routers import (  # noqa: E402
     departments,
     flow_metrics_router,
     habits,
+    idea_submissions,
     knowledge_types,
     notes,
     notifications,
@@ -168,6 +169,7 @@ app.include_router(
 )
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(habits.router, prefix="/api", tags=["habits"])
+app.include_router(idea_submissions.router, prefix="/api", tags=["idea-submissions"])
 
 
 @app.get("/")

@@ -77,6 +77,9 @@ const navSections: NavSection[] = [
     label: "Hệ thống",
     requiredPermissions: ["org:audit:read", "org:settings:read"],
     items: [
+      // Admin-only: any non-admin lacking this synthetic perm gets filtered
+      // out by `hasPermission` (admins pass every permission check).
+      { label: "Góp ý cải tiến", href: "/admin/ideas", icon: "campaign", requiredPermissions: ["admin:ideas:manage"] },
       { label: "Nhật ký kiểm toán", href: "/admin/audit", icon: "policy", requiredPermissions: ["org:audit:read"] },
       { label: "Cài đặt", href: "/admin/settings", icon: "settings", requiredPermissions: ["org:settings:read"] },
     ],

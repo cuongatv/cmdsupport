@@ -2416,3 +2416,95 @@ class Notification(Base):
         Index("ix_notifications_task_id", "task_id"),
         Index("ix_notifications_created_at", "created_at"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Idea Submissions — public feedback for the CMD Support product itself.
+# Anonymous (no employee FK); admins triage via /admin/ideas.
+# ---------------------------------------------------------------------------
+
+
+class IdeaSubmission(Base):
+    __tablename__ = "idea_submissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    contributor_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contributor_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    contributor_email: Mapped[Optional[str]] = mapped_column(String(200))
+    contributor_department: Mapped[Optional[str]] = mapped_column(String(200))
+    title: Mapped[Optional[str]] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    current_pain: Mapped[Optional[str]] = mapped_column(Text)
+    expected_benefit: Mapped[Optional[str]] = mapped_column(Text)
+    reference_system: Mapped[Optional[str]] = mapped_column(String(500))
+    category: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default="feature",
+        comment="feature|improvement|bug|ux|other",
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default="new",
+        comment="new|reviewing|planned|in_progress|shipped|declined",
+    )
+    admin_notes: Mapped[Optional[str]] = mapped_column(Text)
+    submitter_ip: Mapped[Optional[str]] = mapped_column(String(64))
+    submitter_user_agent: Mapped[Optional[str]] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    images: Mapped[list["IdeaSubmissionImage"]] = relationship(
+        back_populates="submission",
+        cascade="all, delete-orphan",
+        order_by="IdeaSubmissionImage.created_at",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('feature', 'improvement', 'bug', 'ux', 'other')",
+            name="ck_idea_submissions_category",
+        ),
+        CheckConstraint(
+            "status IN ('new', 'reviewing', 'planned', 'in_progress', 'shipped', 'declined')",
+            name="ck_idea_submissions_status",
+        ),
+        Index("ix_idea_submissions_created_at", "created_at"),
+        Index("ix_idea_submissions_status", "status"),
+    )
+
+
+class IdeaSubmissionImage(Base):
+    __tablename__ = "idea_submission_images"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("idea_submissions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    file_name: Mapped[Optional[str]] = mapped_column(String(300))
+    content_type: Mapped[Optional[str]] = mapped_column(String(100))
+    size_bytes: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    submission: Mapped["IdeaSubmission"] = relationship(back_populates="images")
+
+    __table_args__ = (
+        Index("ix_idea_submission_images_submission_id", "submission_id"),
+    )
