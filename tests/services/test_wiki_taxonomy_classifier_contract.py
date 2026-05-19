@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportArgumentType=false, reportOperatorIssue=false
 """Contract tests for the future wiki taxonomy classifier service.
 
 These tests pin the shared result contract and the fallback policy before the
@@ -179,6 +180,42 @@ async def test_classify_page_candidate_rationale_never_leaks_body_marker():
 
     assert BODY_SECRET_MARKER in BODY_EXCERPT
     assert BODY_SECRET_MARKER not in result["rationale"]
+
+
+async def test_rationale_does_not_echo_body_excerpt():
+    payload = json.dumps(
+        {
+            "slugs": ["business_object.product_service"],
+            "confidence": 0.92,
+            "rationale": "STOLEN_BODY: BODY_SECRET_MARKER_777",
+            "needs_review": False,
+            "classifier_version": "taxonomy-v1",
+        },
+        ensure_ascii=False,
+    )
+
+    result = await _call_classifier(payload)
+
+    assert "BODY_SECRET_MARKER_777" not in result["rationale"]
+    assert result["rationale"] == "Phân loại business_object.product_service với độ tin cậy 0.92."
+
+
+async def test_bool_confidence_triggers_fallback():
+    payload = json.dumps(
+        {
+            "slugs": ["business_object.product_service"],
+            "confidence": True,
+            "rationale": "Boolean confidence must not become 1.0.",
+            "needs_review": False,
+            "classifier_version": "taxonomy-v1",
+        },
+        ensure_ascii=False,
+    )
+
+    result = await _call_classifier(payload)
+
+    assert result["slugs"] == ["supporting_knowledge.other"]
+    assert result["needs_review"] is True
 
 
 async def test_classify_mixed_tier_forces_review():

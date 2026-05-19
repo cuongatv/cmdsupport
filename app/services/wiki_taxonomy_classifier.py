@@ -87,14 +87,37 @@ classification is genuinely useful and non-conflicting. Return raw JSON only:
 """
 
 
-def _safe_fallback(
-    reason: str = "Classifier provider error; safe fallback.",
-) -> ClassifierResult:
+def _synthesize_rationale(
+    *,
+    slugs: Sequence[str],
+    confidence: float,
+    needs_review: bool,
+    fallback_reason: str | None = None,
+    mixed_tier: bool = False,
+) -> str:
+    if fallback_reason is not None:
+        return f"Fallback {FALLBACK_SLUG} (lý do: {fallback_reason})."
+    if mixed_tier:
+        return MIXED_TIER_REVIEW_RATIONALE
+
+    slug_text = ", ".join(slugs)
+    review_suffix = "; cần review" if needs_review else ""
+    return f"Phân loại {slug_text} với độ tin cậy {confidence:.2f}{review_suffix}."
+
+
+def _safe_fallback(reason: str = "provider error") -> ClassifierResult:
+    confidence = 0.0
+    needs_review = True
     return {
         "slugs": [FALLBACK_SLUG],
-        "confidence": 0.0,
-        "rationale": reason,
-        "needs_review": True,
+        "confidence": confidence,
+        "rationale": _synthesize_rationale(
+            slugs=[FALLBACK_SLUG],
+            confidence=confidence,
+            needs_review=needs_review,
+            fallback_reason=reason,
+        ),
+        "needs_review": needs_review,
         "classifier_version": CLASSIFIER_VERSION,
     }
 
@@ -137,12 +160,6 @@ def _coerce_string_list(value: object) -> list[str] | None:
     return slugs or None
 
 
-def _sanitize_rationale(value: object) -> str:
-    if not isinstance(value, str) or not value.strip():
-        return "Taxonomy classifier returned a valid slug."
-    return value.strip()
-
-
 def _slug_tier(slug: str) -> str | None:
     if slug.startswith("business_object."):
         return "business"
@@ -156,17 +173,11 @@ def _has_mixed_business_supporting_tiers(slugs: Sequence[str]) -> bool:
     return "business" in tiers and "supporting" in tiers
 
 
-def _append_mixed_tier_rationale(rationale: str) -> str:
-    if MIXED_TIER_REVIEW_RATIONALE in rationale:
-        return rationale
-    return f"{rationale} {MIXED_TIER_REVIEW_RATIONALE}".strip()
-
-
 def _normalize_result(payload: JsonPayload) -> ClassifierResult:
     slugs = _coerce_string_list(payload.get("slugs"))
     if slugs is None:
         logger.warning("Wiki taxonomy classifier returned missing or invalid slugs")
-        return _safe_fallback()
+        return _safe_fallback(reason="invalid slugs")
 
     invalid_slugs = [slug for slug in slugs if slug not in VALID_TAXONOMY_SLUGS]
     if invalid_slugs:
@@ -174,29 +185,31 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
             "Wiki taxonomy classifier returned invalid taxonomy slugs: {}",
             invalid_slugs,
         )
-        return _safe_fallback()
+        return _safe_fallback(reason="invalid slug")
 
     slugs = slugs[:MAX_TAXONOMY_SLUGS]
 
     confidence_value = payload.get("confidence")
-    if not isinstance(confidence_value, int | float | str):
+    if isinstance(confidence_value, bool) or not isinstance(
+        confidence_value,
+        int | float | str,
+    ):
         logger.warning("Wiki taxonomy classifier returned missing or invalid confidence")
-        return _safe_fallback()
+        return _safe_fallback(reason="non-numeric confidence")
     try:
         confidence = float(confidence_value)
     except ValueError:
         logger.warning("Wiki taxonomy classifier returned missing or invalid confidence")
-        return _safe_fallback()
+        return _safe_fallback(reason="non-numeric confidence")
 
     if not 0.0 <= confidence <= 1.0:
         logger.warning("Wiki taxonomy classifier confidence out of range: {}", confidence)
-        return _safe_fallback()
+        return _safe_fallback(reason="confidence out of range")
 
     if "rationale" not in payload or "needs_review" not in payload:
         logger.warning("Wiki taxonomy classifier returned JSON missing required keys")
-        return _safe_fallback()
+        return _safe_fallback(reason="missing required keys")
 
-    rationale = _sanitize_rationale(payload.get("rationale"))
     has_mixed_tiers = _has_mixed_business_supporting_tiers(slugs)
 
     if confidence < CONFIDENCE_REVIEW_FLOOR:
@@ -207,6 +220,7 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
                 confidence,
             )
             slugs = [FALLBACK_SLUG]
+            confidence = 0.0
     elif confidence < CONFIDENCE_AUTO_APPLY:
         needs_review = True
     else:
@@ -214,7 +228,13 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
 
     if has_mixed_tiers:
         needs_review = True
-        rationale = _append_mixed_tier_rationale(rationale)
+
+    rationale = _synthesize_rationale(
+        slugs=slugs,
+        confidence=confidence,
+        needs_review=needs_review,
+        mixed_tier=has_mixed_tiers,
+    )
 
     return {
         "slugs": slugs,
