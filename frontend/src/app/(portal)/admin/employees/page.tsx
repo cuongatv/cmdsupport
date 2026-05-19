@@ -23,6 +23,8 @@ export type Employee = {
   id: string;
   name: string;
   email: string;
+  /** Optional in legacy responses; backend now guarantees it post-035. */
+  username?: string;
   role: string;
   department_id: string;
   department_name: string;

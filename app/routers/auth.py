@@ -7,6 +7,8 @@ Two system roles:
 """
 
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -31,8 +33,20 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 class LoginRequest(BaseModel):
-    email: str
+    """Login payload — accepts either a username OR an email.
+
+    The frontend's single text field is named ``username`` going forward;
+    ``email`` is kept as a legacy alias so older clients (and any external
+    integrations that POSTed the original schema) keep working without a
+    breaking deploy.
+    """
+
+    username: Optional[str] = None
+    email: Optional[str] = None
     password: str
+
+    def identifier(self) -> str:
+        return (self.username or self.email or "").strip()
 
 
 class WorkspaceMembershipOut(BaseModel):
@@ -56,6 +70,7 @@ class ProfileResponse(BaseModel):
     id: str
     name: str
     email: str
+    username: str
     role: str
     department_id: str
     department_name: str
@@ -93,6 +108,7 @@ def _build_user_dict(employee: Employee, permissions: list[str], workspace_membe
         "id": str(employee.id),
         "name": employee.name,
         "email": employee.email,
+        "username": employee.username,
         "role": employee.role,
         "department_id": str(employee.department_id),
         "department_name": employee.department.name if employee.department else "",
@@ -108,12 +124,16 @@ def _build_user_dict(employee: Employee, permissions: list[str], workspace_membe
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
-    Authenticate with email + password. Returns JWT token.
+    Authenticate with username (or email) + password. Returns JWT token.
     Works for both admin and employee roles.
     """
-    employee = await authenticate_employee(db, req.email, req.password)
+    identifier = req.identifier()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Username or email is required")
+
+    employee = await authenticate_employee(db, identifier, req.password)
     if not employee:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
 
     token = create_access_token(
         employee_id=str(employee.id),
@@ -143,6 +163,7 @@ async def get_profile(
         id=str(current_user.id),
         name=current_user.name,
         email=current_user.email,
+        username=current_user.username,
         role=current_user.role,
         department_id=str(current_user.department_id),
         department_name=current_user.department.name if current_user.department else "",

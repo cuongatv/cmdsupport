@@ -772,6 +772,12 @@ class Employee(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    username: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        nullable=False,
+        comment="Login handle — unique, [a-z0-9._-] only, lowercase",
+    )
     password_hash: Mapped[Optional[str]] = mapped_column(
         String(500),
         comment="bcrypt hash of password",
@@ -849,6 +855,7 @@ class Employee(Base):
         Index("ix_employees_mcp_token", "mcp_token"),
         Index("ix_employees_department_id", "department_id"),
         Index("ix_employees_email", "email"),
+        Index("ix_employees_username", "username"),
     )
 
 

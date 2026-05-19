@@ -20,6 +20,7 @@ export type User = {
   id: string;
   name: string;
   email: string;
+  username: string;
   role: "admin" | "employee";
   department_id: string;
   department_name: string;
@@ -30,7 +31,13 @@ export type User = {
 type AuthState = {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  /**
+   * Sign in with either a username or an email. The string is sent as
+   * `username` to the backend; the backend resolves it against both
+   * `employees.username` and `employees.email` so users keep working
+   * even if they remember their old email instead of the new handle.
+   */
+  login: (identifier: string, password: string) => Promise<User>;
   logout: () => void;
   refresh: () => Promise<void>;
   hasPermission: (perm: string) => boolean;
@@ -52,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: string;
         name: string;
         email: string;
+        username: string;
         role: "admin" | "employee";
         department_id: string;
         department_name: string;
@@ -88,12 +96,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh]);
 
-  const login = async (email: string, password: string): Promise<User> => {
+  const login = async (identifier: string, password: string): Promise<User> => {
     const data = await api<{ access_token: string; user: User }>(
       "/api/auth/login",
       {
         method: "POST",
-        body: { email, password },
+        // Send as `username` — the backend accepts either username or email
+        // through that field. The legacy `email` field is still recognised
+        // server-side but the frontend has migrated to the new contract.
+        body: { username: identifier, password },
       }
     );
     setToken(data.access_token);

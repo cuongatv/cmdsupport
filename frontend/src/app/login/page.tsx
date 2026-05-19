@@ -11,7 +11,10 @@ import { Label } from "@/components/ui/label";
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  // `identifier` accepts either a username or an email — the backend
+  // resolves both. Naming the state `identifier` (not `email`) avoids
+  // leaking the previous assumption that email is the only login handle.
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,7 +24,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const loggedInUser = await login(email, password);
+      const loggedInUser = await login(identifier, password);
       router.push(loggedInUser.role === "admin" ? "/admin" : "/me");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
@@ -272,17 +275,18 @@ export default function LoginPage() {
 
                   <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-lg:gap-6">
                     <div className="flex flex-col gap-2">
-                      <Label htmlFor="email" className="text-sm font-medium">
-                        Email
+                      <Label htmlFor="identifier" className="text-sm font-medium">
+                        Tên đăng nhập hoặc Email
                       </Label>
                       <Input
-                        id="email"
-                        type="email"
-                        placeholder="admin@cmdsupport.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        id="identifier"
+                        type="text"
+                        placeholder="vd: admin hoặc admin@cmdsupport.com"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
                         required
                         autoFocus
+                        autoComplete="username"
                         className="h-11 bg-white/70 backdrop-blur-sm"
                       />
                     </div>

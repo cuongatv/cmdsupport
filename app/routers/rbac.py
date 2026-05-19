@@ -4,6 +4,7 @@ Permission model v2: uses scoped permission format.
 """
 
 import os
+import re
 import uuid
 from typing import Optional
 
@@ -47,6 +48,26 @@ AVATAR_ALLOWED_CONTENT_TYPES = {
 }
 AVATAR_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
+# Username rules — lowercase letters, digits, dot, underscore, hyphen. 3-100
+# chars. Enforced both client- and server-side so login form labels can
+# promise the same constraints.
+USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]{3,100}$")
+
+
+def _validate_username(value: str) -> str:
+    """Normalise + validate username. Raises HTTPException(400) on invalid."""
+    normalised = (value or "").strip().lower()
+    if not normalised:
+        raise HTTPException(400, "Tên đăng nhập là bắt buộc.")
+    if not USERNAME_PATTERN.match(normalised):
+        raise HTTPException(
+            400,
+            "Tên đăng nhập chỉ chấp nhận chữ thường, số và các ký tự . _ - "
+            "(3-100 ký tự).",
+        )
+    return normalised
+
+
 router = APIRouter()
 
 
@@ -79,6 +100,7 @@ class DepartmentOut(BaseModel):
 class EmployeeCreate(BaseModel):
     name: str
     email: str
+    username: str
     password: Optional[str] = None  # Optional on update
     role: str = "employee"  # "admin" or "employee"
     department_id: str
@@ -92,6 +114,7 @@ class EmployeeOut(BaseModel):
     id: str
     name: str
     email: str
+    username: str
     role: str
     department_id: str
     department_name: str = ""
@@ -219,6 +242,7 @@ def _employee_to_out(emp: Employee) -> EmployeeOut:
         id=str(emp.id),
         name=emp.name,
         email=emp.email,
+        username=emp.username,
         role=emp.role,
         department_id=str(emp.department_id),
         department_name=emp.department.name if emp.department else "",
@@ -391,9 +415,15 @@ async def list_employees(
         )
     if search:
         like = f"%{search}%"
-        base = base.where(Employee.name.ilike(like) | Employee.email.ilike(like))
+        base = base.where(
+            Employee.name.ilike(like)
+            | Employee.email.ilike(like)
+            | Employee.username.ilike(like)
+        )
         count_base = count_base.where(
-            Employee.name.ilike(like) | Employee.email.ilike(like)
+            Employee.name.ilike(like)
+            | Employee.email.ilike(like)
+            | Employee.username.ilike(like)
         )
 
     # Total count
@@ -432,6 +462,20 @@ async def create_employee(
     if body.role not in ("admin", "employee"):
         raise HTTPException(400, "Role must be 'admin' or 'employee'")
 
+    username = _validate_username(body.username)
+    # Username uniqueness check up front so we can return a friendly 409
+    # instead of a raw IntegrityError on commit.
+    exists = (
+        await db.execute(select(Employee.id).where(Employee.username == username))
+    ).scalar_one_or_none()
+    if exists is not None:
+        raise HTTPException(409, "Tên đăng nhập đã tồn tại.")
+    email_exists = (
+        await db.execute(select(Employee.id).where(Employee.email == body.email))
+    ).scalar_one_or_none()
+    if email_exists is not None:
+        raise HTTPException(409, "Email đã được sử dụng.")
+
     custom_role_id = uuid.UUID(body.custom_role_id) if body.custom_role_id else None
     if body.role == "employee" and custom_role_id is None:
         custom_role = (
@@ -453,6 +497,7 @@ async def create_employee(
     emp = Employee(
         name=body.name,
         email=body.email,
+        username=username,
         password_hash=hash_password(body.password),
         role=body.role,
         department_id=uuid.UUID(body.department_id),
@@ -462,7 +507,7 @@ async def create_employee(
         slogan=(body.slogan or None),
     )
     db.add(emp)
-    await log_audit(db, _user, "create", "employee", str(emp.id), reason=emp.email)
+    await log_audit(db, _user, "create", "employee", str(emp.id), reason=emp.username)
     await db.flush()
     await db.commit()
 
@@ -470,6 +515,7 @@ async def create_employee(
         "id": str(emp.id),
         "name": emp.name,
         "email": emp.email,
+        "username": emp.username,
         "custom_role_id": str(emp.custom_role_id) if emp.custom_role_id else None,
         "phone": emp.phone,
         "zalo_phone": emp.zalo_phone,
@@ -487,8 +533,32 @@ async def update_employee(
     emp = await db.get(Employee, uuid.UUID(emp_id))
     if not emp:
         raise HTTPException(404, "Employee not found")
+
+    new_username = _validate_username(body.username)
+    if new_username != emp.username:
+        collision = (
+            await db.execute(
+                select(Employee.id).where(
+                    Employee.username == new_username, Employee.id != emp.id
+                )
+            )
+        ).scalar_one_or_none()
+        if collision is not None:
+            raise HTTPException(409, "Tên đăng nhập đã tồn tại.")
+    if body.email != emp.email:
+        email_collision = (
+            await db.execute(
+                select(Employee.id).where(
+                    Employee.email == body.email, Employee.id != emp.id
+                )
+            )
+        ).scalar_one_or_none()
+        if email_collision is not None:
+            raise HTTPException(409, "Email đã được sử dụng.")
+
     emp.name = body.name
     emp.email = body.email
+    emp.username = new_username
     emp.role = body.role
     emp.department_id = uuid.UUID(body.department_id)
     emp.custom_role_id = uuid.UUID(body.custom_role_id) if body.custom_role_id else None
@@ -500,9 +570,9 @@ async def update_employee(
     emp.slogan = body.slogan or None
     if body.password:
         emp.password_hash = hash_password(body.password)
-    await log_audit(db, _user, "update", "employee", str(emp.id), reason=emp.email)
+    await log_audit(db, _user, "update", "employee", str(emp.id), reason=emp.username)
     await db.flush()
-    return {"id": str(emp.id), "name": emp.name}
+    return {"id": str(emp.id), "name": emp.name, "username": emp.username}
 
 
 @router.delete("/employees/{emp_id}")

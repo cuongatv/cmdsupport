@@ -114,6 +114,60 @@ function getErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+// Canonical workflow groups. Matches `task_states.group` comment in
+// app/database/models.py:1635 — keep these in sync.
+const CANONICAL_GROUPS: ReadonlyArray<{ group: string; name: string }> = [
+  { group: "backlog", name: "Backlog" },
+  { group: "todo", name: "To Do" },
+  { group: "in_progress", name: "In Progress" },
+  { group: "review", name: "Review" },
+  { group: "done", name: "Done" },
+  { group: "cancelled", name: "Cancelled" },
+];
+
+/**
+ * Build virtual TaskState rows — one per canonical workflow group — for the
+ * multi-project Kanban. Each virtual state carries:
+ *   - `id`: a synthetic sentinel `group:<group>` so React keys and the column
+ *           droppable id stay unique without colliding with any real UUID.
+ *   - `task_project_id`: an empty string (never used in this mode; drag is
+ *           disabled so the server-side move endpoint is never hit).
+ *   - `name`: English canonical name; the Kanban runs it through
+ *           `translateStateName()` so the user sees "Chờ xử lý (Backlog)".
+ *   - `color`: the first real color seen for that group (best-effort accent).
+ * Only groups that actually appear in `realStates` are returned, so projects
+ * with a truncated workflow don't get empty placeholder columns.
+ */
+function buildCanonicalGroupStates(realStates: TaskState[]): TaskState[] {
+  const presentGroups = new Set(realStates.map((s) => s.group));
+  const colorByGroup: Record<string, string | null> = {};
+  for (const s of realStates) {
+    if (s.color && !colorByGroup[s.group]) {
+      colorByGroup[s.group] = s.color;
+    }
+  }
+  const now = new Date(0).toISOString(); // synthetic — never displayed
+  const result: TaskState[] = [];
+  CANONICAL_GROUPS.forEach((g, i) => {
+    if (!presentGroups.has(g.group)) return;
+    result.push({
+      id: `group:${g.group}`,
+      task_project_id: "",
+      name: g.name,
+      group: g.group,
+      color: colorByGroup[g.group] ?? null,
+      position: i,
+      wip_limit: null,
+      wip_policy: "off",
+      aging_warn_days: null,
+      is_default: false,
+      created_at: now,
+      updated_at: now,
+    });
+  });
+  return result;
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 type TaskDrilldownFilters = {
@@ -288,6 +342,16 @@ export default function TaskListPage() {
   // shows up in the current task list. Without this, Kanban has no columns to
   // render and tasks look "missing".
   const [kanbanStates, setKanbanStates] = useState<TaskState[]>([]);
+  // Multi-project Kanban: id → real TaskState (any project). Used so the
+  // grouped board can route a task to its canonical column via
+  // `realStateMap[task.state_id].group`.
+  const [kanbanRealStateMap, setKanbanRealStateMap] = useState<
+    Record<string, TaskState>
+  >({});
+  // True when `kanbanStates` are virtual canonical-group columns (multi-project
+  // scope view). Drag-and-drop is meaningless across projects (state_id is per
+  // project), so the Kanban component switches to read-only mode.
+  const [kanbanGrouped, setKanbanGrouped] = useState(false);
   // Scope-aware filter options: assignees + labels unioned across every
   // project_id that appears in `tasks`. Drives the "Người phụ trách" and
   // "Nhãn" dropdowns when the user is filtering by scope (Đơn vị / Không
@@ -590,6 +654,17 @@ export default function TaskListPage() {
   // Kanban + filter dropdowns need data even when the list spans multiple
   // projects. Union states/labels/eligible-assignees over every project_id
   // that appears in `tasks`. One fetch per distinct project, deduped by id.
+  //
+  // For Kanban specifically: when tasks span MULTIPLE projects (scope view
+  // = Đơn vị / Workspace), every project owns its own `task_states` row per
+  // workflow column ("Backlog", "In Progress", …). The rows share names but
+  // not UUIDs, so a naive id-dedup leaves N×6 columns on the board (one
+  // "Chờ xử lý" per project). Collapse them into 6 canonical group columns
+  // ("backlog", "todo", "in_progress", "review", "done", "cancelled") and
+  // build a `realStateMap` so the Kanban can route each task to the right
+  // virtual column via its real `state_id → group`. Drag-drop is disabled
+  // in this mode because `state_id` is per-project, so cross-project move
+  // has no meaningful target id.
   const loadScopeOptions = useCallback(
     async (currentTasks: Task[]) => {
       const ids = Array.from(
@@ -597,6 +672,8 @@ export default function TaskListPage() {
       );
       if (ids.length === 0) {
         setKanbanStates([]);
+        setKanbanRealStateMap({});
+        setKanbanGrouped(false);
         setFilterAssignees([]);
         setFilterLabels([]);
         return;
@@ -609,6 +686,8 @@ export default function TaskListPage() {
         states.length > 0
       ) {
         setKanbanStates(states);
+        setKanbanRealStateMap({});
+        setKanbanGrouped(false);
         setFilterAssignees(assignees);
         setFilterLabels(labels);
         return;
@@ -625,18 +704,13 @@ export default function TaskListPage() {
           return { s, a, l };
         })
       );
-      const seenS = new Set<string>();
-      const mergedS: TaskState[] = [];
+      const allStates: TaskState[] = [];
       const seenA = new Set<string>();
       const mergedA: EligibleAssignee[] = [];
       const seenL = new Set<string>();
       const mergedL: TaskLabel[] = [];
       for (const { s, a, l } of triples) {
-        for (const item of s) {
-          if (seenS.has(item.id)) continue;
-          seenS.add(item.id);
-          mergedS.push(item);
-        }
+        for (const item of s) allStates.push(item);
         for (const item of a) {
           if (seenA.has(item.id)) continue;
           seenA.add(item.id);
@@ -648,17 +722,39 @@ export default function TaskListPage() {
           mergedL.push(item);
         }
       }
-      // Stable order: states by group/position, others alphabetical.
-      mergedS.sort((a, b) => {
-        if (a.group !== b.group) return a.group.localeCompare(b.group);
-        if (a.position !== b.position) return a.position - b.position;
-        return a.name.localeCompare(b.name);
-      });
       mergedA.sort((a, b) => a.name.localeCompare(b.name));
       mergedL.sort((a, b) => a.name.localeCompare(b.name));
-      setKanbanStates(mergedS);
       setFilterAssignees(mergedA);
       setFilterLabels(mergedL);
+
+      const isMultiProject =
+        ids.length > 1 || filterValues.task_project_id === "";
+
+      if (!isMultiProject) {
+        // Single project (e.g. the URL pinned `task_project_id` but the
+        // local `states` cache was empty). Reuse the per-project state list
+        // straight from the merged fetch.
+        const projectStates = allStates.filter(
+          (s) => s.task_project_id === ids[0]
+        );
+        projectStates.sort((a, b) => {
+          if (a.group !== b.group) return a.group.localeCompare(b.group);
+          if (a.position !== b.position) return a.position - b.position;
+          return a.name.localeCompare(b.name);
+        });
+        setKanbanStates(projectStates);
+        setKanbanRealStateMap({});
+        setKanbanGrouped(false);
+        return;
+      }
+
+      // Multi-project: collapse to canonical group columns.
+      const realStateMap: Record<string, TaskState> = {};
+      for (const s of allStates) realStateMap[s.id] = s;
+      const virtual = buildCanonicalGroupStates(allStates);
+      setKanbanStates(virtual);
+      setKanbanRealStateMap(realStateMap);
+      setKanbanGrouped(true);
     },
     [filterValues.task_project_id, states, assignees, labels]
   );
@@ -1196,6 +1292,8 @@ export default function TaskListPage() {
                 }
                 initialTasks={tasks}
                 states={kanbanStates}
+                groupedView={kanbanGrouped}
+                realStateMap={kanbanRealStateMap}
                 onTaskClick={handleRowClick}
               />
             )}

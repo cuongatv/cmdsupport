@@ -40,10 +40,13 @@ async def seed_default_admin():
             session.add(dept)
             await session.flush()
 
-            # Create admin user from .env
+            # Create admin user from .env. Username defaults to the email
+            # local-part so the new login form works out of the box.
+            admin_username = settings.default_admin_email.split("@")[0].lower()
             admin = Employee(
                 name="Admin",
                 email=settings.default_admin_email,
+                username=admin_username or "admin",
                 password_hash=hash_password(settings.default_admin_password),
                 role="admin",
                 department_id=dept.id,

@@ -37,6 +37,16 @@ export type TaskKanbanProps = {
   initialTasks: Task[];
   states: TaskState[];
   onTaskClick?: (task: Task) => void;
+  /**
+   * Multi-project mode: `states` are virtual canonical-group columns
+   * (one per backlog/todo/in_progress/…). Tasks are routed to a column
+   * via `realStateMap[task.state_id].group`. Drag-and-drop is disabled
+   * because `state_id` is per-project, so cross-project moves have no
+   * unambiguous target.
+   */
+  groupedView?: boolean;
+  /** Real per-project TaskState lookup, used only when `groupedView=true`. */
+  realStateMap?: Record<string, TaskState>;
 };
 
 function getMoveErrorMessage(err: unknown): string {
@@ -53,6 +63,8 @@ export default function TaskKanban({
   initialTasks,
   states,
   onTaskClick,
+  groupedView = false,
+  realStateMap,
 }: TaskKanbanProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [errorMessage, setErrorMessage] = useState("");
@@ -98,19 +110,34 @@ export default function TaskKanban({
 
   const sortedStates = [...localStates].sort((a, b) => a.position - b.position);
 
-  // Group tasks by state and sort by position within each column.
+  // Column key strategy depends on mode. Single-project: column key is the
+  // real `state.id` and a task lands in its column when `task.state_id` matches.
+  // Grouped (multi-project) mode: column key is `state.group` (canonical) and
+  // each task is routed via `realStateMap[task.state_id].group` so all the
+  // per-project "Backlog" rows collapse into one column.
+  const columnKey = (s: TaskState): string =>
+    groupedView ? s.group : s.id;
+  const taskColumnKey = (task: Task): string | null => {
+    if (!groupedView) return task.state_id;
+    const real = realStateMap?.[task.state_id];
+    return real ? real.group : null;
+  };
+
+  // Group tasks by column key and sort by position within each column.
   const tasksByState: Record<string, Task[]> = {};
   for (const state of sortedStates) {
-    tasksByState[state.id] = [];
+    tasksByState[columnKey(state)] = [];
   }
   for (const task of tasks) {
-    if (!tasksByState[task.state_id]) {
-      tasksByState[task.state_id] = [];
+    const key = taskColumnKey(task);
+    if (key === null) continue;
+    if (!tasksByState[key]) {
+      tasksByState[key] = [];
     }
-    tasksByState[task.state_id].push(task);
+    tasksByState[key].push(task);
   }
-  for (const stateId of Object.keys(tasksByState)) {
-    tasksByState[stateId].sort((a, b) => a.position - b.position);
+  for (const key of Object.keys(tasksByState)) {
+    tasksByState[key].sort((a, b) => a.position - b.position);
   }
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -292,12 +319,27 @@ export default function TaskKanban({
         </div>
       )}
 
+      {groupedView && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground"
+          role="status"
+        >
+          <span className="material-symbols-outlined text-[16px] mt-0.5">
+            info
+          </span>
+          <span>
+            Đang xem nhiều dự án — các cột được gộp theo nhóm trạng thái chung.
+            Để kéo-thả công việc, hãy chọn một dự án cụ thể ở bộ lọc.
+          </span>
+        </div>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
+        onDragStart={groupedView ? undefined : handleDragStart}
+        onDragEnd={groupedView ? undefined : handleDragEnd}
+        onDragCancel={groupedView ? undefined : handleDragCancel}
       >
         <div
           className="flex gap-3 overflow-x-auto pb-3"
@@ -305,12 +347,14 @@ export default function TaskKanban({
         >
           {sortedStates.map((state) => (
             <KanbanColumn
-              key={state.id}
+              key={columnKey(state)}
               state={state}
-              tasks={tasksByState[state.id] ?? []}
+              tasks={tasksByState[columnKey(state)] ?? []}
               onTaskClick={onTaskClick}
+              droppableId={columnKey(state)}
+              dragDisabled={groupedView}
               onOpenSettings={
-                FEATURE_AGILE_PHASE_1
+                FEATURE_AGILE_PHASE_1 && !groupedView
                   ? () => setSettingsStateId(state.id)
                   : undefined
               }
@@ -342,6 +386,10 @@ type KanbanColumnProps = {
   tasks: Task[];
   onTaskClick?: (task: Task) => void;
   onOpenSettings?: () => void;
+  /** Override the droppable id (used in grouped multi-project mode). */
+  droppableId?: string;
+  /** When true, the column does not accept drops (no cross-project move). */
+  dragDisabled?: boolean;
 };
 
 function KanbanColumn({
@@ -349,10 +397,14 @@ function KanbanColumn({
   tasks,
   onTaskClick,
   onOpenSettings,
+  droppableId,
+  dragDisabled = false,
 }: KanbanColumnProps) {
+  const id = droppableId ?? state.id;
   const { setNodeRef, isOver } = useDroppable({
-    id: state.id,
-    data: { type: "column", stateId: state.id },
+    id,
+    data: { type: "column", stateId: id },
+    disabled: dragDisabled,
   });
 
   const accent = state.color ?? undefined;
@@ -371,7 +423,7 @@ function KanbanColumn({
           ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20"
           : "border-border"
       }`}
-      data-testid={`task-kanban-column-${state.name}`}
+      data-testid={`task-kanban-column-${id}`}
     >
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-2">
@@ -420,7 +472,7 @@ function KanbanColumn({
       </div>
 
       <SortableContext
-        id={state.id}
+        id={id}
         items={tasks.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >

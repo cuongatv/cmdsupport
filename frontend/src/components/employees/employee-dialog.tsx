@@ -43,6 +43,8 @@ type Employee = {
   id: string;
   name: string;
   email: string;
+  /** Optional for backwards compatibility; backend now always populates it. */
+  username?: string;
   role: string;
   department_id: string;
   custom_role_id?: string;
@@ -51,6 +53,8 @@ type Employee = {
   slogan?: string | null;
   avatar_url?: string | null;
 };
+
+const USERNAME_RE = /^[a-z0-9._-]{3,100}$/;
 
 // Local row state for the "Các đơn vị khác" editable list. `membershipId` is
 // null until the row is persisted; the `original*` fields snapshot the
@@ -105,6 +109,7 @@ export function EmployeeDialog({
   const isEdit = !!employee;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("employee");
   const [deptId, setDeptId] = useState("");
@@ -195,6 +200,7 @@ export function EmployeeDialog({
     if (employee) {
       setName(employee.name);
       setEmail(employee.email);
+      setUsername(employee.username ?? "");
       setRole(employee.role);
       setDeptId(employee.department_id);
       setCustomRoleId(employee.custom_role_id || "");
@@ -206,6 +212,7 @@ export function EmployeeDialog({
     } else {
       setName("");
       setEmail("");
+      setUsername("");
       setPassword("");
       setRole("employee");
       setDeptId(departments[0]?.id || "");
@@ -401,9 +408,16 @@ export function EmployeeDialog({
         effective.push({ row: r, capacity: cap.value });
       }
 
+      const normalisedUsername = username.trim().toLowerCase();
+      if (!USERNAME_RE.test(normalisedUsername)) {
+        throw new Error(
+          "Tên đăng nhập chỉ chấp nhận chữ thường, số và các ký tự . _ - (3-100 ký tự).",
+        );
+      }
       const body: Record<string, string | null> = {
         name,
         email,
+        username: normalisedUsername,
         role,
         department_id: deptId,
         custom_role_id: customRoleId || null,
@@ -557,6 +571,34 @@ export function EmployeeDialog({
               required
               className="bg-background"
             />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="emp-username">Tên đăng nhập</Label>
+            <Input
+              id="emp-username"
+              type="text"
+              value={username}
+              onChange={(e) =>
+                setUsername(
+                  // Live-normalise: lowercase, strip whitespace inside the
+                  // field so the user can't accidentally store "Admin " and
+                  // wonder why login fails.
+                  e.target.value.toLowerCase().replace(/\s+/g, ""),
+                )
+              }
+              required
+              autoComplete="off"
+              minLength={3}
+              maxLength={100}
+              pattern="[a-z0-9._\-]{3,100}"
+              placeholder="vd: nguyen.van.a"
+              className="bg-background"
+            />
+            <span className="text-[11px] text-muted-foreground">
+              Chữ thường, số và <code>. _ -</code> · 3–100 ký tự · phải duy
+              nhất trong hệ thống.
+            </span>
           </div>
 
           <div className="flex flex-col gap-2">

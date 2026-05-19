@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgileKpiStrip } from "@/components/admin/dashboard/AgileKpiStrip";
 import { AgileCfd } from "@/components/admin/dashboard/AgileCfd";
@@ -11,9 +12,24 @@ import { AgileBlockedPanel } from "@/components/admin/dashboard/AgileBlockedPane
 import { AgileCapacityHeatmap } from "@/components/admin/dashboard/AgileCapacityHeatmap";
 import {
   getAdminDashboardFlowSummary,
+  listDepartments,
+  listTaskProjects,
   type AdminDashboardQueryParams,
 } from "@/lib/task-api";
-import type { AdminDashboardFlowSummaryResponse } from "@/lib/task-types";
+import type {
+  AdminDashboardFlowSummaryResponse,
+  DepartmentSummary,
+  TaskProject,
+} from "@/lib/task-types";
+import { UNIT_TYPE_LABEL, type UnitType } from "@/lib/department-types";
+
+// Shape returned by `GET /api/projects` (workspaces). Kept local because no
+// shared client type exists yet — see ClassicDashboardView for the same
+// declaration. Only the id/name pair is needed for the filter dropdown.
+type WorkspaceOption = {
+  id: string;
+  name: string;
+};
 
 type RangeDays = 7 | 14 | 30 | 90;
 
@@ -94,6 +110,14 @@ export function AgileDashboardShell() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState(false);
 
+  // Filter option lists — populated from REST. These power the three filter
+  // dropdowns (Đơn vị / Không gian làm việc / Dự án). When a parent scope is
+  // selected, the dependent options narrow accordingly (e.g. department →
+  // projects in that department only).
+  const [departments, setDepartments] = useState<DepartmentSummary[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  const [taskProjects, setTaskProjects] = useState<TaskProject[]>([]);
+
   const dashboardParams = useMemo<AdminDashboardQueryParams>(() => {
     return {
       ...getDateRangeParams(rangeDays),
@@ -105,11 +129,64 @@ export function AgileDashboardShell() {
     (key: keyof AdminDashboardQueryParams) =>
     (event: React.ChangeEvent<HTMLSelectElement>) => {
       const value = event.target.value;
-      setFilters((prev) => ({
-        ...prev,
-        [key]: value === "" ? null : value,
-      }));
+      setFilters((prev) => {
+        const next: AdminDashboardQueryParams = {
+          ...prev,
+          [key]: value === "" ? null : value,
+        };
+        // Cascade reset: a parent-scope change invalidates narrower scopes
+        // that were selected under the previous parent. Without this, the
+        // user can end up with a project_id that doesn't belong to the new
+        // department_id and the backend returns an empty dashboard.
+        if (key === "department_id") {
+          next.workspace_id = null;
+          next.project_id = null;
+        } else if (key === "workspace_id") {
+          next.project_id = null;
+        }
+        return next;
+      });
     };
+
+  // One-time fetch of filter option lists. Errors are swallowed — the
+  // dropdowns just stay empty if a list fails to load. The dashboard summary
+  // call still runs and surfaces its own error state.
+  useEffect(() => {
+    let ignore = false;
+    async function loadOptions() {
+      const [deps, wsResult, tps] = await Promise.allSettled([
+        listDepartments(),
+        api<WorkspaceOption[]>("/api/projects"),
+        listTaskProjects({ include_archived: false }),
+      ]);
+      if (ignore) return;
+      if (deps.status === "fulfilled") setDepartments(deps.value);
+      if (wsResult.status === "fulfilled") setWorkspaces(wsResult.value);
+      if (tps.status === "fulfilled") setTaskProjects(tps.value);
+    }
+    loadOptions();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  // Project list cascades on parent selection — narrow to projects whose
+  // workspace_id / department_id matches the active filter. When neither is
+  // set the full list shows.
+  const visibleProjects = useMemo(() => {
+    return taskProjects.filter((p) => {
+      if (filters.workspace_id && p.workspace_id !== filters.workspace_id) {
+        return false;
+      }
+      if (
+        filters.department_id &&
+        p.department_id !== filters.department_id
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [taskProjects, filters.workspace_id, filters.department_id]);
 
   useEffect(() => {
     let ignore = false;
@@ -210,11 +287,17 @@ export function AgileDashboardShell() {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FilterSelect
-            label="Phòng ban"
+            label="Đơn vị"
             testId="dashboard-filter-department"
             value={filters.department_id ?? ""}
             onChange={handleSelectChange("department_id")}
-            placeholder="Tất cả phòng ban"
+            placeholder="Tất cả đơn vị"
+            options={departments
+              .filter((d) => !d.is_archived)
+              .map((d) => ({
+                id: d.id,
+                name: formatDepartmentLabel(d),
+              }))}
           />
           <FilterSelect
             label="Không gian làm việc"
@@ -222,6 +305,7 @@ export function AgileDashboardShell() {
             value={filters.workspace_id ?? ""}
             onChange={handleSelectChange("workspace_id")}
             placeholder="Tất cả không gian"
+            options={workspaces.map((w) => ({ id: w.id, name: w.name }))}
           />
           <FilterSelect
             label="Dự án"
@@ -229,6 +313,9 @@ export function AgileDashboardShell() {
             value={filters.project_id ?? ""}
             onChange={handleSelectChange("project_id")}
             placeholder="Tất cả dự án"
+            options={visibleProjects
+              .filter((p) => !p.is_archived)
+              .map((p) => ({ id: p.id, name: p.name }))}
           />
         </div>
 
@@ -354,23 +441,27 @@ export function AgileDashboardShell() {
   );
 }
 
+type FilterSelectOption = {
+  id: string;
+  name: string;
+};
+
 type FilterSelectProps = {
   label: string;
   testId: string;
   value: string;
   onChange: (event: React.ChangeEvent<HTMLSelectElement>) => void;
   placeholder: string;
+  options: FilterSelectOption[];
 };
 
-// Scope option lists are populated in a future task; keep the selects disabled
-// while still preserving their state so typed filters flow into the API once
-// options are available.
 function FilterSelect({
   label,
   testId,
   value,
   onChange,
   placeholder,
+  options,
 }: FilterSelectProps) {
   return (
     <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
@@ -379,11 +470,27 @@ function FilterSelect({
         data-testid={testId}
         value={value}
         onChange={onChange}
-        disabled
-        className="h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-70"
+        className="h-9 w-full rounded-lg border border-border bg-background px-2 text-sm text-foreground"
       >
         <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name}
+          </option>
+        ))}
       </select>
     </label>
   );
+}
+
+// Suffix the department name with its unit type so the user can tell
+// "Nhóm nghiệp vụ" apart from "Squad Team" entries when the filter list
+// mixes both kinds. Mirrors the convention used elsewhere in the portal
+// (see Department Hub header).
+function formatDepartmentLabel(d: DepartmentSummary): string {
+  const ut = (d.unit_type ?? "") as UnitType | "";
+  if (ut === "business_group" || ut === "squad_team") {
+    return `${d.name} · ${UNIT_TYPE_LABEL[ut]}`;
+  }
+  return d.name;
 }

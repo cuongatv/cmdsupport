@@ -31,6 +31,7 @@ type Employee = {
   id: string;
   name: string;
   email: string;
+  username?: string;
   role: string;
   department_id: string;
   department_name: string;
@@ -141,7 +142,7 @@ export function EmployeeTable({
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Tìm theo tên hoặc email…"
+                placeholder="Tìm theo tên, tên đăng nhập hoặc email…"
               className="h-9 pl-9 pr-3 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 w-[280px] placeholder:text-muted-foreground/60"
             />
             {searchInput && (
@@ -200,7 +201,17 @@ export function EmployeeTable({
                       </div>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{emp.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{emp.email}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {emp.username ? (
+                            <>
+                              <span className="font-mono">@{emp.username}</span>
+                              <span className="mx-1 text-muted-foreground/60">·</span>
+                              {emp.email}
+                            </>
+                          ) : (
+                            emp.email
+                          )}
+                        </p>
                       </div>
                     </div>
                   </TableCell>

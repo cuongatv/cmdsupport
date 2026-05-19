@@ -77,14 +77,29 @@ def decode_access_token(token: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 async def authenticate_employee(
-    db: AsyncSession, email: str, password: str
+    db: AsyncSession, identifier: str, password: str
 ) -> Optional[Employee]:
     """
-    Verify email + password. Returns Employee or None.
+    Verify (username OR email) + password. Returns Employee or None.
+
+    ``identifier`` is matched case-insensitively against ``email`` (always
+    stored lowercase by convention) and against ``username`` (also stored
+    lowercase). The first active employee that matches either column is
+    returned. We don't short-circuit on the username lookup so an admin
+    who happens to have an email-shaped username (legacy) still works.
     """
+    from sqlalchemy import or_
+
+    needle = (identifier or "").strip().lower()
+    if not needle:
+        return None
+
     stmt = (
         select(Employee)
-        .where(Employee.email == email, Employee.is_active.is_(True))
+        .where(
+            or_(Employee.email == needle, Employee.username == needle),
+            Employee.is_active.is_(True),
+        )
         .options(selectinload(Employee.department), selectinload(Employee.custom_role))
     )
     result = await db.execute(stmt)

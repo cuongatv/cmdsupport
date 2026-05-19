@@ -205,8 +205,8 @@ export default function PublicIdeasPage() {
             </h1>
             <p className="text-sm sm:text-base text-muted-foreground max-w-2xl leading-relaxed">
               Anh/Chị có ý tưởng cải tiến, tính năng mới, hay phản hồi về
-              trải nghiệm sử dụng? Hãy chia sẻ ngay — mỗi góp ý đều được đội
-              phát triển đọc và phản hồi.
+              trải nghiệm sử dụng? Hãy chia sẻ ngay — mỗi góp ý đều là tư liệu
+              quý giá giúp nhà phát triển hoàn thiện hệ thống.
             </p>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
@@ -219,7 +219,7 @@ export default function PublicIdeasPage() {
                 <span className="material-symbols-outlined text-[16px] text-primary">
                   schedule
                 </span>
-                Phản hồi trong 1–3 ngày
+                Phản hồi nhanh chóng
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-primary">
