@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { getWikiTaxonomyGroup } from "@/lib/wiki-labels";
 
 type KnowledgeType = {
   id: string;
@@ -41,6 +42,9 @@ export function KnowledgeTypeDialog({
   onSaved,
 }: Props) {
   const isEdit = !!knowledgeType;
+  const isSystemSeeded = knowledgeType
+    ? getWikiTaxonomyGroup(knowledgeType.slug) !== "unknown"
+    : false;
   const [name, setName] = useState("");
   const [color, setColor] = useState("#6366F1");
   const [description, setDescription] = useState("");
@@ -95,6 +99,23 @@ export function KnowledgeTypeDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
+          {knowledgeType && (
+            <div className="flex flex-col gap-2">
+              <Label>Slug</Label>
+              <Input
+                value={knowledgeType.slug}
+                disabled
+                readOnly
+                className="bg-muted font-mono text-xs"
+              />
+              {isSystemSeeded && (
+                <p className="text-xs text-muted-foreground">
+                  Slug hệ thống không thể đổi
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2">
             <Label>Tên</Label>
             <Input
