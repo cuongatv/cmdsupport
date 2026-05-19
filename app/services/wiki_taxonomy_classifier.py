@@ -18,6 +18,8 @@ CONFIDENCE_AUTO_APPLY = 0.80
 CONFIDENCE_REVIEW_FLOOR = 0.60
 BODY_EXCERPT_CHARS = 600
 FALLBACK_SLUG = "supporting_knowledge.other"
+MAX_TAXONOMY_SLUGS = 2
+MIXED_TIER_REVIEW_RATIONALE = "Hỗn hợp business/supporting cần review."
 
 ClassifierResult: TypeAlias = dict[str, object]
 JsonPayload: TypeAlias = dict[str, object]
@@ -141,6 +143,25 @@ def _sanitize_rationale(value: object) -> str:
     return value.strip()
 
 
+def _slug_tier(slug: str) -> str | None:
+    if slug.startswith("business_object."):
+        return "business"
+    if slug.startswith("supporting_knowledge."):
+        return "supporting"
+    return None
+
+
+def _has_mixed_business_supporting_tiers(slugs: Sequence[str]) -> bool:
+    tiers = {_slug_tier(slug) for slug in slugs}
+    return "business" in tiers and "supporting" in tiers
+
+
+def _append_mixed_tier_rationale(rationale: str) -> str:
+    if MIXED_TIER_REVIEW_RATIONALE in rationale:
+        return rationale
+    return f"{rationale} {MIXED_TIER_REVIEW_RATIONALE}".strip()
+
+
 def _normalize_result(payload: JsonPayload) -> ClassifierResult:
     slugs = _coerce_string_list(payload.get("slugs"))
     if slugs is None:
@@ -154,6 +175,8 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
             invalid_slugs,
         )
         return _safe_fallback()
+
+    slugs = slugs[:MAX_TAXONOMY_SLUGS]
 
     confidence_value = payload.get("confidence")
     if not isinstance(confidence_value, int | float | str):
@@ -174,6 +197,7 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
         return _safe_fallback()
 
     rationale = _sanitize_rationale(payload.get("rationale"))
+    has_mixed_tiers = _has_mixed_business_supporting_tiers(slugs)
 
     if confidence < CONFIDENCE_REVIEW_FLOOR:
         needs_review = True
@@ -187,6 +211,10 @@ def _normalize_result(payload: JsonPayload) -> ClassifierResult:
         needs_review = True
     else:
         needs_review = False
+
+    if has_mixed_tiers:
+        needs_review = True
+        rationale = _append_mixed_tier_rationale(rationale)
 
     return {
         "slugs": slugs,

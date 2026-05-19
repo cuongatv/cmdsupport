@@ -451,7 +451,6 @@ def build_tool_handlers(
                 merged_slugs.append(slug_value)
         if kt_slug and kt_slug not in merged_slugs:
             merged_slugs.append(kt_slug)
-        existing.knowledge_type_slugs = merged_slugs
 
         await wiki_service.apply_update(
             session,
@@ -459,7 +458,7 @@ def build_tool_handlers(
             new_content_md=new_content_md,
             summary=summary,
             title=title,
-            add_knowledge_type_slug=kt_slug,
+            knowledge_type_slugs=merged_slugs,
             add_source_id=source.id,
             embedding=embedding,
             scope_type=_scope_type,

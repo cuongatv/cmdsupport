@@ -179,3 +179,55 @@ async def test_classify_page_candidate_rationale_never_leaks_body_marker():
 
     assert BODY_SECRET_MARKER in BODY_EXCERPT
     assert BODY_SECRET_MARKER not in result["rationale"]
+
+
+async def test_classify_mixed_tier_forces_review():
+    payload = json.dumps(
+        {
+            "slugs": [
+                "business_object.product_service",
+                "supporting_knowledge.general_context",
+            ],
+            "confidence": 0.91,
+            "rationale": "Primary product page with context.",
+            "needs_review": False,
+            "classifier_version": "taxonomy-v1",
+        },
+        ensure_ascii=False,
+    )
+
+    result = await _call_classifier(payload)
+
+    assert result["slugs"] == [
+        "business_object.product_service",
+        "supporting_knowledge.general_context",
+    ]
+    assert result["needs_review"] is True
+    assert "business/supporting" in str(result["rationale"])
+
+
+async def test_classify_caps_slug_count_at_two():
+    payload = json.dumps(
+        {
+            "slugs": [
+                "business_object.product_service",
+                "business_object.target_customer",
+                "business_object.process_form",
+                "business_object.risk_compliance",
+                "supporting_knowledge.general_context",
+            ],
+            "confidence": 0.93,
+            "rationale": "Over-broad but valid classifier response.",
+            "needs_review": False,
+            "classifier_version": "taxonomy-v1",
+        },
+        ensure_ascii=False,
+    )
+
+    result = await _call_classifier(payload)
+
+    assert len(result["slugs"]) <= 2
+    assert result["slugs"] == [
+        "business_object.product_service",
+        "business_object.target_customer",
+    ]

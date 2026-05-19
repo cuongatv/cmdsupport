@@ -510,8 +510,6 @@ async def _apply_update(
             merged_slugs.append(slug_value)
     if knowledge_type_slug and knowledge_type_slug not in merged_slugs:
         merged_slugs.append(knowledge_type_slug)
-    if existing is not None:
-        existing.knowledge_type_slugs = merged_slugs
 
     return await wiki_service.apply_update(
         session,
@@ -519,7 +517,7 @@ async def _apply_update(
         new_content_md=new_content,
         summary=summary_value,
         title=title_value,
-        add_knowledge_type_slug=knowledge_type_slug,
+        knowledge_type_slugs=merged_slugs,
         add_source_id=source.id,
         scope_type=scope_type,
         scope_id=scope_id,

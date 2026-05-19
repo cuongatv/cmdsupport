@@ -183,15 +183,13 @@ async def run_commit_phase(
                         taxonomy_slugs.append(slug_value)
                 if kt_slug and kt_slug not in taxonomy_slugs:
                     taxonomy_slugs.append(kt_slug)
-                if existing_page:
-                    existing_page.knowledge_type_slugs = taxonomy_slugs
                 page = await wiki_service.apply_update(
                     session,
                     slug=page_result.slug,
                     new_content_md=final_content,
                     summary=page_result.summary,
                     title=page_result.title,
-                    add_knowledge_type_slug=kt_slug,
+                    knowledge_type_slugs=taxonomy_slugs,
                     add_source_id=source.id,
                     embedding=embedding,
                     scope_type=scope_type,
