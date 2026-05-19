@@ -14,6 +14,8 @@ import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { WikiTaxonomyBadge } from "@/components/wiki/wiki-type-badge";
+import { getWikiTaxonomyGroup } from "@/lib/wiki-labels";
 import type { WikiSourceItem, KnowledgeTypeOption } from "./types";
 
 export type ProductSourceValue = {
@@ -34,6 +36,10 @@ export function ProductSourceSelect({ value, onChange, disabled }: Props) {
   const [items, setItems] = useState<WikiSourceItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  // Keep the full selected source row so we can render the taxonomy warning
+  // even before the user opens the dropdown (edit-existing-rule case).
+  const [selectedSource, setSelectedSource] =
+    useState<WikiSourceItem | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load knowledge types once
@@ -72,18 +78,65 @@ export function ProductSourceSelect({ value, onChange, disabled }: Props) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
+  // Keep selectedSource synced with value.wikiPageId so the taxonomy warning
+  // renders on edit-existing-rule mount too. Try the already-loaded items
+  // first; fall back to a one-shot unfiltered fetch if nothing matches yet.
+  // Only `.then()` callbacks update state here — never the effect body
+  // directly — to keep React 19 set-state-in-effect quiet.
+  useEffect(() => {
+    if (!value.wikiPageId) return;
+    if (selectedSource?.id === value.wikiPageId) return;
+    const fromItems = items.find((i) => i.id === value.wikiPageId);
+    if (fromItems) {
+      // Defer to a microtask so we don't set state synchronously in the effect body.
+      Promise.resolve().then(() => setSelectedSource(fromItems));
+      return;
+    }
+    let cancelled = false;
+    api<WikiSourceItem[]>("/api/cmd-support/rules/sources/wiki-pages")
+      .then((all) => {
+        if (cancelled) return;
+        const match = all.find((i) => i.id === value.wikiPageId);
+        if (match) setSelectedSource(match);
+      })
+      .catch(() => {
+        /* warning simply won't render — non-fatal */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value.wikiPageId, items, selectedSource]);
+
+  // selectedSource may lag behind value.wikiPageId being cleared; derive the
+  // effective source so the warning hides immediately when wikiPageId is null.
+  const effectiveSelectedSource = useMemo(() => {
+    if (!value.wikiPageId) return null;
+    if (selectedSource?.id === value.wikiPageId) return selectedSource;
+    return items.find((i) => i.id === value.wikiPageId) ?? null;
+  }, [value.wikiPageId, selectedSource, items]);
+
   const selectedLabel = useMemo(() => {
     if (value.wikiPageId) {
-      const found = items.find((i) => i.id === value.wikiPageId);
-      if (found) return found.title;
+      if (effectiveSelectedSource) return effectiveSelectedSource.title;
       return "(Đã chọn từ wiki)";
     }
     if (value.customName) return `${value.customName} (tự nhập)`;
     return "";
-  }, [value, items]);
+  }, [value, effectiveSelectedSource]);
+
+  // Warn when the selected source carries a `supporting_knowledge.*` slug or
+  // any `*.other` slug — the link is allowed but probably wants a review.
+  const showSupportingWarning = useMemo(() => {
+    if (!effectiveSelectedSource) return false;
+    return effectiveSelectedSource.knowledge_type_slugs.some((slug) => {
+      if (getWikiTaxonomyGroup(slug) === "supporting_knowledge") return true;
+      return slug.endsWith(".other");
+    });
+  }, [effectiveSelectedSource]);
 
   const handlePickWiki = (item: WikiSourceItem) => {
     onChange({ wikiPageId: item.id, customName: null });
+    setSelectedSource(item);
     setOpen(false);
   };
 
@@ -170,8 +223,15 @@ export function ProductSourceSelect({ value, onChange, disabled }: Props) {
                   className="block w-full text-left px-3 py-2 text-sm hover:bg-muted"
                 >
                   <div className="font-medium text-foreground truncate">{item.title}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {item.knowledge_type_slugs.join(", ") || "—"} · {item.slug}
+                  {item.knowledge_type_slugs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {item.knowledge_type_slugs.map((slug) => (
+                        <WikiTaxonomyBadge key={slug} slug={slug} />
+                      ))}
+                    </div>
+                  )}
+                  <div className="text-[11px] text-muted-foreground truncate mt-1">
+                    {item.slug}
                   </div>
                 </button>
               ))
@@ -193,6 +253,25 @@ export function ProductSourceSelect({ value, onChange, disabled }: Props) {
             </div>
           )}
         </div>
+      )}
+
+      {showSupportingWarning && (
+        <p
+          data-testid="supporting-knowledge-link-warning"
+          className="mt-1 flex items-start gap-1 text-[11px] text-amber-700 dark:text-amber-500"
+        >
+          <span
+            aria-hidden
+            className="material-symbols-outlined"
+            style={{ fontSize: 14, lineHeight: "16px" }}
+          >
+            warning
+          </span>
+          <span>
+            <span className="font-medium">Kiến thức bổ trợ</span>
+            {" "}— nên xem lại liên kết quy tắc tư vấn.
+          </span>
+        </p>
       )}
     </div>
   );
