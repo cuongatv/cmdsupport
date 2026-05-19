@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import cast
 
 from loguru import logger
-from sqlalchemy import and_, func, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import ConsultingRuleProduct, WikiPage
@@ -116,22 +116,6 @@ def _preview_item_flags(item: dict[str, object]) -> list[str]:
     return [flag for flag in value if isinstance(flag, str)]
 
 
-def _audit_matches_page(
-    page: WikiPage,
-    *,
-    confidence: float | None,
-    rationale: str,
-    needs_review: bool,
-    classifier_version: str,
-) -> bool:
-    return (
-        page.taxonomy_confidence == confidence
-        and (page.taxonomy_rationale or "") == rationale
-        and bool(page.taxonomy_needs_review) is needs_review
-        and (page.taxonomy_classifier_version or "") == classifier_version
-    )
-
-
 def _has_tier(slugs: Sequence[str], prefix: str) -> bool:
     return any(slug.startswith(prefix) for slug in slugs)
 
@@ -218,15 +202,13 @@ async def _rule_link_counts(
     }
 
 
-async def _load_pages(
-    session: AsyncSession,
+def _base_pages_stmt(
     *,
     source_id: uuid.UUID | str | None,
     page_ids: Sequence[uuid.UUID | str] | None,
     scope_type: str,
     scope_id: uuid.UUID | None,
-    limit: int | None,
-) -> list[WikiPage]:
+) -> Select[tuple[WikiPage]]:
     stmt = select(WikiPage).order_by(WikiPage.updated_at.desc(), WikiPage.id)
     if page_ids:
         coerced_page_ids = [_coerce_uuid(page_id) for page_id in page_ids]
@@ -235,7 +217,60 @@ async def _load_pages(
         stmt = stmt.where(WikiPage.source_ids.any(_coerce_uuid(source_id)))
     else:
         stmt = stmt.where(_scope_filter(scope_type, scope_id))
+    return stmt
+
+
+async def _count_pages(
+    session: AsyncSession,
+    *,
+    source_id: uuid.UUID | str | None,
+    page_ids: Sequence[uuid.UUID | str] | None,
+    scope_type: str,
+    scope_id: uuid.UUID | None,
+    limit: int | None,
+) -> int:
+    base_stmt = _base_pages_stmt(
+        source_id=source_id,
+        page_ids=page_ids,
+        scope_type=scope_type,
+        scope_id=scope_id,
+    ).order_by(None)
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    total = int((await session.execute(count_stmt)).scalar_one())
     if limit is not None:
+        return min(total, max(0, int(limit)))
+    return total
+
+
+async def _load_pages(
+    session: AsyncSession,
+    *,
+    source_id: uuid.UUID | str | None,
+    page_ids: Sequence[uuid.UUID | str] | None,
+    scope_type: str,
+    scope_id: uuid.UUID | None,
+    limit: int | None,
+    page_size: int | None = None,
+    page: int = 1,
+) -> list[WikiPage]:
+    stmt = _base_pages_stmt(
+        source_id=source_id,
+        page_ids=page_ids,
+        scope_type=scope_type,
+        scope_id=scope_id,
+    )
+    if page_size is not None:
+        normalized_page_size = max(1, int(page_size))
+        normalized_page = max(1, int(page))
+        offset = (normalized_page - 1) * normalized_page_size
+        effective_limit = normalized_page_size
+        if limit is not None:
+            remaining = max(0, int(limit)) - offset
+            if remaining <= 0:
+                return []
+            effective_limit = min(effective_limit, remaining)
+        stmt = stmt.limit(effective_limit).offset(offset)
+    elif limit is not None:
         stmt = stmt.limit(max(0, int(limit)))
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -249,6 +284,8 @@ async def preview_reclassification(
     scope_type: str = "global",
     scope_id: uuid.UUID | None = None,
     limit: int | None = None,
+    page_size: int | None = None,
+    page: int = 1,
 ) -> dict[str, object]:
     """Compute a dry-run taxonomy reclassification diff for existing wiki pages.
 
@@ -256,6 +293,19 @@ async def preview_reclassification(
     returns the old-vs-new taxonomy slugs plus impact flags. It never calls wiki
     write helpers and never mutates ``WikiPage`` rows.
     """
+    normalized_page_size = max(1, int(page_size)) if page_size is not None else None
+    normalized_page = max(1, int(page))
+    total_count = None
+    if normalized_page_size is not None:
+        total_count = await _count_pages(
+            session,
+            source_id=source_id,
+            page_ids=page_ids,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            limit=limit,
+        )
+
     pages = await _load_pages(
         session,
         source_id=source_id,
@@ -263,6 +313,8 @@ async def preview_reclassification(
         scope_type=scope_type,
         scope_id=scope_id,
         limit=limit,
+        page_size=normalized_page_size,
+        page=normalized_page,
     )
     rule_counts = await _rule_link_counts(session, [page.id for page in pages])
 
@@ -314,12 +366,52 @@ async def preview_reclassification(
         )
 
     version_seed = ",".join(sorted(classifier_versions)) or CLASSIFIER_VERSION
-    return {
+    result: dict[str, object] = {
         "preview_id": _preview_id([page.id for page in pages], version_seed),
         "page_count": len(preview_pages),
         "flagged_count": sum(1 for page in preview_pages if page["impact_flags"]),
         "pages": preview_pages,
     }
+    if normalized_page_size is not None:
+        total_pages = (
+            (total_count + normalized_page_size - 1) // normalized_page_size
+            if total_count is not None
+            else 0
+        )
+        result["page"] = normalized_page
+        result["page_size"] = normalized_page_size
+        result["total_pages"] = total_pages
+        result["total_pages_estimated"] = False
+        result["has_more"] = normalized_page < total_pages
+    return result
+
+
+async def iter_preview_pages(
+    session: AsyncSession,
+    *,
+    source_id: uuid.UUID | str | None = None,
+    page_ids: Sequence[uuid.UUID | str] | None = None,
+    scope_type: str = "global",
+    scope_id: uuid.UUID | None = None,
+    page_size: int = 20,
+) -> AsyncIterator[dict[str, object]]:
+    """Yield paginated preview chunks until the selected wiki page set is exhausted."""
+    normalized_page_size = max(1, int(page_size))
+    current_page = 1
+    while True:
+        preview = await preview_reclassification(
+            session,
+            source_id=source_id,
+            page_ids=page_ids,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            page_size=normalized_page_size,
+            page=current_page,
+        )
+        yield preview
+        if not preview.get("has_more"):
+            break
+        current_page += 1
 
 
 async def apply_reclassification(
@@ -394,14 +486,15 @@ async def apply_reclassification(
                 CLASSIFIER_VERSION,
             )
 
-            if list(page.knowledge_type_slugs or []) == new_slugs and _audit_matches_page(
-                page,
-                confidence=confidence,
-                rationale=rationale,
-                needs_review=needs_review,
-                classifier_version=classifier_version,
-            ):
+            current_slugs = list(page.knowledge_type_slugs or [])
+            if current_slugs == new_slugs:
                 unchanged_count += 1
+                continue
+
+            old_slugs = _preview_item_slugs(item, "old_slugs")
+            if current_slugs != old_slugs:
+                skipped_count += 1
+                skipped_reasons.setdefault(page_id, []).append("stale_preview")
                 continue
 
             updated = await wiki_service.apply_update(

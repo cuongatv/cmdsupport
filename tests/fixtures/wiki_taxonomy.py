@@ -22,6 +22,7 @@ from app.services import consulting_rule_service, wiki_service
 
 __all__ = [
     "FIXTURE_NAMESPACE",
+    "create_bulk_taxonomy_pages",
     "create_rule_linked_page",
     "create_sentinel_employee",
     "create_source_with_knowledge_type",
@@ -200,6 +201,41 @@ async def create_taxonomy_pages(session: AsyncSession) -> dict[str, WikiPage]:
         taxonomy_needs_review=False,
         taxonomy_classifier_version="v1",
     )
+    return pages
+
+
+async def create_bulk_taxonomy_pages(
+    session: AsyncSession,
+    count: int,
+    slug_prefix: str,
+) -> list[WikiPage]:
+    pages: list[WikiPage] = []
+    slug_cycle = [
+        ["business_object.product_service"],
+        ["business_object.eligibility_condition"],
+        ["business_object.policy_mechanism"],
+        ["supporting_knowledge.source_background"],
+    ]
+    type_cycle = ["entity", "concept", "topic", "source"]
+    for index in range(count):
+        slug = f"{slug_prefix}-{index:03d}"
+        pages.append(
+            await _create_wiki_page(
+                session,
+                slug,
+                page_type=type_cycle[index % len(type_cycle)],
+                content_md=(
+                    f"# Bulk taxonomy page {index:03d}\n\n"
+                    "Gói tín dụng SME deterministic bulk fixture for preview pagination.\n"
+                ),
+                summary=f"Bulk taxonomy fixture {index:03d}.",
+                knowledge_type_slugs=list(slug_cycle[index % len(slug_cycle)]),
+                taxonomy_confidence=0.80 + ((index % 10) / 100),
+                taxonomy_rationale=f"Bulk fixture rationale {index:03d}.",
+                taxonomy_needs_review=False,
+                taxonomy_classifier_version="v1",
+            )
+        )
     return pages
 
 
