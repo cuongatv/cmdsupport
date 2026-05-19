@@ -204,3 +204,101 @@ Two reserved pages are maintained automatically:
 These are visible in the wiki browser and accessible via:
 - `GET /api/wiki/index`
 - `GET /api/wiki/log`
+
+---
+
+## Phân loại Wiki theo BIDV KHDN (Wiki Taxonomy)
+
+### Loại trang Wiki (Page types)
+
+`page_type` values are technical identifiers stored in the database. They're stable and not localized:
+
+| page_type | Vietnamese label |
+|---|---|
+| `entity` | Thực thể (người, công ty, địa điểm) |
+| `concept` | Khái niệm / quy trình / phương pháp |
+| `topic` | Chủ đề tổng quát |
+| `source` | Trang đại diện tài liệu nguồn |
+| `index` | Danh mục wiki (hệ thống tạo tự động) |
+| `log` | Nhật ký biên soạn (hệ thống tạo tự động) |
+
+Display labels in the portal UI are presentation-only; the `page_type` value in the database never changes.
+
+### Taxonomy nghiệp vụ (KHDN taxonomy)
+
+The BIDV KHDN taxonomy has two tiers seeded by migration `037`. Source of truth: `alembic/versions/037_seed_wiki_taxonomy.py`.
+
+**Tier 1 — Đối tượng nghiệp vụ** (`business_object.*`):
+
+| Slug | Vietnamese label |
+|---|---|
+| `business_object.product_service` | Sản phẩm & dịch vụ |
+| `business_object.target_customer` | Khách hàng mục tiêu / phân khúc |
+| `business_object.non_credit_development_tool` | Công cụ phát triển khách hàng phi tín dụng |
+| `business_object.credit_development_tool` | Công cụ phát triển khách hàng tín dụng |
+| `business_object.campaign_program` | Chiến dịch / chương trình thúc đẩy |
+| `business_object.policy_mechanism` | Cơ chế / chính sách |
+| `business_object.eligibility_condition` | Điều kiện / tiêu chí áp dụng |
+| `business_object.process_form` | Quy trình / hồ sơ / biểu mẫu |
+| `business_object.risk_compliance` | Rủi ro / tuân thủ |
+| `business_object.industry_segment` | Ngành nghề / lĩnh vực kinh doanh |
+| `business_object.region_channel` | Địa bàn / kênh phân phối |
+| `business_object.other` | Đối tượng nghiệp vụ khác |
+
+**Tier 2 — Kiến thức bổ trợ** (`supporting_knowledge.*`):
+
+| Slug | Vietnamese label |
+|---|---|
+| `supporting_knowledge.general_context` | Bối cảnh / thông tin nền |
+| `supporting_knowledge.term_explanation` | Giải thích thuật ngữ |
+| `supporting_knowledge.operational_guidance` | Hướng dẫn vận hành / hướng dẫn đọc tài liệu |
+| `supporting_knowledge.source_background` | Thông tin nguồn / xuất xứ tài liệu |
+| `supporting_knowledge.other` | Kiến thức bổ trợ khác |
+
+When the classifier cannot confidently assign a slug, it falls back to `supporting_knowledge.other`.
+
+### Phân loại tại bước xử lý tài liệu
+
+The taxonomy classifier runs automatically at two points:
+
+1. **Legacy compile** — during the wiki agent compilation pipeline, each newly created or updated page is classified before the agent loop finishes.
+2. **MRP commit** — when a Multi-Round Processing job commits page changes.
+
+Four fields are persisted on `wiki_pages` after each classification:
+
+| Column | Description |
+|---|---|
+| `taxonomy_confidence` | Float 0.0–1.0 from the LLM classifier |
+| `taxonomy_rationale` | Short explanation (no body text quoted) |
+| `taxonomy_needs_review` | True when confidence < 0.80 or slug is the fallback |
+| `taxonomy_classifier_version` | String version tag, currently `taxonomy-v1` |
+
+Pages where `taxonomy_needs_review = true` should be reviewed in the Admin Portal before relying on their classification for search filtering or reporting.
+
+### Phân loại lại Wiki sẵn có
+
+Operators with `wiki:write:all` can re-run classification on existing pages without touching page content.
+
+**Step 1 — Preview (non-mutating):**
+```
+POST /api/wiki/reclassify/preview
+```
+Accepts optional filters (`source_id`, `page_ids`, `scope_type`, `scope_id`, `limit`). Returns a diff of proposed taxonomy changes. No pages are modified.
+
+**Step 2 — Apply:**
+```
+POST /api/wiki/reclassify/apply
+```
+Pass the `preview` dict returned by the preview endpoint. The service re-validates each page by ID before writing.
+
+Key safety rules for apply:
+- Pages with `taxonomy_needs_review = true` are skipped unless `force_rule_linked_tier_change = true` is included in the request body.
+- Pages linked to consulting rules (tier changes) are also skipped without that flag.
+- `wiki_page_id`, `source_ids`, and consulting rule links are all preserved; only taxonomy columns are updated.
+- Each applied change creates a standard `WikiPageRevision` record and an audit log entry.
+
+### Không dịch nội dung Wiki
+
+**Guardrail:** taxonomy labels (Vietnamese display names) are localized, but Wiki page bodies and source document content are **không dịch** (not translated). The wiki agent prompts explicitly forbid translating body text. A page compiled from a Vietnamese document stays in Vietnamese; an English source stays in English.
+
+Operators should not edit wiki page content to translate it into another language. If translated content is found, revert to the previous revision using the History tab or the rollback API.
