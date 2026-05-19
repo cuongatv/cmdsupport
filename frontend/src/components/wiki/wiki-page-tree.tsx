@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { WikiPageSummary } from "@/types/wiki";
-import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
+import { WikiPageSummary, WikiPageType } from "@/types/wiki";
+import { getWikiPageTypeLabel } from "@/lib/wiki-labels";
+import { wikiTypeIcon, wikiTypeColor } from "./wiki-type-badge";
 
-const GROUP_ORDER = ["entity", "concept", "topic", "source"];
+const GROUP_ORDER: WikiPageType[] = ["entity", "concept", "topic", "source"];
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = React.useState(value);
@@ -40,7 +41,7 @@ export function WikiPageTree({
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
   const [collapsed, setCollapsed] = React.useState(false);
-  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(
+  const [expandedGroups, setExpandedGroups] = React.useState<Set<WikiPageType>>(
     new Set(GROUP_ORDER)
   );
   // Two-stage delete
@@ -105,7 +106,7 @@ export function WikiPageTree({
   }, [pages, debouncedSearch]);
 
   const grouped = React.useMemo(() => {
-    const map = new Map<string, WikiPageSummary[]>();
+    const map = new Map<WikiPageType, WikiPageSummary[]>();
     for (const p of filtered) {
       const t = p.page_type;
       if (t === "index" || t === "log") continue;
@@ -119,10 +120,14 @@ export function WikiPageTree({
     (p) => p.page_type !== "index" && p.page_type !== "log"
   ).length;
 
-  const toggleGroup = (type: string) =>
+  const toggleGroup = (type: WikiPageType) =>
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      next.has(type) ? next.delete(type) : next.add(type);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
       return next;
     });
 
@@ -219,7 +224,7 @@ export function WikiPageTree({
                     {wikiTypeIcon(type)}
                   </span>
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex-1 text-left">
-                    {wikiTypeGroupLabel(type)}
+                    {getWikiPageTypeLabel(type)}
                   </span>
                   <span className="text-xs text-muted-foreground tabular-nums">
                     {items.length}

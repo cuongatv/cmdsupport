@@ -3,11 +3,12 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { WikiPageSummary } from "@/types/wiki";
+import { WikiPageSummary, WikiPageType } from "@/types/wiki";
+import { getWikiPageTypeLabel } from "@/lib/wiki-labels";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { wikiTypeIcon, wikiTypeColor, wikiTypeGroupLabel } from "./wiki-type-badge";
+import { wikiTypeIcon, wikiTypeColor } from "./wiki-type-badge";
 
-const GROUP_ORDER = ["entity", "concept", "topic", "source"];
+const GROUP_ORDER: WikiPageType[] = ["entity", "concept", "topic", "source"];
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = React.useState(value);
@@ -60,7 +61,7 @@ export function WikiSearchDialog({
   }, [pages, debouncedQuery]);
 
   const grouped = React.useMemo(() => {
-    const map = new Map<string, WikiPageSummary[]>();
+    const map = new Map<WikiPageType, WikiPageSummary[]>();
     for (const p of filtered.slice(0, 60)) {
       if (!map.has(p.page_type)) map.set(p.page_type, []);
       map.get(p.page_type)!.push(p);
@@ -116,7 +117,7 @@ export function WikiSearchDialog({
                     {wikiTypeIcon(type)}
                   </span>
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    {wikiTypeGroupLabel(type)}
+                    {getWikiPageTypeLabel(type)}
                   </span>
                 </div>
                 {grouped.get(type)!.map((page) => (
