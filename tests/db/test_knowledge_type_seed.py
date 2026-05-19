@@ -111,7 +111,7 @@ async def test_knowledge_type_seed_roundtrip(db_session: AsyncSession):
         assert rows_after_upgrade[slug][0] == expected_name
         assert rows_after_upgrade[slug][1]
 
-    downgrade = await _run_alembic('downgrade', '-1')
+    downgrade = await _run_alembic('downgrade', '036')
     rows_after_downgrade = await _fetch_taxonomy_rows()
 
     assert rows_after_downgrade[SENTINEL_SLUG][0] == 'Sentinel Knowledge Type'
