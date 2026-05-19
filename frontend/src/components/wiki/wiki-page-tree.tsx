@@ -6,10 +6,29 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { WikiPageSummary, WikiPageType } from "@/types/wiki";
-import { getWikiPageTypeLabel } from "@/lib/wiki-labels";
+import {
+  getWikiPageTypeLabel,
+  getWikiTaxonomyGroup,
+  WIKI_TAXONOMY_GROUP_LABEL_VI,
+  type WikiTaxonomyGroup,
+} from "@/lib/wiki-labels";
 import { wikiTypeIcon, wikiTypeColor } from "./wiki-type-badge";
 
 const GROUP_ORDER: WikiPageType[] = ["entity", "concept", "topic", "source"];
+
+type TaxonomyFilter = "all" | Exclude<WikiTaxonomyGroup, "unknown">;
+
+const TAXONOMY_FILTERS: { key: TaxonomyFilter; label: string }[] = [
+  { key: "all", label: "Tất cả" },
+  {
+    key: "business_object",
+    label: WIKI_TAXONOMY_GROUP_LABEL_VI.business_object,
+  },
+  {
+    key: "supporting_knowledge",
+    label: WIKI_TAXONOMY_GROUP_LABEL_VI.supporting_knowledge,
+  },
+];
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = React.useState(value);
@@ -40,6 +59,8 @@ export function WikiPageTree({
   const [pages, setPages] = React.useState<WikiPageSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
+  const [taxonomyFilter, setTaxonomyFilter] =
+    React.useState<TaxonomyFilter>("all");
   const [collapsed, setCollapsed] = React.useState(false);
   const [expandedGroups, setExpandedGroups] = React.useState<Set<WikiPageType>>(
     new Set(GROUP_ORDER)
@@ -95,15 +116,23 @@ export function WikiPageTree({
   }, [armedSlug]);
 
   const filtered = React.useMemo(() => {
-    if (!debouncedSearch) return pages;
+    let arr = pages;
+    if (taxonomyFilter !== "all") {
+      arr = arr.filter((p) => {
+        const slugs = p.knowledge_type_slugs;
+        if (!slugs || slugs.length === 0) return false;
+        return slugs.some((s) => getWikiTaxonomyGroup(s) === taxonomyFilter);
+      });
+    }
+    if (!debouncedSearch) return arr;
     const q = debouncedSearch.toLowerCase();
-    return pages.filter(
+    return arr.filter(
       (p) =>
         p.title.toLowerCase().includes(q) ||
         p.slug.toLowerCase().includes(q) ||
         p.summary.toLowerCase().includes(q)
     );
-  }, [pages, debouncedSearch]);
+  }, [pages, debouncedSearch, taxonomyFilter]);
 
   const grouped = React.useMemo(() => {
     const map = new Map<WikiPageType, WikiPageSummary[]>();
@@ -187,6 +216,34 @@ export function WikiPageTree({
               <span className="material-symbols-outlined text-sm">close</span>
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Taxonomy filter */}
+      <div className="px-3 py-2 border-b border-border">
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+          Phân loại tri thức
+        </p>
+        <div className="flex items-center gap-1 flex-wrap">
+          {TAXONOMY_FILTERS.map((f) => {
+            const active = taxonomyFilter === f.key;
+            return (
+              <button
+                key={f.key}
+                data-testid={`wiki-filter-${f.key}`}
+                onClick={() => setTaxonomyFilter(f.key)}
+                className={cn(
+                  "text-[10px] px-2 py-1 rounded-md border transition-colors",
+                  active
+                    ? "bg-primary/10 text-primary border-primary/30 font-medium"
+                    : "bg-transparent text-muted-foreground border-border hover:bg-accent/40"
+                )}
+                title={f.label}
+              >
+                {f.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { WikiPageSummary, WikiPageType } from "@/types/wiki";
 import { getWikiPageTypeLabel } from "@/lib/wiki-labels";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { wikiTypeIcon, wikiTypeColor } from "./wiki-type-badge";
+import { wikiTypeIcon, wikiTypeColor, WikiTaxonomyBadge } from "./wiki-type-badge";
 
 const GROUP_ORDER: WikiPageType[] = ["entity", "concept", "topic", "source"];
 
@@ -130,6 +130,14 @@ export function WikiSearchDialog({
                       <p className="text-sm font-medium text-foreground truncate">
                         {page.title}
                       </p>
+                      {page.knowledge_type_slugs &&
+                        page.knowledge_type_slugs.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {page.knowledge_type_slugs.map((slug) => (
+                              <WikiTaxonomyBadge key={slug} slug={slug} />
+                            ))}
+                          </div>
+                        )}
                       {page.summary && (
                         <p className="text-xs text-muted-foreground truncate mt-0.5">
                           {page.summary}
