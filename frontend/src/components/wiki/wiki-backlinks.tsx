@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { WikiGraphData, WikiPageDetail } from "@/types/wiki";
 import { WikiGraphMini } from "./wiki-graph";
-import { WikiTypeBadge } from "./wiki-type-badge";
+import { WikiTaxonomyBadge, WikiTypeBadge } from "./wiki-type-badge";
 import { ScopeBadge } from "@/components/shared/scope-badge";
 
 type Props = {
@@ -123,12 +123,7 @@ export function WikiSidebarRight({ slug, page }: Props) {
               <p className="text-xs text-muted-foreground/60 mb-1.5">Loại tri thức</p>
               <div className="flex flex-wrap gap-1">
                 {page.knowledge_type_slugs.map((kt) => (
-                  <span
-                    key={kt}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-accent/60 text-accent-foreground border border-border"
-                  >
-                    {kt}
-                  </span>
+                  <WikiTaxonomyBadge key={kt} slug={kt} />
                 ))}
               </div>
             </div>
