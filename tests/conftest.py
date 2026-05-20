@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportExplicitAny=false
 """
 Shared pytest fixtures for the CMD Support backend test suite.
 
@@ -13,8 +14,8 @@ Smoke-friendly defaults:
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from datetime import date, time
-from typing import AsyncIterator
 
 import httpx
 import pytest
@@ -22,6 +23,8 @@ import pytest_asyncio
 from httpx import ASGITransport
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+pytest_plugins = ["tests.fixtures.telegram"]
 
 
 @pytest_asyncio.fixture(autouse=True)
