@@ -24,10 +24,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.database.models import Employee
-from app.schemas.telegram import TelegramIntegrationStatus, TelegramSettingsUpdate
+from app.schemas.telegram import (
+    TelegramDiagnostics,
+    TelegramIntegrationStatus,
+    TelegramSettingsUpdate,
+)
 from app.services.audit_service import log_audit
 from app.services.auth_service import require_permission
 from app.services.config_service import ConfigService
+from app.services.telegram_diagnostics_service import collect_diagnostics
 
 router = APIRouter(prefix="/admin/telegram", tags=["telegram-admin"])
 
@@ -157,3 +162,17 @@ async def update_telegram_settings(
 
     await db.commit()
     return await _read_status(svc)
+
+
+@router.get("/diagnostics", response_model=TelegramDiagnostics)
+async def get_telegram_diagnostics(
+    db: AsyncSession = Depends(get_db),
+    _user: Employee = require_permission("org:settings:read"),
+) -> TelegramDiagnostics:
+    """Return safe operational diagnostics for the Telegram integration.
+
+    Never returns the raw bot token or webhook secret. Error strings are
+    sanitized in the service layer before reaching the response.
+    """
+    data = await collect_diagnostics(db)
+    return TelegramDiagnostics(**data)

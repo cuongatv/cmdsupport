@@ -32,6 +32,9 @@
                                │                │            │
                           Claude Desktop    Claude.ai    Any MCP
                           (employees)       (web)        client
+
+                    (outbound, admin-opt-in)
+                    api.telegram.org  <-- Telegram Bot API (HTTPS)
 ```
 
 ---
@@ -76,6 +79,51 @@ Two arq (Redis-based) worker pools:
 **Skill Worker** (`SkillWorkerSettings`):
 - `process_skill_task` — process uploaded skill packages
 
+### Telegram Integration (optional)
+
+Disabled by default. When a Telegram Bot Token is set in Admin Portal → Settings, the following components activate:
+
+**Data flow:**
+```
+Telegram group --> webhook (HMAC secret) --> dedupe --> parse --> binding+identity resolve
+               --> command service --> task DB writes + outbox enqueue
+               --> arq cron worker (flush_telegram_outbox_task) --> Telegram Bot API
+```
+
+**Components:**
+
+- **Webhook router** (`POST /api/integrations/telegram/webhook`) — receives Telegram Update objects. The `X-Telegram-Bot-Api-Secret-Token` header is validated via constant-time HMAC comparison before any processing.
+- **Command dispatcher** (`app/services/telegram_command_service.py`) — parses the incoming message, routes `/bind`, `/link`, `/task`, `/assign`, `/done`, `/mytasks`, and `/help` to their handlers. Unknown commands are silently ignored.
+- **Binding service** (`TelegramBindingService`) — `/bind CMD-XXXXX` resolves the Squad by short code, records the Telegram `chat_id` and optional `message_thread_id` in `telegram_group_bindings`, and deactivates any prior binding for that chat/thread. The requesting Telegram user must be a CMD Support Squad admin.
+- **Identity service** (`TelegramIdentityService`) — `/link <personal-token>` validates an MCP token, resolves the `employee_id`, and stores the `(telegram_user_id, employee_id)` mapping in `telegram_identities`. Deactivates any prior record for the same Telegram user.
+- **Outbox + sender worker** — all outbound Telegram messages are written to `telegram_outbox` (status=`pending`) first. The arq job `flush_telegram_outbox_task` in `SkillWorkerSettings` drains the queue and calls `api.telegram.org`. This decouples request handling from Telegram API latency and handles rate limits gracefully.
+
+**Storage (5 new tables):**
+```
+telegram_group_bindings    → Telegram chat/thread <-> Squad/Team + default project
+telegram_identities        → Telegram user <-> employee account
+telegram_update_log        → raw incoming updates (dedup key = update_id, audit trail)
+telegram_task_links        → created tasks <-> originating Telegram message
+telegram_outbox            → queued outbound Telegram messages (pending/sent/failed)
+```
+
+**Secret handling:** `telegram_bot_token` and `telegram_webhook_secret` are stored via `ConfigService` using the same Fernet-encrypted DB key/value store as AI provider API keys. Neither secret appears in `.env`, Docker environment variables, or logs. Both are listed in `SENSITIVE_KEYS`.
+
+**Security boundaries:**
+- Webhook secret validated on every incoming request via constant-time comparison (HTTP 403 on failure).
+- Sender and assignee membership in the bound Squad is enforced before any task write.
+- PII minimized in `telegram_update_log.sanitized_meta`; raw message text and Telegram user full names are not persisted.
+- Outbound calls go exclusively to `api.telegram.org`; no third-party analytics or telemetry.
+
+**New directory entries:**
+- `app/routers/telegram.py` — webhook + admin config endpoints
+- `app/services/telegram_binding_service.py`
+- `app/services/telegram_identity_service.py`
+- `app/services/telegram_command_service.py`
+- `app/services/telegram_outbox_service.py`
+
+---
+
 ### LLM Wiki Agent (`app/ai/`)
 The core compilation pipeline:
 
@@ -116,6 +164,12 @@ skills                     → AI skill packages
 
 mcp_tokens                 → per-employee bearer tokens for MCP access
 audit_log                  → immutable activity log
+
+telegram_group_bindings    → Telegram chat/thread <-> Squad/Team + default project
+telegram_identities        → Telegram user <-> employee account
+telegram_update_log        → raw incoming updates (dedup/audit)
+telegram_task_links        → created tasks <-> originating Telegram message
+telegram_outbox            → queued outbound Telegram messages
 ```
 
 ### Permission scoping

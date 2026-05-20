@@ -52,6 +52,16 @@ Create a workspace → add members from any department → attach documents. Eac
 ### AI Skills
 Upload custom agent packages and make them available to employees through Claude. Skills are versioned, department-scoped, and distributed via MCP.
 
+### Telegram Task Bridge (optional)
+Bind one Telegram group to a Squad/Team so members can manage tasks without leaving the chat. Assign tasks via `/task @member ...`; updates flow back to the group automatically. Enabled by an admin via **Admin → Telegram Settings** — disabled by default, no Telegram traffic when not configured.
+
+Key commands: `/help`, `/bind`, `/link`, `/task`, `/assign`, `/mytasks`, `/done`.
+
+- Bind a group to a Squad with `/bind CMD-XXXXX` (no manual `chat_id` entry)
+- Per-user identity via `/link <personal-token>` so sender and assignee resolve automatically
+- Sender and assignee validated as active Squad members before any action is taken
+- In-app notifications continue unchanged; Telegram is additive, not a replacement
+
 ### MCP Server
 Employees connect Claude Desktop (or any MCP client) to CMD Support using a personal token. Claude gets access to the compiled wiki, raw source documents, and AI skills - all filtered to the employee's permission scope.
 
@@ -125,7 +135,7 @@ Add this to `claude_desktop_config.json` and restart Claude Desktop. The employe
 
 **AI providers (your choice):** Google · OpenAI · Anthropic · Ollama · Voyage · Cohere
 
-**Outbound network:** configured AI provider only. No telemetry, no external calls.
+**Outbound network:** configured AI provider only, plus optional Telegram Bot API calls when the Telegram Task Bridge is enabled by an admin. No telemetry, no analytics, no other external calls. The Telegram integration is disabled by default; enabling it requires explicitly setting a Bot Token in Admin Portal → Settings.
 
 → See [Architecture](docs/ARCHITECTURE.md) for the full technical breakdown.
 
@@ -142,6 +152,7 @@ Add this to `claude_desktop_config.json` and restart Claude Desktop. The employe
 - [x] AI Skills - versioned, department-scoped agent packages
 - [x] Full RBAC - department permissions + workspace membership roles
 - [x] Audit log
+- [ ] Telegram Task Bridge - group-to-squad binding, per-user identity, task create/assign/close via bot commands
 - [ ] CMD Support CLI - one-command employee setup
 - [ ] Notification system for draft review requests
 - [ ] Usage analytics dashboard

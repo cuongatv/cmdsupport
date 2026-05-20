@@ -228,6 +228,94 @@ See [MCP & Claude](MCP.md) for the connection guide.
 
 ---
 
+## Option C — Telegram Integration (optional)
+
+This section is only needed if you want to use the **Telegram Task Bridge** feature. The rest of CMD Support works without it.
+
+### 1. Create a bot with BotFather
+
+1. Open Telegram and start a chat with `@BotFather`.
+2. Send `/newbot`, choose a display name and a username (e.g. `CMDSupportBot`).
+3. BotFather returns a Bot Token in the format `123456789:ABCDEF...` — copy it somewhere safe. **Don't share it or commit it to version control.**
+4. **Set Privacy Mode:** send `/setprivacy` to BotFather, select your bot, choose **ENABLED**. This ensures the bot only receives messages that start with `/`, reducing noise in group chats.
+5. **Allow group membership:** send `/setjoingroups` to BotFather and ensure it is enabled so the bot can be added to groups.
+
+### 2. Generate a webhook secret
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Copy the output. You'll paste it into Admin Portal → Settings → Telegram Webhook Secret.
+
+### 3. Configure in Admin Portal
+
+1. Go to **Admin Portal → Settings → Telegram Integration**.
+2. Toggle **Enable Telegram Integration** on.
+3. Paste the Bot Token into **Telegram Bot Token**.
+4. Paste the generated secret into **Telegram Webhook Secret**.
+5. Choose delivery mode:
+   - **Webhook** — requires a public HTTPS endpoint; lower latency.
+   - **Long Polling** — no public endpoint needed; suitable for air-gapped or VPN-only deployments.
+6. If using Webhook: enter your public URL (e.g. `https://cmd.yourcompany.com/api/integrations/telegram/webhook`) in the **Webhook URL** field, then click **Register Webhook**.
+7. Click **Save**.
+
+### 4. Add the bot to a Telegram group
+
+In Telegram, open the group you want to link to a Squad, go to group settings → Add Member, and search for your bot's username. Add it as a member.
+
+### 5. Bind the group to a Squad (`/bind`)
+
+In Admin Portal, go to the Squad detail page → **Telegram** tab → click **Generate bind code**. Copy the `/bind CMD-XXXXX` code shown, then paste it into the Telegram group:
+
+```
+/bind CMD-XXXXX
+```
+
+The bot confirms the binding and sets the default TaskProject for tasks created from that group. The Telegram user who sends `/bind` must be a CMD Support admin of that Squad.
+
+### 6. Link personal Telegram accounts (`/link`)
+
+Each team member who wants to create or be assigned tasks from Telegram needs to link their account once. They should:
+
+1. Go to **Admin Portal → Profile → MCP Tokens** and copy their personal token (`ark_xxxxxxxxxxxx`).
+2. Open a private chat with the bot and send:
+
+```
+/link ark_xxxxxxxxxxxx
+```
+
+The bot confirms and their Telegram identity is linked. From this point, messages they send in bound groups are attributed to their CMD Support employee account.
+
+### 7. Using the bot in a group
+
+| Command | What it does |
+|---|---|
+| `/task <title>` | Create a task in the bound project |
+| `/task @username <title>` | Create and assign in one step |
+| `/assign @username <task-id>` | Assign an existing task |
+| `/mytasks` | List your open tasks in the bound project |
+| `/done <task-id>` | Move a task to the first workflow state with `group='done'` |
+| `/help` | Show available commands |
+
+Sender and assignee must both be active Squad members with linked Telegram identities. The bot rejects commands from unlinked or non-member accounts.
+
+### Troubleshooting
+
+| Issue | Solution |
+|---|---|
+| Bot not receiving messages | Check Privacy Mode is ENABLED in BotFather; confirm the bot is a group member |
+| `/bind` rejected | The Telegram user sending `/bind` is not a Squad admin in CMD Support; check employee role |
+| `/link` rejected | MCP token is invalid or expired; regenerate it from Admin Portal → Profile |
+| Tasks not created | Confirm the bound Squad has a default TaskProject configured |
+| Webhook not receiving updates | Verify the public HTTPS URL is reachable, webhook secret matches, and the certificate is valid |
+| Messages delayed or not sent | Check that `cmd_worker_skills` container is running; inspect `telegram_outbox` table for `last_error` |
+| Bot kicked from group | Group binding is disabled automatically; re-add the bot and re-run `/bind` |
+| Webhook stuck after supergroup migration | Telegram auto-migrates groups to supergroups; re-register the webhook and re-bind the group. The `bot_status='migrated'` field in `telegram_group_bindings` marks affected rows |
+| Rotate webhook secret | Generate a new secret, update it in Admin Portal → Settings, then click **Register Webhook** again |
+
+---
+
 ## Environment variables reference
 
 | Variable | Default | Description |

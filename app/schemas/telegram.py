@@ -84,3 +84,28 @@ class LinkCodeResponse(BaseModel):
 
     link_code: str
     expires_at: datetime
+
+
+class TelegramDiagnostics(BaseModel):
+    """Safe operational diagnostics for the Telegram integration.
+
+    NEVER carries the bot token or webhook secret. Error strings are
+    sanitized in the service layer before reaching this DTO.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    configured: bool
+    enabled: bool
+    bot_username: Optional[str] = None
+    webhook_last_set_at: Optional[datetime] = None
+    active_bindings: int
+    disabled_bindings: int
+    active_identities: int
+    outbox_pending: int
+    outbox_sending: int
+    outbox_failed_last_24h: int
+    outbox_sent_last_24h: int
+    last_webhook_received_at: Optional[datetime] = None
+    last_outbox_error: Optional[str] = None
+    last_outbox_error_at: Optional[datetime] = None
