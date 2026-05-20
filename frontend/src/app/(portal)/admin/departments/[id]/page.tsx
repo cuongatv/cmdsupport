@@ -20,9 +20,16 @@ import { KnowledgeTab } from "@/components/departments/hub/knowledge-tab";
 import { SkillsTab } from "@/components/departments/hub/skills-tab";
 import { WorkTab } from "@/components/departments/hub/work-tab";
 import { SquadCapacityPanel } from "@/components/tasks/squad-capacity-panel";
+import { SquadTelegramTab } from "@/components/telegram/squad-telegram-section";
 import { FEATURE_AGILE_PHASE_3 } from "@/lib/feature-flags";
 
-type HubTab = "members" | "knowledge" | "skills" | "work" | "agile";
+type HubTab =
+  | "members"
+  | "knowledge"
+  | "skills"
+  | "work"
+  | "agile"
+  | "telegram";
 
 const BASE_TABS: ReadonlyArray<HubTab> = [
   "members",
@@ -31,8 +38,8 @@ const BASE_TABS: ReadonlyArray<HubTab> = [
   "work",
 ];
 const VALID_TABS: ReadonlyArray<HubTab> = FEATURE_AGILE_PHASE_3
-  ? [...BASE_TABS, "agile"]
-  : BASE_TABS;
+  ? [...BASE_TABS, "agile", "telegram"]
+  : [...BASE_TABS, "telegram"];
 const DEFAULT_TAB: HubTab = "members";
 
 function parseTab(value: string | null): HubTab {
@@ -50,12 +57,19 @@ const BASE_TAB_CONFIG: ReadonlyArray<TabConfigItem> = [
   { key: "skills", label: "Kỹ năng", icon: "psychology" },
   { key: "work", label: "Công việc", icon: "task_alt" },
 ];
+const TELEGRAM_TAB: TabConfigItem = {
+  key: "telegram",
+  label: "Telegram",
+  icon: "forum",
+};
+
 const TAB_CONFIG: ReadonlyArray<TabConfigItem> = FEATURE_AGILE_PHASE_3
   ? [
       ...BASE_TAB_CONFIG,
       { key: "agile", label: "Tổng quan Agile", icon: "monitoring" },
+      TELEGRAM_TAB,
     ]
-  : BASE_TAB_CONFIG;
+  : [...BASE_TAB_CONFIG, TELEGRAM_TAB];
 
 function getErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) return err.message;
@@ -339,6 +353,9 @@ export default function DepartmentHubPage() {
         )}
         {FEATURE_AGILE_PHASE_3 && currentTab === "agile" && (
           <SquadCapacityPanel departmentId={department.id} />
+        )}
+        {currentTab === "telegram" && (
+          <SquadTelegramTab departmentId={department.id} />
         )}
       </div>
 

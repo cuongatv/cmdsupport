@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { McpTokenCard } from "@/components/profile/mcp-token-card";
+import { UserTelegramSection } from "@/components/telegram/user-telegram-section";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -146,6 +147,11 @@ export default function ProfilePage() {
         {/* MCP Token (self-service) */}
         <div className="lg:col-span-2">
           <McpTokenCard />
+        </div>
+
+        {/* Telegram identity (self-service) */}
+        <div className="lg:col-span-2">
+          <UserTelegramSection />
         </div>
       </div>
     </>
