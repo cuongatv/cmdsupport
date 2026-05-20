@@ -1309,11 +1309,22 @@ export default function TaskListPage() {
             onPageChange={handlePageChange}
             projectMap={projectMap}
             stateMap={stateMap}
+            projectStates={states}
             selectedAssignee={selectedAssignee}
             emptyTitle={emptyTitle}
             emptyDescription={emptyDescription}
             emptyIcon={emptyIcon}
             onRowClick={handleRowClick}
+            onTaskMutated={(updated) => {
+              // Patch the local tasks snapshot so subsequent renders show the
+              // server-confirmed values (incl. bumped `version`) without a
+              // refetch. Filtering / paging state is untouched — if the user
+              // changed `state_id` outside the current filter, the row stays
+              // visible until the next manual reload.
+              setTasks((prev) =>
+                prev.map((t) => (t.id === updated.id ? updated : t)),
+              );
+            }}
           />
         )}
       </div>
