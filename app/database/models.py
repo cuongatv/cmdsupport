@@ -13,6 +13,7 @@ from typing import Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -2567,4 +2568,304 @@ class IdeaSubmissionImage(Base):
 
     __table_args__ = (
         Index("ix_idea_submission_images_submission_id", "submission_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Telegram integration — group bindings, user identities, update log,
+# task links, and outbound message outbox.
+# Bot token + webhook secret live in ConfigService, not on these tables.
+# ---------------------------------------------------------------------------
+
+
+class TelegramGroupBinding(Base):
+    """A Telegram chat (or forum topic) bound to one department + default task project."""
+
+    __tablename__ = "telegram_group_bindings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    department_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("departments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    default_task_project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("task_projects.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_thread_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    chat_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    chat_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    bot_status: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Telegram bot membership status: member|kicked|left|migrated",
+    )
+    migrated_to_chat_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
+    )
+    bind_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    bind_code_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    bound_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    bound_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    disabled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    department: Mapped["Department"] = relationship(foreign_keys=[department_id])
+    default_task_project: Mapped[Optional["TaskProject"]] = relationship(
+        foreign_keys=[default_task_project_id]
+    )
+    bound_by: Mapped[Optional["Employee"]] = relationship(foreign_keys=[bound_by_id])
+
+    __table_args__ = (
+        Index("ix_telegram_group_bindings_department_id", "department_id"),
+        Index("ix_telegram_group_bindings_chat_id", "chat_id"),
+    )
+
+
+class TelegramIdentity(Base):
+    """Maps a Telegram user to an Employee."""
+
+    __tablename__ = "telegram_identities"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    employee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    telegram_username: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    link_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    link_code_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    linked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    employee: Mapped["Employee"] = relationship(foreign_keys=[employee_id])
+
+    __table_args__ = (
+        Index("ix_telegram_identities_employee_id", "employee_id"),
+        Index("ix_telegram_identities_telegram_user_id", "telegram_user_id"),
+    )
+
+
+class TelegramUpdateLog(Base):
+    """Append-only log of every Telegram webhook update, for idempotency + audit."""
+
+    __tablename__ = "telegram_update_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    update_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    message_thread_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    telegram_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    command: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        comment="pending|processed|duplicate|failed|ignored",
+    )
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    binding_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_group_bindings.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    identity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_identities.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    sanitized_meta: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_telegram_update_log_chat_received",
+            "chat_id",
+            text("received_at DESC"),
+        ),
+    )
+
+
+class TelegramTaskLink(Base):
+    """Records the Telegram origin of a task (message that spawned it)."""
+
+    __tablename__ = "telegram_task_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    binding_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_group_bindings.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    origin_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    origin_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    origin_message_thread_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
+    )
+    created_by_identity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_identities.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_telegram_task_links_task_id", "task_id"),
+        Index("ix_telegram_task_links_binding_id", "binding_id"),
+    )
+
+
+class TelegramOutbox(Base):
+    """Outbound Telegram message queue: worker polls (status, next_attempt_at) and sends."""
+
+    __tablename__ = "telegram_outbox"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    binding_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("telegram_group_bindings.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tasks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    message_kind: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment=(
+            "task_created|task_updated|comment_added|status_changed|"
+            "bind_reply|link_reply|error_reply"
+        ),
+    )
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        comment="pending|sending|sent|failed|cancelled",
+    )
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_attempted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    __table_args__ = (
+        Index(
+            "uq_telegram_outbox_idempotency_key", "idempotency_key", unique=True
+        ),
+        Index(
+            "ix_telegram_outbox_status_next_attempt",
+            "status",
+            "next_attempt_at",
+        ),
+        Index("ix_telegram_outbox_binding_id", "binding_id"),
     )
