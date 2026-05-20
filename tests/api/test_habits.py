@@ -56,14 +56,15 @@ async def test_employee(db_session: AsyncSession) -> Employee:
     await db_session.execute(
         text(
             """
-            INSERT INTO employees (id, name, email, role, department_id, is_active)
-            VALUES (:id, :name, :email, :role, :department_id, true)
+            INSERT INTO employees (id, name, email, username, role, department_id, is_active)
+            VALUES (:id, :name, :email, :username, :role, :department_id, true)
             """
         ),
         {
             "id": employee_id,
             "name": "Habit Test Employee",
             "email": f"{employee_id.hex[:12]}@example.test",
+            "username": f"habit_{employee_id.hex[:12]}",
             "role": "employee",
             "department_id": department_id,
         },
@@ -233,14 +234,15 @@ async def _insert_employee_for_security_test(
     await db_session.execute(
         text(
             """
-            INSERT INTO employees (id, name, email, role, department_id, is_active)
-            VALUES (:id, :name, :email, :role, :department_id, true)
+            INSERT INTO employees (id, name, email, username, role, department_id, is_active)
+            VALUES (:id, :name, :email, :username, :role, :department_id, true)
             """
         ),
         {
             "id": employee_id,
             "name": f"{name} {employee_id.hex[:6]}",
             "email": f"{employee_id.hex[:12]}@example.test",
+            "username": f"sec_{employee_id.hex[:12]}",
             "role": "employee",
             "department_id": department_id,
         },
@@ -449,3 +451,158 @@ async def test_calendar_department_scope_allows_active_membership(
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["scope"] == "department"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/me/calendar?scope=personal — assignee-based, not project-based
+# ---------------------------------------------------------------------------
+
+
+async def test_calendar_personal_scope_includes_squad_team_task_assigned_to_user(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    test_employee: Employee,
+):
+    """Regression: a task created in a Squad Team (department-scoped TaskProject)
+    and assigned to the user must appear in their personal calendar.
+
+    Earlier code filtered ``scope=personal`` to ``Task.task_project_id ==
+    personal_project_id`` which hid every department / workspace task the user
+    was assigned to. The personal calendar is supposed to be "every task I am
+    on this week" regardless of which project owns it — matching the
+    ``/api/me/tasks`` list endpoint's TaskAssignee join.
+    """
+    from datetime import datetime, time, timezone
+
+    from app.database.models import (
+        Task,
+        TaskAssignee,
+        TaskProject,
+        TaskState,
+    )
+
+    # Squad Team = a department-scoped TaskProject.
+    squad_dept_id = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO departments (id, name) VALUES (:id, :name)"),
+        {"id": squad_dept_id, "name": f"Squad Team {squad_dept_id.hex[:8]}"},
+    )
+    squad_project = TaskProject(
+        id=uuid.uuid4(),
+        name="Squad Backlog",
+        identifier="SQUAD",
+        department_id=squad_dept_id,
+    )
+    db_session.add(squad_project)
+    await db_session.flush()
+    state = TaskState(
+        id=uuid.uuid4(),
+        task_project_id=squad_project.id,
+        name="Todo",
+        group="todo",
+        position=1.0,
+        is_default=True,
+    )
+    db_session.add(state)
+    await db_session.flush()
+
+    # Pick a due_date inside the current week (Mon..Sun) so the calendar
+    # window surfaces it via the due_inside_window branch.
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    due_at = datetime.combine(week_start, time(9, 0), tzinfo=timezone.utc)
+    task = Task(
+        id=uuid.uuid4(),
+        task_project_id=squad_project.id,
+        state_id=state.id,
+        title="Squad task assigned to user",
+        priority="medium",
+        position=1000.0,
+        version=1,
+        due_date=due_at,
+    )
+    db_session.add(task)
+    await db_session.flush()
+    db_session.add(TaskAssignee(task_id=task.id, employee_id=test_employee.id))
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/me/calendar",
+        params={"week_start": week_start.isoformat(), "scope": "personal"},
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    task_ids = {
+        ev["task_id"]
+        for ev in payload["events"]
+        if ev.get("event_type") == "task"
+    }
+    assert str(task.id) in task_ids, (
+        "Squad Team task assigned to the user must appear in personal calendar"
+    )
+
+
+async def test_calendar_personal_scope_excludes_task_not_assigned_to_user(
+    client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    test_employee: Employee,
+):
+    """Negative control: a department task the user is NOT assigned to must
+    stay out of their personal calendar — assignee filter is the only
+    inclusion path for ``scope=personal``.
+    """
+    from datetime import datetime, time, timezone
+
+    from app.database.models import Task, TaskProject, TaskState
+
+    other_dept_id = uuid.uuid4()
+    await db_session.execute(
+        text("INSERT INTO departments (id, name) VALUES (:id, :name)"),
+        {"id": other_dept_id, "name": f"Other Dept {other_dept_id.hex[:8]}"},
+    )
+    other_project = TaskProject(
+        id=uuid.uuid4(),
+        name="Other Backlog",
+        identifier="OTHR",
+        department_id=other_dept_id,
+    )
+    db_session.add(other_project)
+    await db_session.flush()
+    state = TaskState(
+        id=uuid.uuid4(),
+        task_project_id=other_project.id,
+        name="Todo",
+        group="todo",
+        position=1.0,
+        is_default=True,
+    )
+    db_session.add(state)
+    await db_session.flush()
+
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    due_at = datetime.combine(week_start, time(10, 0), tzinfo=timezone.utc)
+    other_task = Task(
+        id=uuid.uuid4(),
+        task_project_id=other_project.id,
+        state_id=state.id,
+        title="Task NOT assigned to user",
+        priority="medium",
+        position=1000.0,
+        version=1,
+        due_date=due_at,
+    )
+    db_session.add(other_task)
+    await db_session.flush()
+
+    resp = await client.get(
+        "/api/me/calendar",
+        params={"week_start": week_start.isoformat(), "scope": "personal"},
+    )
+    assert resp.status_code == 200, resp.text
+    task_ids = {
+        ev["task_id"]
+        for ev in resp.json()["events"]
+        if ev.get("event_type") == "task"
+    }
+    assert str(other_task.id) not in task_ids

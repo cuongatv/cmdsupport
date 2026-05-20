@@ -241,16 +241,14 @@ async def get_calendar_week(
 
     # Personal scope lazily materialises the user's canonical TaskProject so
     # the calendar always has a container to point at on first visit.
-    personal_project_id: Optional[uuid.UUID] = None
     if scope == "personal":
-        personal_project = await get_or_create_personal_project(db, current_user)
-        personal_project_id = personal_project.id
+        await get_or_create_personal_project(db, current_user)
 
     tasks = await _list_scope_tasks(
         db,
         scope,
         dept_id,
-        personal_project_id,
+        current_user.id,
         window_start,
         window_end,
     )
@@ -642,18 +640,10 @@ async def _list_scope_tasks(
     db: AsyncSession,
     scope: str,
     dept_id: Optional[uuid.UUID],
-    personal_project_id: Optional[uuid.UUID],
+    user_id: uuid.UUID,
     window_start: datetime,
     window_end: datetime,
 ) -> list[Task]:
-    if scope == "personal":
-        # personal_project_id is materialised by the caller via
-        # get_or_create_personal_project, so this branch always has a target.
-        project_filter = Task.task_project_id == personal_project_id
-    else:
-        project_filter = Task.task_project_id.in_(
-            select(TaskProject.id).where(TaskProject.department_id == dept_id)
-        )
     # Two ways a task lands on the calendar:
     #   1. It has an explicit (scheduled_start_at, scheduled_end_at) overlapping
     #      the visible week — the original "scheduled" lane.
@@ -674,16 +664,42 @@ async def _list_scope_tasks(
         Task.due_date >= window_start,
         Task.due_date < window_end,
     )
-    stmt = (
-        select(Task)
-        .where(
-            project_filter,
-            Task.deleted_at.is_(None),
-            or_(scheduled_overlap, due_inside_window),
+
+    if scope == "personal":
+        # Personal calendar = every task assigned to this user, regardless of
+        # which project (personal, department/squad, or workspace) owns it.
+        # Filtering by personal_project_id alone hid Squad Team / department
+        # tasks assigned to the user — they live in a department-scoped
+        # TaskProject, not the user's personal one. Joining on TaskAssignee
+        # mirrors what /api/me/tasks does so the calendar and task list
+        # surfaces stay in sync.
+        stmt = (
+            select(Task)
+            .join(TaskAssignee, TaskAssignee.task_id == Task.id)
+            .where(
+                TaskAssignee.employee_id == user_id,
+                Task.deleted_at.is_(None),
+                or_(scheduled_overlap, due_inside_window),
+            )
+            .order_by(Task.scheduled_start_at.nulls_last(), Task.due_date)
         )
-        .order_by(Task.scheduled_start_at.nulls_last(), Task.due_date)
-    )
-    return list((await db.execute(stmt)).scalars().all())
+    else:
+        # Department scope still lists every task in the unit's projects
+        # (covers both assignee tasks and unassigned planning items the unit
+        # lead wants to see).
+        project_filter = Task.task_project_id.in_(
+            select(TaskProject.id).where(TaskProject.department_id == dept_id)
+        )
+        stmt = (
+            select(Task)
+            .where(
+                project_filter,
+                Task.deleted_at.is_(None),
+                or_(scheduled_overlap, due_inside_window),
+            )
+            .order_by(Task.scheduled_start_at.nulls_last(), Task.due_date)
+        )
+    return list((await db.execute(stmt)).scalars().unique().all())
 
 
 async def _list_active_habits(
