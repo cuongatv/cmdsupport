@@ -32,6 +32,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, time, timedelta, timezone
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -186,6 +187,7 @@ async def notify_state_changed(
     task: Task,
     old_state_name: str,
     actor: Employee,
+    new_state_name: str | None = None,
 ) -> list[Notification]:
     """Notify all ACTIVE assignees that the task state changed."""
     result = await db.execute(
@@ -207,6 +209,8 @@ async def notify_state_changed(
                 actor_id=actor.id,
             )
         )
+    if new_state_name is not None:
+        await _notify_telegram_status_changed(db, task, old_state_name, new_state_name)
     return notifications
 
 
@@ -442,6 +446,24 @@ async def scan_aging_tasks(db: AsyncSession) -> list[Notification]:
         already_alerted.add(task.id)
 
     return created
+
+
+async def _notify_telegram_status_changed(
+    db: AsyncSession,
+    task: Task,
+    old_state_name: str,
+    new_state_name: str,
+) -> None:
+    try:
+        from app.services.telegram_task_hook_service import notify_task_status_changed
+
+        await notify_task_status_changed(db, task, old_state_name, new_state_name)
+    except Exception as exc:
+        logger.warning(
+            "telegram task-status hook failed for task_id={}: {}",
+            task.id,
+            exc,
+        )
 
 
 async def _filter_active_employee_ids(

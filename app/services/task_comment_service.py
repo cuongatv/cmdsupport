@@ -18,6 +18,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +66,7 @@ async def create_comment(
         )
     )
     await db.flush()
+    await _notify_telegram_comment_added(db, task, author.name, body)
     return comment
 
 
@@ -170,3 +172,28 @@ async def list_activities(db: AsyncSession, task_id: uuid.UUID) -> list[TaskActi
 def _ensure_body_within_limit(body: str) -> None:
     if len(body.encode("utf-8")) > MAX_DESCRIPTION_BYTES:
         raise ValueError("comment body too long")
+
+
+def _comment_excerpt(body: str, max_length: int = 200) -> str:
+    normalized = " ".join(body.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 1].rstrip() + "…"
+
+
+async def _notify_telegram_comment_added(
+    db: AsyncSession,
+    task: Task,
+    author_display: str,
+    body: str,
+) -> None:
+    try:
+        from app.services.telegram_task_hook_service import notify_task_comment_added
+
+        await notify_task_comment_added(db, task, author_display, _comment_excerpt(body))
+    except Exception as exc:
+        logger.warning(
+            "telegram task-comment hook failed for task_id={}: {}",
+            task.id,
+            exc,
+        )

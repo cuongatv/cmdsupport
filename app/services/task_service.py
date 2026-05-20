@@ -6,6 +6,7 @@ import copy
 import uuid
 from datetime import datetime, timezone
 
+from loguru import logger
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,6 +196,7 @@ async def create_task(
 
     await log_audit(db, creator, "create", "task", str(task.id))
     await db.flush()
+    await _notify_telegram_task_created(db, task)
     return task
 
 
@@ -365,6 +367,7 @@ async def update_task(
     task.version += 1
     await log_audit(db, actor, "update", "task", str(task.id))
     await db.flush()
+    await _notify_telegram_task_updated(db, task, _summarize_changes(changes))
     return task
 
 
@@ -1149,3 +1152,40 @@ def _stringify_activity_value(value: object) -> str | None:
     if isinstance(value, datetime):
         return value.isoformat()
     return str(value)
+
+
+def _summarize_changes(changes: dict[str, object]) -> str:
+    fields = sorted(changes)
+    if not fields:
+        return "metadata updated"
+    return "updated " + ", ".join(fields)
+
+
+async def _notify_telegram_task_created(db: AsyncSession, task: Task) -> None:
+    try:
+        from app.services.telegram_task_hook_service import notify_task_created
+
+        await notify_task_created(db, task)
+    except Exception as exc:
+        logger.warning(
+            "telegram task-created hook failed for task_id={}: {}",
+            task.id,
+            exc,
+        )
+
+
+async def _notify_telegram_task_updated(
+    db: AsyncSession,
+    task: Task,
+    summary: str,
+) -> None:
+    try:
+        from app.services.telegram_task_hook_service import notify_task_updated
+
+        await notify_task_updated(db, task, summary)
+    except Exception as exc:
+        logger.warning(
+            "telegram task-updated hook failed for task_id={}: {}",
+            task.id,
+            exc,
+        )

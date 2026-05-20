@@ -681,7 +681,7 @@ async def move_task_endpoint(
                 },
             )
         )
-        await notify_state_changed(db, task, old_state.name, user)
+        await notify_state_changed(db, task, old_state.name, user, new_state.name)
 
     await log_audit(db, user, "move", "task", str(task.id))
     await db.flush()

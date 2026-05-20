@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """
 CMD Support — Trợ lý Tư vấn Khách hàng Doanh nghiệp.
 FastAPI application entry point.
@@ -141,6 +142,10 @@ from app.routers import (  # noqa: E402
     sources,
     sprint_router,
     tasks,
+    telegram_admin,
+    telegram_bindings,
+    telegram_identities,
+    telegram_webhook,
     wiki,
     wiki_drafts,
     wiki_reclassify,
@@ -164,6 +169,9 @@ app.include_router(skills.router, prefix="/api", tags=["skills"])
 app.include_router(cmd_support.router, prefix="/api", tags=["cmd-support"])
 app.include_router(consulting_rules.router, prefix="/api", tags=["consulting-rules"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(
+    telegram_webhook.router, prefix="/api", tags=["telegram-webhook"]
+)
 app.include_router(sprint_router.router, prefix="/api", tags=["sprints"])
 app.include_router(
     agile_capacity_router.router, prefix="/api", tags=["agile-capacity"]
@@ -175,6 +183,11 @@ app.include_router(
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(habits.router, prefix="/api", tags=["habits"])
 app.include_router(idea_submissions.router, prefix="/api", tags=["idea-submissions"])
+app.include_router(telegram_admin.router, prefix="/api", tags=["telegram-admin"])
+app.include_router(telegram_bindings.router, prefix="/api", tags=["telegram-bindings"])
+app.include_router(
+    telegram_identities.router, prefix="/api", tags=["telegram-identities"]
+)
 
 
 @app.get("/")

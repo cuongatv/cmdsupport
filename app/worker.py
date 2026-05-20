@@ -24,6 +24,7 @@ from app.jobs.task_jobs import (
     task_assignment_notification,
     task_due_soon_scan,
 )
+from app.jobs.telegram_jobs import send_pending_telegram_outbox
 from app.utils.progress import ProgressTracker
 
 
@@ -912,6 +913,7 @@ class WorkerSettings:
         ingest_refine_task,
         revise_compilation_plan_task,
         task_assignment_notification,
+        send_pending_telegram_outbox,
         scan_aging_tasks,
         capture_flow_snapshots_job,
     ]
@@ -919,6 +921,9 @@ class WorkerSettings:
         # Scan for tasks due in ~1 day every 15 minutes; service is idempotent
         # per (task, recipient, UTC calendar day) so multiple runs are safe.
         cron(task_due_soon_scan, minute={0, 15, 30, 45}),
+        # Drain pending Telegram outbox rows every minute; the job itself
+        # no-ops when telegram_bot_token is not configured.
+        cron(send_pending_telegram_outbox, second=0),
         # Scan for aging tasks every hour; service short-circuits when the
         # Phase 1 feature flag is off, and dedupes per task within 24h.
         cron(scan_aging_tasks, minute=5),
