@@ -125,6 +125,8 @@ export function TaskListFilters({
     workspaces.find((w) => w.id === values.workspace_id)?.name ?? "";
   const selectedDepartmentName =
     departments.find((d) => d.id === values.department_id)?.name ?? "";
+  const selectedProjectName =
+    projects.find((p) => p.id === values.task_project_id)?.name ?? "";
   const [searchInput, setSearchInput] = React.useState(values.search);
 
   // Resolve the display name for the currently-selected option in each
@@ -264,6 +266,61 @@ export function TaskListFilters({
                 workspaces.map((w) => (
                   <SelectItem key={w.id} value={w.id}>
                     <span className="truncate">{w.name}</span>
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Dự án picker — let the user narrow the Kanban (or list) to a single
+            project so the columns are per-project TaskStates and drag-and-drop
+            is enabled. `projects` is pre-filtered by the parent to whatever
+            scope (Đơn vị / Không gian làm việc) is currently active, so this
+            dropdown only ever offers projects the user can actually pick. */}
+        <div className="flex flex-col gap-1">
+          <Label
+            htmlFor="task-filter-project"
+            className={FILTER_LABEL_CLASS}
+          >
+            Dự án
+          </Label>
+          <Select
+            value={toSelectValue(values.task_project_id)}
+            onValueChange={(next) =>
+              onProjectChange(fromSelectValue(next ?? TASK_FILTER_ALL_VALUE))
+            }
+          >
+            <SelectTrigger
+              id="task-filter-project"
+              className="w-full md:w-[240px] bg-background"
+              data-testid="task-filter-project"
+            >
+              {selectedProjectName ? (
+                <span
+                  className="truncate max-w-[200px]"
+                  title={selectedProjectName}
+                >
+                  {selectedProjectName}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">
+                  Tất cả dự án
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TASK_FILTER_ALL_VALUE}>
+                Tất cả dự án
+              </SelectItem>
+              {projects.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  Chưa có dự án nào trong phạm vi đã chọn
+                </div>
+              ) : (
+                projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="truncate">{p.name}</span>
                   </SelectItem>
                 ))
               )}
